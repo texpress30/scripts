@@ -1,23 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, CheckCircle2, AlertCircle, X, Check, XIcon, Sparkles } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, X, Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 
-type AiGroup = {
-  canonical_key: string;
-  duplicates: string[];
+type AiSuggestion = {
+  field_id: string;
+  field_key: string;
+  canonical_group: string;
   confidence: string;
   reason: string;
-  action: string;
+};
+
+type GroupSummary = {
+  canonical_group: string;
+  members: string[];
 };
 
 type AnalyzeResult = {
   catalog_type: string;
   model_used: string;
-  total_fields_analyzed: number;
-  existing_aliases_skipped: number;
-  suggestions: AiGroup[];
+  total_fields: number;
+  suggestions: AiSuggestion[];
+  groups_summary: GroupSummary[];
   ai_available: boolean;
 };
 
@@ -48,15 +53,13 @@ export function SchemaAnalyzeModal({
   const [analyzing, setAnalyzing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
-  const [accepted, setAccepted] = useState<Record<string, boolean>>({});
-  const [confirmResult, setConfirmResult] = useState<{ aliases_created: number; fields_merged: number } | null>(null);
+  const [confirmResult, setConfirmResult] = useState<{ updated_count: number } | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (open) {
       setModel(defaultModel);
       setResult(null);
-      setAccepted({});
       setConfirmResult(null);
       setError("");
       setAnalyzing(false);
@@ -97,11 +100,6 @@ export function SchemaAnalyzeModal({
       }
       const data: AnalyzeResult = await resp.json();
       setResult(data);
-      const defaults: Record<string, boolean> = {};
-      for (const s of data.suggestions) {
-        defaults[s.canonical_key] = s.confidence === "high";
-      }
-      setAccepted(defaults);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eroare la analiza AI.");
     } finally {
@@ -114,18 +112,17 @@ export function SchemaAnalyzeModal({
     setConfirming(true);
     setError("");
     try {
-      const groups = result.suggestions
-        .filter((s) => accepted[s.canonical_key])
-        .map((s) => ({
-          canonical_key: s.canonical_key,
-          aliases: s.duplicates.filter((d) => d !== s.canonical_key),
-        }));
+      const updates = result.suggestions.map((s) => ({
+        field_id: s.field_id,
+        canonical_group: s.canonical_group,
+        status: "confirmed",
+      }));
 
-      const data = await apiRequest<{ aliases_created: number; fields_merged: number }>(
-        "/feed-management/schemas/analyze/confirm",
+      const data = await apiRequest<{ updated_count: number }>(
+        "/feed-management/schemas/fields/bulk-canonical",
         {
           method: "POST",
-          body: JSON.stringify({ catalog_type: catalogType, confirmed_groups: groups }),
+          body: JSON.stringify({ updates }),
         },
       );
       setConfirmResult(data);
@@ -162,8 +159,8 @@ export function SchemaAnalyzeModal({
             <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
               <div className="text-sm text-emerald-700 dark:text-emerald-400">
-                <p className="font-semibold">Merge reusit!</p>
-                <p>{confirmResult.aliases_created} alias-uri create, {confirmResult.fields_merged} campuri unificate.</p>
+                <p className="font-semibold">Grupari canonice salvate!</p>
+                <p>{confirmResult.updated_count} campuri actualizate cu grupari canonice.</p>
               </div>
             </div>
             <div className="flex justify-end">
@@ -174,64 +171,30 @@ export function SchemaAnalyzeModal({
           /* Analysis results */
           <div className="space-y-4">
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Analizate <strong>{result.total_fields_analyzed}</strong> campuri cu <strong>{MODEL_LABELS[result.model_used] ?? result.model_used}</strong>.
-              {result.existing_aliases_skipped > 0 && ` ${result.existing_aliases_skipped} alias-uri existente ignorate.`}
+              Analizate <strong>{result.total_fields}</strong> campuri cu <strong>{MODEL_LABELS[result.model_used] ?? result.model_used}</strong>.
             </p>
 
-            {result.suggestions.length === 0 ? (
+            {result.groups_summary.length === 0 ? (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400">
-                Nu am gasit campuri duplicate. Superset-ul pare curat.
+                Fiecare camp are propriul canonic. Nu sunt grupari multi-camp detectate.
               </div>
             ) : (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  {result.suggestions.length} grupuri duplicate gasite:
+                  {result.groups_summary.length} grupuri canonice cu mai mult de 1 camp:
                 </p>
-                {result.suggestions.map((s) => (
-                  <div
-                    key={s.canonical_key}
-                    className={`rounded-lg border p-3 text-sm ${
-                      accepted[s.canonical_key]
-                        ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20"
-                        : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-slate-800 dark:text-slate-200">
-                          Canonic: <code className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{s.canonical_key}</code>
-                          <span className={`ml-2 rounded px-1 py-0.5 text-[10px] font-medium ${
-                            s.confidence === "high"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-amber-100 text-amber-700"
-                          }`}>{s.confidence}</span>
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{s.reason}</p>
-                        <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                          Campuri: {s.duplicates.map((d) => (
-                            <code key={d} className={`mr-1 rounded px-1 py-0.5 font-mono text-[10px] ${
-                              d === s.canonical_key ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"
-                            }`}>{d}</code>
-                          ))}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setAccepted((p) => ({ ...p, [s.canonical_key]: true }))}
-                          className={`rounded p-1 ${accepted[s.canonical_key] ? "bg-emerald-500 text-white" : "text-slate-400 hover:text-emerald-500"}`}
-                        >
-                          <Check className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAccepted((p) => ({ ...p, [s.canonical_key]: false }))}
-                          className={`rounded p-1 ${!accepted[s.canonical_key] ? "bg-red-500 text-white" : "text-slate-400 hover:text-red-500"}`}
-                        >
-                          <XIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
+                {result.groups_summary.map((g) => (
+                  <div key={g.canonical_group} className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 text-sm dark:border-indigo-800 dark:bg-indigo-900/20">
+                    <p className="font-medium text-slate-800 dark:text-slate-200">
+                      Canonic: <code className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{g.canonical_group}</code>
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                      Campuri: {g.members.map((m) => (
+                        <code key={m} className={`mr-1 rounded px-1 py-0.5 font-mono text-[10px] ${
+                          m === g.canonical_group ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"
+                        }`}>{m}</code>
+                      ))}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -250,11 +213,11 @@ export function SchemaAnalyzeModal({
                 <button
                   type="button"
                   onClick={() => void handleConfirm()}
-                  disabled={confirming || !Object.values(accepted).some(Boolean)}
+                  disabled={confirming}
                   className="wm-btn-primary inline-flex items-center gap-2"
                 >
                   {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Confirma merge-urile
+                  Accepta toate sugestiile
                 </button>
               )}
             </div>

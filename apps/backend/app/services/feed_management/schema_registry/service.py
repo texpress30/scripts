@@ -202,6 +202,7 @@ def _upsert_fields(
             channel_field_name=channel_field_name,
             default_value=spec.get("default_value"),
             sort_order=sort_idx,
+            source_description=spec.get("description"),
         )
 
         imported_keys.add(field_key)

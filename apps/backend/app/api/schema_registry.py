@@ -398,7 +398,7 @@ def analyze_fields(
     model: str = Form(default=""),
     user: AuthUser = Depends(get_current_user),
 ) -> dict:
-    """Scan existing superset for duplicate field groups using AI."""
+    """Suggest canonical groups for each field using AI with template descriptions."""
     _enforce_feature_flag()
 
     try:
@@ -407,7 +407,7 @@ def analyze_fields(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     from app.services.feed_management.schema_registry.ai_suggestions import (
-        analyze_existing_fields, is_ai_enabled, _resolve_model,
+        suggest_canonical_groups, is_ai_enabled, _resolve_model,
     )
 
     if not is_ai_enabled():
@@ -415,25 +415,61 @@ def analyze_fields(
             "catalog_type": catalog_type,
             "ai_available": False,
             "suggestions": [],
-            "total_fields_analyzed": 0,
+            "total_fields": 0,
         }
 
     all_fields = schema_registry_repository.list_fields(catalog_type)
-    aliases = schema_registry_repository.list_aliases(catalog_type)
     resolved_model = _resolve_model(model or None)
 
-    suggestions = analyze_existing_fields(all_fields, aliases, catalog_type, model=resolved_model)
+    suggestions = suggest_canonical_groups(all_fields, catalog_type, model=resolved_model)
+
+    # Build groups summary
+    groups: dict[str, list[str]] = {}
+    for s in suggestions:
+        cg = s.get("canonical_group", s.get("field_key", ""))
+        groups.setdefault(cg, []).append(s.get("field_key", ""))
 
     return {
         "catalog_type": catalog_type,
         "model_used": resolved_model,
-        "total_fields_analyzed": len(all_fields),
-        "existing_aliases_skipped": len(aliases),
-        "suggestions": [
-            {**s, "action": "pending"} for s in suggestions
+        "total_fields": len(all_fields),
+        "suggestions": suggestions,
+        "groups_summary": [
+            {"canonical_group": k, "members": v}
+            for k, v in groups.items() if len(v) > 1
         ],
         "ai_available": True,
     }
+
+
+@router.post("/feed-management/schemas/fields/{field_id}/canonical")
+def set_field_canonical(
+    field_id: str,
+    payload: dict,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Set canonical_group for a single field."""
+    _enforce_feature_flag()
+    canonical_group = payload.get("canonical_group", "")
+    status = payload.get("status", "confirmed")
+    if not canonical_group:
+        raise HTTPException(status_code=422, detail="canonical_group is required")
+    schema_registry_repository.set_canonical(field_id, canonical_group, status)
+    return {"status": "ok", "field_id": field_id, "canonical_group": canonical_group}
+
+
+@router.post("/feed-management/schemas/fields/bulk-canonical")
+def bulk_set_canonical(
+    payload: dict,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Bulk update canonical_group for multiple fields."""
+    _enforce_feature_flag()
+    updates = payload.get("updates", [])
+    if not updates:
+        raise HTTPException(status_code=422, detail="updates array is required")
+    count = schema_registry_repository.bulk_set_canonical(updates)
+    return {"status": "ok", "updated_count": count}
 
 
 @router.post("/feed-management/schemas/analyze/confirm")
