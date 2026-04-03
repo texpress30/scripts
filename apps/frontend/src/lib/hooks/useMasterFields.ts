@@ -21,6 +21,12 @@ export type MasterFieldMapping = {
   updated_at: string;
 };
 
+export type ChannelBadge = {
+  channel_slug: string;
+  is_required: boolean;
+  channel_field_name: string;
+};
+
 export type FieldSuggestion = {
   target_field: string;
   display_name: string;
@@ -32,6 +38,8 @@ export type FieldSuggestion = {
   enum_values: string[] | null;
   google_attribute: string | null;
   facebook_attribute: string | null;
+  channels?: ChannelBadge[];
+  is_system?: boolean;
 };
 
 export type SourceField = {
