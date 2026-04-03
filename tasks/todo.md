@@ -7567,3 +7567,226 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Confirm rândul din secțiunile Google/Meta/TikTok afișează `Conversions`.
 - [x] Confirm valorile vin din conversii platformă, nu din manual leads fallback.
 - [x] Confirm CPA în aceste trei secțiuni folosește `Cost / Conversions`.
+
+# =============================================================================
+# FEED MANAGEMENT — DISCOVERY & IMPLEMENTATION PLAN (2026-04-03)
+# =============================================================================
+
+## STRUCTURA EXISTENTĂ
+
+### DB catalog_type ENUM (migration 0035)
+Valori existente: `product`, `vehicle`, `vehicle_offer`, `home_listing`, `hotel`, `hotel_room`, `flight`, `trip`, `media`
+**Lipsesc din ENUM:** `destination`, `service`
+
+### Frontend CatalogType (feed-management.ts:85-91)
+Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `media`
+**Excluse din UI (dar în DB):** `vehicle_offer`, `hotel_room`, `trip`
+
+### Subtypes existente (migration 0046 — feed_catalog_subtypes)
+| Catalog Type   | Subtypes                                          |
+|----------------|---------------------------------------------------|
+| vehicle        | vehicle_listings, vehicle_offers, vehicle_model   |
+| product        | product_physical, product_digital                 |
+| hotel          | hotel_standard                                    |
+| flight         | flight_standard                                   |
+| home_listing   | home_listing_standard                             |
+| media          | media_multishow, media_card                       |
+
+### Canale existente în frontend (channel-platforms.ts)
+| Platform       | Canale                                                                                      |
+|----------------|---------------------------------------------------------------------------------------------|
+| Google (11)    | Shopping, Vehicle Ads, Vehicle Listings, Local Inventory, Product Reviews, Regional Inv,     |
+|                | Manufacturers, Hotel Ads, Real Estate, Jobs, Things to Do                                   |
+| Meta (6)       | Automotive Catalog, Country Feed, Language Feed, Marketplace, Automotive Ads, Hotel Ads      |
+| TikTok (2)     | Auto-Inventory, Catalog                                                                     |
+| Bing (1)       | Shopping                                                                                    |
+| Social (9)     | Pinterest, Snapchat, LinkedIn, X, Reddit, Criteo, Trade Desk, Perplexity, GPT Shopping      |
+| RO Mkts (5)    | Compari, Okazii, Price, Shopmania, Glami                                                    |
+| Affiliate (4)  | Daisycon, Klarna, Awin, ShareASale                                                          |
+
+### Câmpuri seed-uite în DB
+- **Vehicle**: 23 câmpuri (migration 0041) + aliasuri Meta/TikTok (migration 0043)
+- **Product**: 22 câmpuri (migration 0042) + canale google_shopping, facebook_product_ads
+
+### Template adapters (schema_registry/adapters.py)
+5 adaptori: Meta CSV, TikTok CSV, Headers-only CSV, XML, Custom CSV
+
+---
+
+## FIȘIERE CHEIE
+
+### Backend — Core Schema Management
+- `apps/backend/app/services/feed_management/schema_registry/adapters.py` — Parsere template-uri
+- `apps/backend/app/services/feed_management/schema_registry/service.py` — Orchestrare import, alias resolution
+- `apps/backend/app/services/feed_management/schema_registry/repository.py` — CRUD feed_schema_fields + channel_fields
+- `apps/backend/app/api/schema_registry.py` — Endpoint-uri REST import/preview/fields/channels/subtypes/aliases
+
+### Backend — Catalog & Channel Definitions
+- `apps/backend/app/services/feed_management/catalog_schemas.py` — CatalogType enum + CATALOG_SCHEMAS hardcoded
+- `apps/backend/app/services/feed_management/catalog_field_schemas.py` — Fallback field definitions (deprecated)
+- `apps/backend/app/services/feed_management/channels/models.py` — ChannelType enum (60+ canale)
+
+### Backend — Field Mapping
+- `apps/backend/app/services/feed_management/master_fields/service.py` — Target fields (DB-first, fallback hardcoded)
+- `apps/backend/app/services/feed_management/master_fields/repository.py` — CRUD master_field_mappings
+
+### Backend — Migrații relevante
+- `0033` — feed_sources base tables
+- `0035` — catalog_type ENUM + field_mappings
+- `0039` — feed_channels, master_field_mappings, channel_field_overrides
+- `0040` — feed_schema_fields, feed_schema_channel_fields, feed_schema_imports
+- `0041` — Seed vehicle schema (23 fields)
+- `0042` — Normalize slugs + seed product schema (22 fields)
+- `0043` — feed_field_aliases + Meta/TikTok aliases
+- `0044` — canonical_group, canonical_status columns
+- `0046` — feed_catalog_subtypes + seed data
+
+### Frontend — Pages
+- `apps/frontend/src/app/agency/feed-management/sources/` — CRUD surse
+- `apps/frontend/src/app/agency/feed-management/field-mapping/` — Configurare mapping câmpuri
+- `apps/frontend/src/app/agency/feed-management/channels/` — Canale distribuție
+- `apps/frontend/src/app/settings/feed-schemas/` — Admin schemas
+
+### Frontend — Componente
+- `apps/frontend/src/components/feed-management/CatalogTypeSelector.tsx` — Selector 6 tipuri + fetch subtypes API
+- `apps/frontend/src/components/feed-management/AddChannelModal.tsx` — Modal selectare canal
+- `apps/frontend/src/components/feed-management/SchemaImportModal.tsx` — Import template-uri
+- `apps/frontend/src/components/feed-management/FieldMappingEditor.tsx` — Editor mapping câmpuri
+
+### Frontend — Data & Types
+- `apps/frontend/src/lib/types/feed-management.ts` — TypeScript types (CatalogType, etc.)
+- `apps/frontend/src/lib/data/channel-platforms.ts` — Canale hardcoded pe platforme
+- `apps/frontend/src/lib/mocks/catalogSchemas.ts` — Mock-uri câmpuri fallback
+- `apps/frontend/src/lib/hooks/useFeedSources.ts` — Hook CRUD surse
+- `apps/frontend/src/lib/hooks/useMasterFields.ts` — Hook mapping câmpuri + canale
+
+---
+
+## GAP ANALYSIS
+
+### 1. Media → lipsește canal "Facebook Streaming Ads"
+- **Status:** Canal `facebook_streaming_ads` NU există în:
+  - [ ] `channel-platforms.ts` (frontend)
+  - [ ] `channels/models.py` ChannelType enum (backend)
+  - [ ] `feed_schema_channel_fields` (DB — fără câmpuri seed-uite)
+- **Subtypes existente:** media_multishow, media_card — OK
+- **Necesar:** Adăugare canal + template import câmpuri streaming media
+
+### 2. Destination → catalog type complet lipsă
+- **Status:** `destination` NU există în:
+  - [x] DB catalog_type ENUM (migration 0047 — ADD VALUE 'destination')
+  - [ ] Backend CatalogType Python enum (catalog_schemas.py)
+  - [ ] Frontend CatalogType TS type (feed-management.ts)
+  - [ ] CatalogTypeSelector.tsx (UI)
+  - [ ] CATALOG_SCHEMAS hardcoded (catalog_schemas.py)
+  - [x] feed_catalog_subtypes (migration 0047 — destination_standard)
+  - [x] Câmpuri seed-uite (migration 0047 — 16 fields)
+  - [x] Canale seed-uite (migration 0047 — facebook_destination_ads, tiktok_destination)
+- **Canale necesare:**
+  - `facebook_destination_ads` — Meta Destination catalog
+  - `tiktok_destination` — TikTok Travel/Destination catalog
+
+### 3. Service → catalog type complet lipsă
+- **Status:** `service` NU există în:
+  - [x] DB catalog_type ENUM (migration 0047 — ADD VALUE 'service')
+  - [ ] Backend CatalogType Python enum (catalog_schemas.py)
+  - [ ] Frontend CatalogType TS type (feed-management.ts)
+  - [ ] CatalogTypeSelector.tsx (UI)
+  - [ ] CATALOG_SCHEMAS hardcoded (catalog_schemas.py)
+  - [x] feed_catalog_subtypes (migration 0047 — professional_services)
+  - [x] Câmpuri seed-uite (migration 0047 — 13 fields)
+  - [x] Canal seed-uit (migration 0047 — facebook_professional_services)
+- **Canale necesare:**
+  - `facebook_professional_services` — Meta Professional Services catalog
+
+### 4. Product → lipsesc canale Digital (Apps & Software, Articles & Publications)
+- **Status:** Subtypul `product_digital` există în DB, dar:
+  - [ ] Niciun canal specific digital (apps_software, articles_publications) în channel-platforms.ts
+  - [ ] Niciun canal specific digital în ChannelType enum backend
+  - [ ] Nicio definiție câmpuri specifice digital seed-uită
+- **Canale necesare:**
+  - `facebook_apps_software` sau canal generic digital products cu subtypes apps/articles
+
+### 5. Product → lipsesc variante: Local Products, Other
+- **Status:** Subtypes product existente: `product_physical`, `product_digital`
+  - [x] `product_local` adăugat în feed_catalog_subtypes (migration 0047)
+  - [x] `product_other` adăugat în feed_catalog_subtypes (migration 0047)
+  - [ ] Niciun canal cu compatibleSubtypes referind aceste variante (frontend FAZA 4/6)
+
+---
+
+## PAȘI IMPLEMENTARE
+
+### FAZA 1 — Backend DB Migration (0047_add_destination_service_catalog_types.sql) ✓
+- [x] ALTER TYPE catalog_type ADD VALUE 'destination'
+- [x] ALTER TYPE catalog_type ADD VALUE 'service'
+- [x] INSERT feed_catalog_subtypes: destination subtypes (destination_standard)
+- [x] INSERT feed_catalog_subtypes: service subtypes (professional_services)
+- [x] INSERT feed_catalog_subtypes: product_local, product_other
+- [x] INSERT feed_schema_fields: câmpuri destination (16 fields: id, name, description, url, image_link, address, city, country, latitude, longitude, price_range, category, phone, rating, hours, neighborhood)
+- [x] INSERT feed_schema_fields: câmpuri service (13 fields: id, title, url, image_link, description, category, price, address, city, phone, rating, availability, area_served)
+- [x] INSERT feed_schema_channel_fields: linkare câmpuri → facebook_destination_ads, tiktok_destination, facebook_professional_services
+
+### FAZA 2 — Backend Python (catalog_schemas.py + channels/models.py)
+- [ ] Adaugă `destination` și `service` în CatalogType enum (catalog_schemas.py)
+- [ ] Adaugă CATALOG_SCHEMAS[CatalogType.destination] cu required + optional fields
+- [ ] Adaugă CATALOG_SCHEMAS[CatalogType.service] cu required + optional fields
+- [ ] Adaugă canale noi în ChannelType enum (channels/models.py):
+  - `facebook_streaming_ads`
+  - `facebook_destination_ads`
+  - `tiktok_destination`
+  - `facebook_professional_services`
+- [ ] Actualizează catalog_field_schemas.py fallback cu destination + service fields
+
+### FAZA 3 — Backend API (schema_registry endpoints)
+- [ ] Verifică că endpoint-urile GET /schemas/fields, /schemas/channels, /schemas/subtypes funcționează corect cu noile catalog types (probabil zero changes — sunt generice pe enum)
+- [ ] Testează import template CSV/XML pentru destination și service catalog types
+- [ ] Adaugă aliasuri (feed_field_aliases) dacă e cazul pentru destination/service
+
+### FAZA 4 — Frontend Types & Data
+- [ ] Adaugă `"destination"` și `"service"` în CatalogType (feed-management.ts:85-91)
+- [ ] Adaugă entries în CatalogTypeSelector.tsx pentru destination + service (icon, label, description)
+- [ ] Adaugă canale noi în channel-platforms.ts:
+  - Meta: facebook_streaming_ads (compatibleSubtypes: ["media_multishow", "media_card"])
+  - Meta: facebook_destination_ads (compatibleSubtypes: ["fb_destinations"])
+  - Meta: facebook_professional_services (compatibleSubtypes: ["professional_services"])
+  - TikTok: tiktok_destination (compatibleSubtypes: ["tt_destinations"])
+- [ ] Adaugă mock schemas în catalogSchemas.ts pentru destination + service (fallback UI)
+- [ ] Adaugă badges/culori platformă dacă e nevoie (channel-platforms.ts)
+
+### FAZA 5 — Frontend UI
+- [ ] Verifică CatalogTypeSelector afișează corect destination + service
+- [ ] Verifică AddChannelModal afișează canalele noi
+- [ ] Verifică feed-schemas admin page permite import template-uri pentru noile types
+- [ ] Verifică field mapping editor funcționează cu noile catalog types
+
+### FAZA 6 — Product Subtypes Extinse
+- [x] Adaugă subtypes product_local, product_other în DB (migration 0047)
+- [ ] Adaugă compatibleSubtypes pe canalele existente unde e relevant
+- [ ] Verifică UI subtype selector include noile variante
+
+### FAZA 7 — Teste
+- [ ] Test backend: migrația se aplică fără erori
+- [ ] Test backend: API returnează destination/service catalog types + câmpuri
+- [ ] Test backend: import template CSV funcționează cu destination/service
+- [ ] Test frontend: CatalogTypeSelector afișează toate 8 tipurile (product, vehicle, home_listing, hotel, flight, media, destination, service)
+- [ ] Test frontend: AddChannelModal include canalele noi
+- [ ] Test E2E: flow complet create source → select catalog type destination → add channel → field mapping
+
+---
+
+## NOTĂ: Structură canale existente vs necesare per catalog type
+
+| Catalog Type   | Canale Existente                                              | Canale Lipsă                          |
+|----------------|---------------------------------------------------------------|---------------------------------------|
+| product        | google_shopping, facebook_product_ads, tiktok + 25+ generice | (canale digital apps/articles)        |
+| vehicle        | google_vehicle_ads_v3, google_vehicle_listings,               | —                                     |
+|                | facebook_product_ads, facebook_automotive, tiktok_automotive  |                                       |
+| media          | (niciun canal specific media)                                 | facebook_streaming_ads                |
+| destination    | (catalog type INEXISTENT)                                     | facebook_destination_ads,             |
+|                |                                                               | tiktok_destination                    |
+| service        | (catalog type INEXISTENT)                                     | facebook_professional_services        |
+| home_listing   | google_real_estate                                            | —                                     |
+| hotel          | google_hotel_ads, facebook_hotel                              | —                                     |
+| flight         | (niciun canal specific flight)                                | —                                     |
+| trip           | (niciun canal specific trip)                                  | —                                     |
