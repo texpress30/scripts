@@ -114,6 +114,105 @@ class FeedProductsRepository:
         result = self._collection().delete_many({"feed_source_id": str(feed_source_id)})
         return result.deleted_count
 
+    def get_all_unique_fields(
+        self,
+        feed_source_id: str,
+        *,
+        sample_limit: int = 100,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Scan up to *sample_limit* products and return all unique data keys.
+
+        Merges both standardized fields (from ``data``) and raw source fields
+        (from ``data.raw_data``) so the dropdown shows every field available.
+
+        Returns (fields, products_scanned) where each field is::
+
+            {"field": "price", "type": "float", "sample": "7500.0"}
+        """
+        cursor = (
+            self._collection()
+            .find(
+                {"feed_source_id": str(feed_source_id)},
+                {"data": 1, "_id": 0},
+            )
+            .limit(min(max(1, sample_limit), 500))
+        )
+
+        all_fields: dict[str, Any] = {}       # field_name -> sample value
+        products_scanned = 0
+
+        excluded = {
+            "_id", "created_at", "updated_at", "feed_source_id",
+            "product_id", "synced_at", "raw_data",
+        }
+
+        def _collect_fields(data: dict[str, Any]) -> None:
+            for key, value in data.items():
+                if key in excluded or key.startswith("_"):
+                    continue
+                if key not in all_fields and value is not None:
+                    all_fields[key] = value
+
+        for doc in cursor:
+            products_scanned += 1
+            data = doc.get("data")
+            if not isinstance(data, dict):
+                continue
+
+            # 1. Standardized fields (top-level keys except raw_data)
+            _collect_fields(data)
+
+            # 2. Raw source fields — surface them at top level
+            raw = data.get("raw_data")
+            if isinstance(raw, dict):
+                _collect_fields(raw)
+
+        # Build response list sorted alphabetically
+        def _detect_type(value: Any) -> str:
+            if value is None:
+                return "unknown"
+            if isinstance(value, bool):
+                return "boolean"
+            if isinstance(value, (int, float)):
+                return "number"
+            if isinstance(value, list):
+                return "array"
+            if isinstance(value, dict):
+                return "object"
+            s = str(value)
+            if s.startswith(("http://", "https://")):
+                return "url"
+            try:
+                float(s.replace(",", "."))
+                return "number"
+            except (ValueError, TypeError):
+                pass
+            return "string"
+
+        def _truncate_sample(value: Any) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, list):
+                return f"[{len(value)} items]"
+            if isinstance(value, dict):
+                return "{...}"
+            s = str(value)
+            return s[:120] if len(s) > 120 else s
+
+        fields = sorted(
+            [
+                {
+                    "field": key,
+                    "type": _detect_type(val),
+                    "sample": _truncate_sample(val),
+                }
+                for key, val in all_fields.items()
+            ],
+            key=lambda f: f["field"],
+        )
+
+        return fields, products_scanned
+
     def get_distinct_categories(self, feed_source_id: str) -> list[str]:
         values = self._collection().distinct("data.category", {"feed_source_id": str(feed_source_id)})
         return sorted([str(v) for v in values if v])

@@ -12,15 +12,10 @@ from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.feed_management.catalog_schemas import (
     CatalogType,
-    get_all_fields,
-    get_catalog_schema,
     validate_mapping_completeness,
 )
 from app.services.feed_management.exceptions import FeedSourceNotFoundError
 from app.services.feed_management.field_mapping.models import (
-    CatalogFieldInfo,
-    CatalogSchemaResponse,
-    CatalogTypeInfo,
     FieldMappingCreate,
     FieldMappingDetailResponse,
     FieldMappingResponse,
@@ -59,46 +54,11 @@ def _enforce_feature_flag() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Catalog schema endpoints (no subaccount scope needed)
+# Preset endpoints
 # ---------------------------------------------------------------------------
-
-class CatalogTypeListResponse(BaseModel):
-    items: list[CatalogTypeInfo]
-
 
 class CatalogPresetListResponse(BaseModel):
     items: list[dict[str, str]]
-
-
-@router.get("/catalog-schemas", response_model=CatalogTypeListResponse)
-def list_catalog_types(
-    user: AuthUser = Depends(get_current_user),
-) -> CatalogTypeListResponse:
-    _enforce_feature_flag()
-    items: list[CatalogTypeInfo] = []
-    for ct in CatalogType:
-        schema = get_catalog_schema(ct)
-        items.append(CatalogTypeInfo(
-            value=ct.value,
-            label=ct.value.replace("_", " ").title(),
-            required_count=len(schema.get("required", [])),
-            optional_count=len(schema.get("optional", [])),
-        ))
-    return CatalogTypeListResponse(items=items)
-
-
-@router.get("/catalog-schemas/{catalog_type}", response_model=CatalogSchemaResponse)
-def get_catalog_schema_detail(
-    catalog_type: CatalogType,
-    user: AuthUser = Depends(get_current_user),
-) -> CatalogSchemaResponse:
-    _enforce_feature_flag()
-    schema = get_catalog_schema(catalog_type)
-    return CatalogSchemaResponse(
-        catalog_type=catalog_type.value,
-        required=[CatalogFieldInfo(**f) for f in schema.get("required", [])],
-        optional=[CatalogFieldInfo(**f) for f in schema.get("optional", [])],
-    )
 
 
 @router.get("/field-mappings/presets", response_model=CatalogPresetListResponse)

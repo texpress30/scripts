@@ -12,6 +12,8 @@ const TABS = [
   { href: "/agency/feed-management/sources", label: "Sources" },
   { href: "/agency/feed-management/imports", label: "Imports" },
   { href: "/agency/feed-management/field-mapping", label: "Field Mapping" },
+  { href: "/agency/feed-management/channels", label: "Channels" },
+  { href: "/agency/feed-management/products", label: "Products" },
 ] as const;
 
 function FeedManagementInner({ children }: { children: React.ReactNode }) {

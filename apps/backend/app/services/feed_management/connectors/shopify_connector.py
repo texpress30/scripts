@@ -211,6 +211,8 @@ class ShopifyConnector(BaseConnector):
 
         variants = product.get("variants") or []
 
+        raw = _flatten_shopify_raw(product)
+
         if not variants:
             return [ProductData(
                 id=product_id,
@@ -225,6 +227,7 @@ class ShopifyConnector(BaseConnector):
                 inventory_quantity=0,
                 sku="",
                 url=product_url,
+                raw_data=raw,
             )]
 
         # Build ProductVariant list for all variants
@@ -246,6 +249,11 @@ class ShopifyConnector(BaseConnector):
 
             compare_at = _safe_float(v.get("compare_at_price"))
 
+            variant_raw = dict(raw)
+            for key in ("sku", "price", "compare_at_price", "inventory_quantity", "weight", "grams"):
+                if key in v and v[key] is not None:
+                    variant_raw[f"variant_{key}"] = v[key]
+
             results.append(ProductData(
                 id=f"{product_id}_{variant_id}",
                 title=display_title,
@@ -260,9 +268,47 @@ class ShopifyConnector(BaseConnector):
                 inventory_quantity=int(v.get("inventory_quantity") or 0),
                 sku=str(v.get("sku") or ""),
                 url=product_url,
+                raw_data=variant_raw,
             ))
 
         return results
+
+
+def _flatten_shopify_raw(product: dict[str, Any]) -> dict[str, Any]:
+    """Extract a flat dict of presentable raw fields from a Shopify product."""
+    raw: dict[str, Any] = {}
+    _SCALAR_KEYS = (
+        "id", "title", "body_html", "vendor", "product_type", "handle",
+        "status", "published_scope", "template_suffix", "created_at",
+        "updated_at", "published_at",
+    )
+    for key in _SCALAR_KEYS:
+        if key in product:
+            raw[key] = product[key]
+
+    tags_raw = product.get("tags", "")
+    if tags_raw:
+        raw["tags"] = tags_raw
+
+    images = product.get("images") or []
+    if images:
+        raw["image_src"] = images[0].get("src", "")
+        raw["image_alt"] = images[0].get("alt", "")
+
+    options = product.get("options") or []
+    for opt in options:
+        opt_name = str(opt.get("name", "")).lower().replace(" ", "_")
+        if opt_name:
+            raw[f"option_{opt_name}"] = ", ".join(str(v) for v in (opt.get("values") or []))
+
+    variants = product.get("variants") or []
+    if variants:
+        first = variants[0]
+        for key in ("price", "compare_at_price", "sku", "inventory_quantity", "weight", "grams"):
+            if key in first and first[key] is not None:
+                raw[f"variant_{key}"] = first[key]
+
+    return raw
 
 
 def _safe_float(value: Any) -> float | None:
