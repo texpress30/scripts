@@ -53,3 +53,14 @@ This repository contains utility scripts. Keep changes focused, minimal, and eas
 - **Simplicity First**: Make every change as simple as possible. Impact minimal code.
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
+
+## Feed Schema Registry
+
+Field mapping definitions are stored in the `feed_schema_fields` database table (DB-first, fallback to `catalog_field_schemas.py`).
+
+- `catalog_field_schemas.py` is **DEPRECATED** — do not add new fields there
+- To add a new channel: import the platform's template via `POST /feed-management/schemas/import` or UI at Settings > Feed Schemas
+- Template adapters: Meta CSV, TikTok CSV, XML, Custom CSV (in `schema_registry/adapters.py`)
+- Channel slugs are auto-normalized (lowercase, underscores)
+- Feed generation reads field specs from `feed_schema_channel_fields` and uses `channel_field_name` as output tag
+- Migrations: 0040 (DDL), 0041 (vehicle seed), 0042 (product seed + slug fix)

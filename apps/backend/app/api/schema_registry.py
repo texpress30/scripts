@@ -14,6 +14,7 @@ from app.services.feed_management.schema_registry.repository import (
     schema_registry_repository,
 )
 from app.services.feed_management.schema_registry.service import (
+    normalize_slug,
     parse_and_import,
     upload_file_to_s3,
     validate_catalog_type,
@@ -54,6 +55,7 @@ class ImportSummary(BaseModel):
 class SchemaImportResponse(BaseModel):
     status: str
     channel_slug: str
+    channel_slug_original: str | None = None
     catalog_type: str
     summary: ImportSummary
     s3_path: str | None
@@ -87,7 +89,8 @@ async def import_schema_csv(
     _enforce_feature_flag()
 
     # --- Validate inputs ---------------------------------------------------
-    channel_slug = channel_slug.strip()
+    channel_slug_original = channel_slug.strip()
+    channel_slug = normalize_slug(channel_slug_original)
     catalog_type = catalog_type.strip()
 
     if not channel_slug:
@@ -166,6 +169,7 @@ async def import_schema_csv(
     return SchemaImportResponse(
         status="success",
         channel_slug=channel_slug,
+        channel_slug_original=channel_slug_original if channel_slug_original != channel_slug else None,
         catalog_type=catalog_type,
         summary=ImportSummary(
             fields_added=result["fields_added"],
@@ -207,6 +211,8 @@ def list_schema_fields(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
         ) from exc
 
+    if channel_slug:
+        channel_slug = normalize_slug(channel_slug)
     fields = schema_registry_repository.list_fields(catalog_type, channel_slug)
     required_count = sum(1 for f in fields if f.get("is_required"))
     optional_count = len(fields) - required_count
@@ -263,7 +269,7 @@ def list_schema_imports(
 
     imports = schema_registry_repository.list_imports(
         catalog_type=catalog_type,
-        channel_slug=channel_slug,
+        channel_slug=normalize_slug(channel_slug) if channel_slug else None,
         limit=limit,
     )
     return {"imports": imports}

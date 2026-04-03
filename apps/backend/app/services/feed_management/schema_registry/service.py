@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,6 +26,15 @@ _VALID_DATA_TYPES = frozenset({
     "string", "number", "url", "price", "boolean", "enum", "date", "html",
     "image_url",
 })
+
+
+def normalize_slug(value: str) -> str:
+    """Normalize a channel slug: lowercase, underscores, no special chars."""
+    slug = value.lower().strip()
+    slug = re.sub(r"[\s.\-]+", "_", slug)
+    slug = re.sub(r"[^a-z0-9_]", "", slug)
+    slug = re.sub(r"_+", "_", slug)
+    return slug.strip("_")
 
 
 def validate_catalog_type(catalog_type: str) -> None:
