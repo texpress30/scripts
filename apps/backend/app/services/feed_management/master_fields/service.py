@@ -23,6 +23,56 @@ _source_repo = FeedSourceRepository()
 
 
 # ---------------------------------------------------------------------------
+# Target field resolution — DB-first, hardcoded fallback
+# ---------------------------------------------------------------------------
+
+def _get_target_fields(catalog_type: str) -> list[dict[str, Any]]:
+    """Return target field definitions from the schema registry (DB).
+
+    Falls back to the hardcoded ``catalog_field_schemas.py`` when the
+    registry has no rows for the given *catalog_type*.
+    """
+    try:
+        from app.services.feed_management.schema_registry.repository import (
+            schema_registry_repository,
+        )
+        db_fields = schema_registry_repository.list_fields(catalog_type)
+    except Exception:
+        logger.debug("Schema registry query failed, using hardcoded fallback", exc_info=True)
+        db_fields = []
+
+    if db_fields:
+        return db_fields
+
+    # Fallback to hardcoded definitions
+    logger.warning(
+        "Using hardcoded fields for catalog_type=%s, no schema registry data found",
+        catalog_type,
+    )
+    hardcoded = get_catalog_fields(catalog_type)
+    return [
+        {
+            "id": None,
+            "field_key": cf.name,
+            "display_name": cf.display_name,
+            "description": cf.description,
+            "data_type": cf.field_type.value,
+            "allowed_values": cf.enum_values,
+            "format_pattern": None,
+            "example_value": None,
+            "is_system": cf.name in {"id", "title", "description", "link", "price", "image_link"},
+            "is_required": cf.required,
+            "channels": [],
+            "sort_order": 0,
+            "category": cf.category,
+            "google_attribute": cf.google_attribute,
+            "facebook_attribute": cf.facebook_attribute,
+        }
+        for cf in hardcoded
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Source field extraction
 # ---------------------------------------------------------------------------
 
@@ -47,14 +97,14 @@ def _normalize(name: str) -> str:
 
 
 def _suggest_source_field(
-    target: CatalogField,
+    target: dict[str, Any],
     source_field_names: list[str],
 ) -> str | None:
-    """Find the best matching source field for a target catalog field."""
+    """Find the best matching source field for a target field dict."""
     if not source_field_names:
         return None
 
-    t_norm = _normalize(target.name)
+    t_norm = _normalize(target["field_key"])
     candidates: dict[str, str] = {_normalize(s): s for s in source_field_names}
 
     # 1. Exact match
@@ -62,8 +112,9 @@ def _suggest_source_field(
         return candidates[t_norm]
 
     # 2. Google attribute match (e.g. source has "g:title" or "g_title")
-    if target.google_attribute:
-        g_norm = _normalize(target.google_attribute)
+    google_attr = target.get("google_attribute")
+    if google_attr:
+        g_norm = _normalize(google_attr)
         g_clean = g_norm.replace("g:", "").replace("g_", "")
         for c_norm, c_orig in candidates.items():
             if c_norm == g_norm or c_norm == g_clean:
@@ -97,8 +148,8 @@ def get_mappings_with_suggestions(
     existing = master_field_mapping_repository.get_by_source(source_id)
     mapped_targets = {m.target_field for m in existing}
 
-    # Catalog schema fields
-    catalog_fields = get_catalog_fields(catalog_type)
+    # Catalog schema fields — from DB (schema registry) with hardcoded fallback
+    target_fields = _get_target_fields(catalog_type)
 
     # Source fields from MongoDB
     source_fields, _scanned = get_source_fields(source_id)
@@ -106,21 +157,27 @@ def get_mappings_with_suggestions(
 
     # Build suggestions for unmapped required/optional fields
     suggestions: list[dict[str, Any]] = []
-    for cf in catalog_fields:
-        if cf.name in mapped_targets:
+    for tf in target_fields:
+        field_key = tf["field_key"]
+        if field_key in mapped_targets:
             continue
-        suggested = _suggest_source_field(cf, source_field_names)
+        suggested = _suggest_source_field(tf, source_field_names)
         suggestions.append({
-            "target_field": cf.name,
-            "display_name": cf.display_name,
-            "description": cf.description,
-            "field_type": cf.field_type.value,
-            "required": cf.required,
-            "category": cf.category,
+            "target_field": field_key,
+            "display_name": tf["display_name"],
+            "description": tf.get("description") or "",
+            "field_type": tf.get("data_type", "string"),
+            "required": tf.get("is_required", False),
+            "category": tf.get("category", ""),
             "suggested_source_field": suggested,
-            "enum_values": cf.enum_values,
-            "google_attribute": cf.google_attribute,
-            "facebook_attribute": cf.facebook_attribute,
+            "enum_values": tf.get("allowed_values"),
+            "google_attribute": tf.get("google_attribute"),
+            "facebook_attribute": tf.get("facebook_attribute"),
+            # New fields from schema registry
+            "channels": tf.get("channels", []),
+            "is_system": tf.get("is_system", False),
+            "format_pattern": tf.get("format_pattern"),
+            "example_value": tf.get("example_value"),
         })
 
     return {
@@ -131,5 +188,5 @@ def get_mappings_with_suggestions(
         "suggestions": suggestions,
         "source_fields": source_fields,
         "mapped_count": len(existing),
-        "total_schema_fields": len(catalog_fields),
+        "total_schema_fields": len(target_fields),
     }

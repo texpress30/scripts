@@ -1,5 +1,11 @@
 """Rich catalog field schemas with Google/Facebook attribute mappings.
 
+.. deprecated::
+    DEPRECATED: This file is used as fallback only.
+    Primary source of truth is now the ``feed_schema_fields`` table.
+    See migrations 0040 (schema registry DDL) and 0041 (vehicle seed data).
+    New fields should be added via CSV import or direct DB inserts.
+
 Each catalog type has a list of ``CatalogField`` entries that describe every
 target field — its type, whether it is required, its Google Merchant Center
 attribute name, Facebook catalog attribute name, and so on.
