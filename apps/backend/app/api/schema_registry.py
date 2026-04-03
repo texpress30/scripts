@@ -216,6 +216,7 @@ async def preview_schema_import(
     catalog_type: str = Form(...),
     file: UploadFile = File(...),
     template_format: str = Form(default="auto"),
+    model: str = Form(default=""),
     user: AuthUser = Depends(get_current_user),
 ) -> dict:
     """Parse a template and return categorized fields with AI alias suggestions."""
@@ -267,7 +268,7 @@ async def preview_schema_import(
         )
         if is_ai_enabled():
             ai_available = True
-            ai_suggestions = suggest_aliases(new_fields, existing, catalog_type)
+            ai_suggestions = suggest_aliases(new_fields, existing, catalog_type, model=model or None)
 
     return {
         "format_detected": detected_format,
@@ -377,6 +378,104 @@ def list_schema_imports(
         limit=limit,
     )
     return {"imports": imports}
+
+
+# ---------------------------------------------------------------------------
+# AI analysis endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/feed-management/schemas/ai-status")
+def ai_status(user: AuthUser = Depends(get_current_user)) -> dict:
+    """Return AI availability and model info."""
+    _enforce_feature_flag()
+    from app.services.feed_management.schema_registry.ai_suggestions import get_ai_status
+    return get_ai_status()
+
+
+@router.post("/feed-management/schemas/analyze")
+def analyze_fields(
+    catalog_type: str = Form(...),
+    model: str = Form(default=""),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Scan existing superset for duplicate field groups using AI."""
+    _enforce_feature_flag()
+
+    try:
+        validate_catalog_type(catalog_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    from app.services.feed_management.schema_registry.ai_suggestions import (
+        analyze_existing_fields, is_ai_enabled, _resolve_model,
+    )
+
+    if not is_ai_enabled():
+        return {
+            "catalog_type": catalog_type,
+            "ai_available": False,
+            "suggestions": [],
+            "total_fields_analyzed": 0,
+        }
+
+    all_fields = schema_registry_repository.list_fields(catalog_type)
+    aliases = schema_registry_repository.list_aliases(catalog_type)
+    resolved_model = _resolve_model(model or None)
+
+    suggestions = analyze_existing_fields(all_fields, aliases, catalog_type, model=resolved_model)
+
+    return {
+        "catalog_type": catalog_type,
+        "model_used": resolved_model,
+        "total_fields_analyzed": len(all_fields),
+        "existing_aliases_skipped": len(aliases),
+        "suggestions": [
+            {**s, "action": "pending"} for s in suggestions
+        ],
+        "ai_available": True,
+    }
+
+
+@router.post("/feed-management/schemas/analyze/confirm")
+def confirm_analysis(
+    payload: dict,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Confirm and execute field merges from AI analysis."""
+    _enforce_feature_flag()
+
+    catalog_type = payload.get("catalog_type", "")
+    confirmed_groups = payload.get("confirmed_groups", [])
+
+    if not catalog_type or not confirmed_groups:
+        raise HTTPException(status_code=422, detail="catalog_type and confirmed_groups required")
+
+    aliases_created = 0
+    fields_merged = 0
+
+    for group in confirmed_groups:
+        canonical = group.get("canonical_key", "")
+        alias_keys = group.get("aliases", [])
+        hints = group.get("platform_hints", {})
+
+        for alias_key in alias_keys:
+            if alias_key == canonical:
+                continue
+            merged = schema_registry_repository.merge_field_into_canonical(
+                catalog_type=catalog_type,
+                canonical_key=canonical,
+                alias_key=alias_key,
+                platform_hint=hints.get(alias_key, "ai_analysis"),
+            )
+            if merged:
+                aliases_created += 1
+                fields_merged += 1
+
+    return {
+        "status": "ok",
+        "aliases_created": aliases_created,
+        "fields_merged": fields_merged,
+    }
 
 
 # ---------------------------------------------------------------------------
