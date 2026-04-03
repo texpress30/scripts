@@ -31,12 +31,14 @@ type Props = {
 const FORMAT_OPTIONS = [
   { value: "auto", label: "Auto-detect (recomandat)" },
   { value: "meta_csv", label: "Meta CSV template" },
+  { value: "tiktok_csv", label: "TikTok CSV template" },
   { value: "xml", label: "XML feed template" },
   { value: "custom", label: "Format custom (field_key, display_name)" },
 ];
 
 const FORMAT_LABELS: Record<string, string> = {
   meta_csv: "Meta CSV template",
+  tiktok_csv: "TikTok CSV template",
   xml: "XML feed template",
   custom: "Format custom CSV",
 };
