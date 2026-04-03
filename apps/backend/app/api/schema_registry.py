@@ -340,12 +340,12 @@ def create_alias(
 
 @router.delete(
     "/feed-management/schemas/aliases/{alias_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_200_OK,
 )
 def delete_alias(
     alias_id: str,
     user: AuthUser = Depends(get_current_user),
-) -> None:
+) -> dict:
     """Delete a field alias."""
     _enforce_feature_flag()
 
@@ -355,3 +355,5 @@ def delete_alias(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc),
         ) from exc
+
+    return {"status": "ok", "id": alias_id}
