@@ -6,6 +6,8 @@ spec dicts ready for upsert into feed_schema_fields / feed_schema_channel_fields
 Supported formats:
 - **Meta CSV**: rows 1=metadata, 2=field names, 3=examples
 - **TikTok CSV**: rows 1=field names, 2=descriptions with Required/Optional, 3=examples
+  (supports both dot-separated and pipe-separated description formats)
+- **Headers-only CSV**: just field names (e.g. TikTok Media/Destination templates)
 - **XML feed**: generic sample feed (Meta, Google, any RSS)
 - **Custom CSV**: our own format with explicit field_key/display_name columns
 """
@@ -117,7 +119,20 @@ def detect_format(content: bytes, filename: str) -> str:
             if req_opt_count >= 3:
                 return "tiktok_csv"
     except Exception:
-        pass  # CSV parsing failed — fall through to error
+        pass  # CSV parsing failed — fall through
+
+    # Headers-only CSV: single row of field names (no description/metadata rows).
+    # Common with TikTok Media, Destination, and other simple templates.
+    # Accept if row 1 has at least 3 plausible field-name-like cells and no row 2
+    # or row 2 is data (not Required/Optional descriptions).
+    if len(cells) >= 3:
+        # Check cells look like field names (lowercase, underscored, no spaces in most)
+        field_like = sum(
+            1 for c in cells
+            if re.match(r"^[a-z][a-z0-9_.[\]]*$", c.strip().strip('"'), re.IGNORECASE)
+        )
+        if field_like >= len(cells) * 0.5:
+            return "headers_only"
 
     raise ValueError(
         "Unrecognized template format. Supported: Meta CSV template, TikTok CSV template, "
@@ -390,6 +405,80 @@ def parse_tiktok_csv(content: bytes) -> tuple[list[FieldSpec], list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Headers-only CSV adapter
+# ---------------------------------------------------------------------------
+
+def parse_headers_only(content: bytes) -> tuple[list[FieldSpec], list[str]]:
+    """Parse a CSV that contains only field names (no description/metadata rows).
+
+    Common with TikTok Media, Destination, and other simple templates where
+    the platform only provides column headers without Required/Optional annotations.
+
+    Row 1 = field names.  Optional row 2+ = example data (ignored for schema).
+    All fields are imported as optional since there is no metadata.
+    Returns (fields, warnings).
+    """
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    first_line = text.split("\n", 1)[0]
+    delimiter = "\t" if "\t" in first_line else ","
+
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    rows = list(reader)
+
+    if not rows or not rows[0]:
+        raise ValueError("CSV file is empty or has no header row")
+
+    field_names_row = rows[0]
+    # Use row 2 as example data if available (skip if it looks like a "delete this row" instruction)
+    example_row: list[str] = []
+    if len(rows) > 1:
+        candidate = rows[1]
+        # Skip instruction rows like "Delete the rows that contain context..."
+        first_cell = (candidate[0] if candidate else "").strip().lower()
+        if not first_cell.startswith("delete") and not first_cell.startswith("remove"):
+            example_row = candidate
+
+    warnings: list[str] = [
+        "Headers-only template detected (no Required/Optional metadata). "
+        "All fields imported as optional."
+    ]
+    fields: list[FieldSpec] = []
+    seen_keys: set[str] = set()
+
+    for i, raw_name in enumerate(field_names_row):
+        raw_name = raw_name.strip()
+        if not raw_name:
+            continue
+
+        example = example_row[i].strip() if i < len(example_row) else None
+        if example == "":
+            example = None
+
+        field_key = _clean_field_key(raw_name)
+        if field_key in seen_keys:
+            continue
+        seen_keys.add(field_key)
+
+        fields.append({
+            "field_key": field_key,
+            "display_name": _make_display_name(raw_name),
+            "description": None,
+            "data_type": _infer_data_type(field_key, example),
+            "is_required": False,
+            "allowed_values": None,
+            "format_pattern": None,
+            "example_value": example,
+            "channel_field_name": raw_name,
+        })
+
+    return fields, warnings
+
+
+# ---------------------------------------------------------------------------
 # XML adapter
 # ---------------------------------------------------------------------------
 
@@ -554,7 +643,8 @@ def parse_template(
 ) -> tuple[list[FieldSpec], str, list[str]]:
     """Parse a template file and return (fields, detected_format, warnings).
 
-    *template_format* can be 'auto', 'meta_csv', 'tiktok_csv', 'xml', or 'custom'.
+    *template_format* can be 'auto', 'meta_csv', 'tiktok_csv', 'xml', 'custom',
+    or 'headers_only'.
     """
     if template_format == "auto":
         fmt = detect_format(content, filename)
@@ -569,6 +659,8 @@ def parse_template(
         fields, warnings = parse_xml_template(content)
     elif fmt == "custom":
         fields, warnings = parse_custom_csv(content)
+    elif fmt == "headers_only":
+        fields, warnings = parse_headers_only(content)
     else:
         raise ValueError(f"Unknown template format: {fmt}")
 
