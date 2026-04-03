@@ -20,6 +20,8 @@ class CatalogType(str, enum.Enum):
     flight = "flight"
     trip = "trip"
     media = "media"
+    destination = "destination"
+    service = "service"
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +226,49 @@ CATALOG_SCHEMAS: dict[CatalogType, dict[str, list[dict[str, Any]]]] = {
             {"field": "price", "type": "price", "description": "Price"},
             {"field": "availability", "type": "enum", "values": ["available", "preorder", "unavailable"]},
             {"field": "release_date", "type": "string", "description": "Release date"},
+        ],
+    },
+    # ------------------------------------------------------------------
+    CatalogType.destination: {
+        "required": [
+            {"field": "id", "type": "string", "description": "Unique destination ID"},
+            {"field": "name", "type": "string", "description": "Destination name"},
+            {"field": "url", "type": "url", "description": "Destination page URL"},
+            {"field": "image_link", "type": "url", "description": "Main destination image"},
+            {"field": "description", "type": "string", "description": "Destination description"},
+        ],
+        "optional": [
+            {"field": "address", "type": "string", "description": "Street address"},
+            {"field": "city", "type": "string", "description": "City name"},
+            {"field": "country", "type": "string", "description": "Country code or name"},
+            {"field": "latitude", "type": "number", "description": "GPS latitude"},
+            {"field": "longitude", "type": "number", "description": "GPS longitude"},
+            {"field": "category", "type": "string", "description": "Destination category"},
+            {"field": "price_range", "type": "string", "description": "Price indication or range"},
+            {"field": "phone", "type": "string", "description": "Contact phone number"},
+            {"field": "rating", "type": "number", "description": "Average rating (1-5)"},
+            {"field": "hours", "type": "string", "description": "Operating hours"},
+            {"field": "neighborhood", "type": "string", "description": "Area or neighborhood"},
+        ],
+    },
+    # ------------------------------------------------------------------
+    CatalogType.service: {
+        "required": [
+            {"field": "id", "type": "string", "description": "Unique service ID"},
+            {"field": "title", "type": "string", "description": "Service title"},
+            {"field": "url", "type": "url", "description": "Service page URL"},
+            {"field": "image_link", "type": "url", "description": "Main service image"},
+        ],
+        "optional": [
+            {"field": "description", "type": "string", "description": "Service description"},
+            {"field": "category", "type": "string", "description": "Service category"},
+            {"field": "price", "type": "price", "description": "Service price or starting price"},
+            {"field": "address", "type": "string", "description": "Business address"},
+            {"field": "city", "type": "string", "description": "City name"},
+            {"field": "phone", "type": "string", "description": "Contact phone number"},
+            {"field": "rating", "type": "number", "description": "Average rating (1-5)"},
+            {"field": "availability", "type": "enum", "values": ["available", "unavailable", "by_appointment"]},
+            {"field": "area_served", "type": "string", "description": "Geographic area served"},
         ],
     },
 }
