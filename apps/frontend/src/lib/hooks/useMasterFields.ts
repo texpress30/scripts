@@ -138,11 +138,12 @@ export function useSaveMasterFields(sourceId: string | null) {
 }
 
 export function useSourceFields(sourceId: string | null) {
-  const { data, isLoading, error } = useQuery<{ source_id: string; fields: SourceField[]; count: number }>({
+  const { data, isLoading, error } = useQuery<{ source_id: string; fields: SourceField[]; count: number; total_products_scanned: number }>({
     queryKey: SOURCE_FIELDS_KEY(sourceId ?? ""),
     queryFn: () => apiRequest(`/feed-sources/${sourceId}/source-fields`, { cache: "no-store" }),
     enabled: !!sourceId,
     retry: 1,
+    staleTime: 5 * 60 * 1000, // 5 minutes cache
   });
 
   return {

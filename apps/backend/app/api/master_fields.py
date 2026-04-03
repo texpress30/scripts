@@ -54,6 +54,7 @@ class SourceFieldsResponse(BaseModel):
     source_id: str
     fields: list[dict[str, Any]]
     count: int
+    total_products_scanned: int
 
 
 # ---------------------------------------------------------------------------
@@ -110,11 +111,12 @@ def list_source_fields(
     source_id: str,
     user: AuthUser = Depends(get_current_user),
 ) -> SourceFieldsResponse:
-    """Return available fields from the source data (first MongoDB product)."""
+    """Return all unique fields discovered across source products."""
     _enforce_feature_flag()
-    fields = get_source_fields(source_id)
+    fields, scanned = get_source_fields(source_id)
     return SourceFieldsResponse(
         source_id=source_id,
         fields=fields,
         count=len(fields),
+        total_products_scanned=scanned,
     )

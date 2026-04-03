@@ -159,7 +159,11 @@ export function useFeedSources(subaccountId: number | null) {
 
   const syncMutation = useMutation({
     mutationFn: (id: string) => syncSourceApi(subId, id),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) }); },
+    onSuccess: (_data, id) => {
+      void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) });
+      void queryClient.invalidateQueries({ queryKey: ["source-fields", id] });
+      void queryClient.invalidateQueries({ queryKey: ["master-fields", id] });
+    },
   });
 
   const createMutation = useMutation({
