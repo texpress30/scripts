@@ -147,6 +147,156 @@ class SchemaRegistryRepository:
         return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
+    # Retrieval queries
+    # ------------------------------------------------------------------
+
+    def list_fields(
+        self,
+        catalog_type: str,
+        channel_slug: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return schema fields with aggregated channel info in a single query.
+
+        When *channel_slug* is provided, only fields linked to that channel are
+        returned and ``is_required`` reflects that channel's setting.  Otherwise
+        all fields for the catalog type are returned with ``is_required`` set to
+        the MAX across all channels.
+        """
+        if channel_slug:
+            sql = """
+                SELECT
+                    f.id, f.field_key, f.display_name, f.description,
+                    f.data_type, f.allowed_values, f.format_pattern,
+                    f.example_value, f.is_system,
+                    cf.is_required AS is_required,
+                    cf.sort_order,
+                    jsonb_build_array(
+                        jsonb_build_object(
+                            'channel_slug', cf.channel_slug,
+                            'is_required', cf.is_required,
+                            'channel_field_name', COALESCE(cf.channel_field_name, f.field_key)
+                        )
+                    ) AS channels
+                FROM feed_schema_fields f
+                JOIN feed_schema_channel_fields cf ON cf.schema_field_id = f.id
+                WHERE f.catalog_type = %s AND cf.channel_slug = %s
+                ORDER BY cf.is_required DESC, f.is_system DESC, cf.sort_order ASC
+            """
+            params: tuple[Any, ...] = (catalog_type, channel_slug)
+        else:
+            sql = """
+                SELECT
+                    f.id, f.field_key, f.display_name, f.description,
+                    f.data_type, f.allowed_values, f.format_pattern,
+                    f.example_value, f.is_system,
+                    COALESCE(bool_or(cf.is_required), false) AS is_required,
+                    COALESCE(MIN(cf.sort_order), 0) AS sort_order,
+                    COALESCE(
+                        jsonb_agg(
+                            jsonb_build_object(
+                                'channel_slug', cf.channel_slug,
+                                'is_required', cf.is_required,
+                                'channel_field_name', COALESCE(cf.channel_field_name, f.field_key)
+                            )
+                        ) FILTER (WHERE cf.id IS NOT NULL),
+                        '[]'::jsonb
+                    ) AS channels
+                FROM feed_schema_fields f
+                LEFT JOIN feed_schema_channel_fields cf ON cf.schema_field_id = f.id
+                WHERE f.catalog_type = %s
+                GROUP BY f.id, f.field_key, f.display_name, f.description,
+                         f.data_type, f.allowed_values, f.format_pattern,
+                         f.example_value, f.is_system
+                ORDER BY COALESCE(bool_or(cf.is_required), false) DESC,
+                         f.is_system DESC,
+                         COALESCE(MIN(cf.sort_order), 0) ASC
+            """
+            params = (catalog_type,)
+
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(zip(cols, row))
+            d["id"] = str(d["id"])
+            # allowed_values and channels may already be parsed by psycopg
+            if isinstance(d.get("allowed_values"), str):
+                d["allowed_values"] = json.loads(d["allowed_values"])
+            if isinstance(d.get("channels"), str):
+                d["channels"] = json.loads(d["channels"])
+            results.append(d)
+        return results
+
+    def list_channels(self, catalog_type: str) -> list[dict[str, Any]]:
+        """Return channel summary for a catalog type."""
+        sql = """
+            SELECT
+                cf.channel_slug,
+                count(*) AS fields_count,
+                count(*) FILTER (WHERE cf.is_required) AS required_count,
+                count(*) FILTER (WHERE NOT cf.is_required) AS optional_count,
+                MAX(cf.imported_at) AS last_imported_at
+            FROM feed_schema_channel_fields cf
+            JOIN feed_schema_fields f ON f.id = cf.schema_field_id
+            WHERE f.catalog_type = %s
+            GROUP BY cf.channel_slug
+            ORDER BY cf.channel_slug
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (catalog_type,))
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+        return [dict(zip(cols, row)) for row in rows]
+
+    def list_imports(
+        self,
+        *,
+        catalog_type: str | None = None,
+        channel_slug: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return import history, optionally filtered."""
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if catalog_type:
+            conditions.append("catalog_type = %s")
+            params.append(catalog_type)
+        if channel_slug:
+            conditions.append("channel_slug = %s")
+            params.append(channel_slug)
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        params.append(min(max(1, limit), 100))
+
+        sql = f"""
+            SELECT id, channel_slug, catalog_type, agency_id, filename,
+                   s3_path, fields_added, fields_updated, fields_deprecated,
+                   imported_by, imported_at
+            FROM feed_schema_imports
+            {where}
+            ORDER BY imported_at DESC
+            LIMIT %s
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(zip(cols, row))
+            d["id"] = str(d["id"])
+            results.append(d)
+        return results
+
+    # ------------------------------------------------------------------
     # feed_schema_imports
     # ------------------------------------------------------------------
 
