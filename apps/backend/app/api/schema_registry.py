@@ -1,4 +1,4 @@
-"""API endpoints for Feed Schema Registry — CSV import of field specifications."""
+"""API endpoints for Feed Schema Registry — template import and retrieval."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from app.services.feed_management.schema_registry.repository import (
     schema_registry_repository,
 )
 from app.services.feed_management.schema_registry.service import (
-    parse_and_import_csv,
-    upload_csv_to_s3,
+    parse_and_import,
+    upload_file_to_s3,
     validate_catalog_type,
 )
 
@@ -27,6 +27,8 @@ _ALLOWED_CONTENT_TYPES = {
     "text/csv",
     "application/vnd.ms-excel",
     "application/octet-stream",
+    "application/xml",
+    "text/xml",
 }
 
 
@@ -56,6 +58,9 @@ class SchemaImportResponse(BaseModel):
     summary: ImportSummary
     s3_path: str | None
     import_id: str
+    format_detected: str | None = None
+    warnings: list[str] = []
+    fields_parsed: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -71,14 +76,13 @@ async def import_schema_csv(
     channel_slug: str = Form(...),
     catalog_type: str = Form(...),
     file: UploadFile = File(...),
+    template_format: str = Form(default="auto"),
     user: AuthUser = Depends(get_current_user),
 ) -> SchemaImportResponse:
-    """Import a CSV file with field specifications for a channel + catalog type.
+    """Import a template file with field specifications for a channel + catalog type.
 
-    The CSV must have at least ``field_key`` and ``display_name`` columns.
-    Optional columns: ``description``, ``data_type``, ``is_required``,
-    ``allowed_values``, ``format_pattern``, ``example_value``,
-    ``channel_field_name``, ``default_value``.
+    Supports: Meta CSV templates, XML feed templates, and custom CSV format.
+    Set ``template_format`` to ``auto`` (default), ``meta_csv``, ``xml``, or ``custom``.
     """
     _enforce_feature_flag()
 
@@ -103,15 +107,19 @@ async def import_schema_csv(
     # Validate file type
     content_type = (file.content_type or "").lower()
     filename = file.filename or "upload.csv"
-    if content_type not in _ALLOWED_CONTENT_TYPES and not filename.endswith(".csv"):
+    is_accepted = (
+        content_type in _ALLOWED_CONTENT_TYPES
+        or filename.lower().endswith((".csv", ".xml"))
+    )
+    if not is_accepted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type '{content_type}'. Expected a CSV file.",
+            detail=f"Invalid file type '{content_type}'. Expected CSV or XML.",
         )
 
     # Read file
-    csv_bytes = await file.read()
-    if not csv_bytes:
+    file_bytes = await file.read()
+    if not file_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty",
@@ -119,10 +127,12 @@ async def import_schema_csv(
 
     # --- Parse & import ----------------------------------------------------
     try:
-        result = parse_and_import_csv(
-            csv_bytes=csv_bytes,
+        result = parse_and_import(
+            file_bytes=file_bytes,
+            filename=filename,
             channel_slug=channel_slug,
             catalog_type=catalog_type,
+            template_format=template_format.strip(),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -131,8 +141,8 @@ async def import_schema_csv(
         ) from exc
 
     # --- S3 upload ---------------------------------------------------------
-    s3_path = upload_csv_to_s3(
-        csv_bytes=csv_bytes,
+    s3_path = upload_file_to_s3(
+        file_bytes=file_bytes,
         catalog_type=catalog_type,
         channel_slug=channel_slug,
         filename=filename,
@@ -165,6 +175,9 @@ async def import_schema_csv(
         ),
         s3_path=s3_path,
         import_id=import_id,
+        format_detected=result.get("format_detected"),
+        warnings=result.get("warnings", []),
+        fields_parsed=result.get("fields_parsed", 0),
     )
 
 
