@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -79,6 +80,7 @@ async def import_schema_csv(
     catalog_type: str = Form(...),
     file: UploadFile = File(...),
     template_format: str = Form(default="auto"),
+    confirmed_aliases: str = Form(default=""),
     user: AuthUser = Depends(get_current_user),
 ) -> SchemaImportResponse:
     """Import a template file with field specifications for a channel + catalog type.
@@ -127,6 +129,25 @@ async def import_schema_csv(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty",
         )
+
+    # --- Create confirmed aliases (if provided) ----------------------------
+    if confirmed_aliases:
+        try:
+            alias_list = json.loads(confirmed_aliases)
+            if isinstance(alias_list, list):
+                for a in alias_list:
+                    if isinstance(a, dict) and a.get("new_field_key") and a.get("canonical_key"):
+                        try:
+                            schema_registry_repository.create_alias(
+                                catalog_type=catalog_type,
+                                canonical_key=a["canonical_key"],
+                                alias_key=a["new_field_key"],
+                                platform_hint=f"ai_{channel_slug}",
+                            )
+                        except (ValueError, Exception):
+                            pass  # alias may already exist
+        except (json.JSONDecodeError, TypeError):
+            pass  # invalid JSON — skip, don't block import
 
     # --- Parse & import ----------------------------------------------------
     try:
@@ -183,6 +204,89 @@ async def import_schema_csv(
         warnings=result.get("warnings", []),
         fields_parsed=result.get("fields_parsed", 0),
     )
+
+
+# ---------------------------------------------------------------------------
+# Preview endpoint (with AI alias suggestions)
+# ---------------------------------------------------------------------------
+
+@router.post("/feed-management/schemas/import/preview")
+async def preview_schema_import(
+    channel_slug: str = Form(...),
+    catalog_type: str = Form(...),
+    file: UploadFile = File(...),
+    template_format: str = Form(default="auto"),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Parse a template and return categorized fields with AI alias suggestions."""
+    _enforce_feature_flag()
+
+    channel_slug_original = channel_slug.strip()
+    channel_slug = normalize_slug(channel_slug_original)
+    catalog_type = catalog_type.strip()
+
+    if not channel_slug:
+        raise HTTPException(status_code=422, detail="channel_slug is required")
+    try:
+        validate_catalog_type(catalog_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    # 1. Parse template
+    from app.services.feed_management.schema_registry.adapters import parse_template
+    try:
+        fields, detected_format, warnings = parse_template(
+            file_bytes, file.filename or "upload.csv", template_format.strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # 2. Load existing canonical fields
+    existing = schema_registry_repository.list_fields(catalog_type)
+    existing_keys = {f["field_key"] for f in existing}
+
+    # 3. Categorize
+    exact_match = []
+    new_fields = []
+    for f in fields:
+        if f["field_key"] in existing_keys:
+            exact_match.append({"field_key": f["field_key"], "status": "exists_in_superset"})
+        else:
+            new_fields.append(f)
+
+    # 4. AI suggestions (if enabled)
+    ai_suggestions: list[dict] = []
+    ai_available = False
+    if new_fields:
+        from app.services.feed_management.schema_registry.ai_suggestions import (
+            is_ai_enabled, suggest_aliases,
+        )
+        if is_ai_enabled():
+            ai_available = True
+            ai_suggestions = suggest_aliases(new_fields, existing, catalog_type)
+
+    return {
+        "format_detected": detected_format,
+        "fields_parsed": len(fields),
+        "warnings": warnings,
+        "categories": {
+            "exact_match": exact_match,
+            "ai_suggested_aliases": [
+                {**s, "action": "pending"} for s in ai_suggestions
+            ],
+            "new_fields": [
+                {"field_key": f["field_key"], "display_name": f.get("display_name", ""),
+                 "data_type": f.get("data_type", "string")}
+                for f in new_fields
+                if f["field_key"] not in {s["new_field_key"] for s in ai_suggestions}
+            ],
+        },
+        "ai_suggestions_available": ai_available,
+    }
 
 
 # ---------------------------------------------------------------------------
