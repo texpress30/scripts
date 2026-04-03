@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 
 from app.api.dependencies import get_current_user
@@ -166,3 +166,91 @@ async def import_schema_csv(
         s3_path=s3_path,
         import_id=import_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Retrieval endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/feed-management/schemas/fields")
+def list_schema_fields(
+    catalog_type: str = Query(...),
+    channel_slug: str | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Return schema fields for a catalog type, optionally filtered by channel.
+
+    When *channel_slug* is provided only fields linked to that channel are
+    returned and ``is_required`` reflects that specific channel's requirement.
+    Otherwise the full superset is returned with ``is_required`` derived from
+    the MAX across all channels.
+    """
+    _enforce_feature_flag()
+
+    try:
+        validate_catalog_type(catalog_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+        ) from exc
+
+    fields = schema_registry_repository.list_fields(catalog_type, channel_slug)
+    required_count = sum(1 for f in fields if f.get("is_required"))
+    optional_count = len(fields) - required_count
+
+    return {
+        "catalog_type": catalog_type,
+        "channel_slug": channel_slug,
+        "total_fields": len(fields),
+        "required_count": required_count,
+        "optional_count": optional_count,
+        "fields": fields,
+    }
+
+
+@router.get("/feed-management/schemas/channels")
+def list_schema_channels(
+    catalog_type: str = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Return channels that have field definitions for a catalog type."""
+    _enforce_feature_flag()
+
+    try:
+        validate_catalog_type(catalog_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+        ) from exc
+
+    channels = schema_registry_repository.list_channels(catalog_type)
+    return {
+        "catalog_type": catalog_type,
+        "channels": channels,
+    }
+
+
+@router.get("/feed-management/schemas/imports")
+def list_schema_imports(
+    catalog_type: str | None = Query(default=None),
+    channel_slug: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Return import history, optionally filtered by catalog_type and/or channel."""
+    _enforce_feature_flag()
+
+    if catalog_type:
+        try:
+            validate_catalog_type(catalog_type)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+            ) from exc
+
+    imports = schema_registry_repository.list_imports(
+        catalog_type=catalog_type,
+        channel_slug=channel_slug,
+        limit=limit,
+    )
+    return {"imports": imports}
