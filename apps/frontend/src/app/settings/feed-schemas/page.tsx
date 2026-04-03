@@ -96,6 +96,8 @@ const CATALOG_TYPES = [
   { value: "hotel", label: "Hotel" },
   { value: "flight", label: "Flight" },
   { value: "media", label: "Media" },
+  { value: "destination", label: "Destination" },
+  { value: "service", label: "Service" },
 ];
 
 const TYPE_BADGE_COLORS: Record<string, string> = {
