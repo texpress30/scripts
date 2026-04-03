@@ -11,6 +11,7 @@ from app.core.config import load_settings
 from app.services.auth import AuthUser
 from app.services.feed_management.catalog_field_schemas import (
     CatalogField,
+    FieldType,
     get_catalog_fields,
     get_required_fields as get_required_fields_svc,
     CATALOG_FIELD_SCHEMAS,
@@ -18,6 +19,40 @@ from app.services.feed_management.catalog_field_schemas import (
 from app.services.feed_management.catalog_schemas import CatalogType
 
 logger = logging.getLogger(__name__)
+
+# Map data_type strings back to FieldType enum values
+_FIELD_TYPE_MAP: dict[str, FieldType] = {ft.value: ft for ft in FieldType}
+
+
+def _resolve_catalog_fields(catalog_type_value: str) -> list[CatalogField]:
+    """Return fields from schema registry DB, falling back to hardcoded."""
+    try:
+        from app.services.feed_management.schema_registry.repository import (
+            schema_registry_repository,
+        )
+        db_fields = schema_registry_repository.list_fields(catalog_type_value)
+    except Exception:
+        db_fields = []
+
+    if not db_fields:
+        return get_catalog_fields(catalog_type_value)
+
+    result: list[CatalogField] = []
+    for d in db_fields:
+        ft = _FIELD_TYPE_MAP.get(d.get("data_type", "string"), FieldType.STRING)
+        result.append(CatalogField(
+            name=d["field_key"],
+            display_name=d["display_name"],
+            description=d.get("description") or "",
+            field_type=ft,
+            required=bool(d.get("is_required", False)),
+            category=d.get("category", ""),
+            enum_values=d.get("allowed_values"),
+            google_attribute=d.get("google_attribute"),
+            facebook_attribute=d.get("facebook_attribute"),
+            example=d.get("example_value"),
+        ))
+    return result
 
 router = APIRouter(prefix="/catalog-schemas", tags=["catalog-schemas"])
 
@@ -114,7 +149,7 @@ def list_catalog_types(
     _enforce_feature_flag()
     items: list[CatalogTypeListItem] = []
     for ct in CatalogType:
-        fields = get_catalog_fields(ct.value)
+        fields = _resolve_catalog_fields(ct.value)
         req = [f for f in fields if f.required]
         opt = [f for f in fields if not f.required]
         items.append(
@@ -136,7 +171,7 @@ def get_catalog_schema_detail(
 ) -> CatalogSchemaDetailResponse:
     """Return all fields for a catalog type."""
     _enforce_feature_flag()
-    fields = get_catalog_fields(catalog_type.value)
+    fields = _resolve_catalog_fields(catalog_type.value)
     req = [f for f in fields if f.required]
     opt = [f for f in fields if not f.required]
     return CatalogSchemaDetailResponse(
@@ -155,7 +190,7 @@ def get_required_fields_endpoint(
 ) -> CatalogRequiredFieldsResponse:
     """Return only the required fields for a catalog type."""
     _enforce_feature_flag()
-    fields = get_required_fields_svc(catalog_type.value)
+    fields = [f for f in _resolve_catalog_fields(catalog_type.value) if f.required]
     return CatalogRequiredFieldsResponse(
         catalog_type=catalog_type.value,
         fields=[_field_to_response(f) for f in fields],
@@ -170,7 +205,7 @@ def get_fields_by_categories(
 ) -> CatalogCategoriesResponse:
     """Return fields grouped by category for a catalog type."""
     _enforce_feature_flag()
-    fields = get_catalog_fields(catalog_type.value)
+    fields = _resolve_catalog_fields(catalog_type.value)
     groups: dict[str, list[CatalogFieldResponse]] = defaultdict(list)
     for f in fields:
         groups[f.category].append(_field_to_response(f))
