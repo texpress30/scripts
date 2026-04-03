@@ -31,6 +31,7 @@ class ProductData(BaseModel):
     inventory_quantity: int = 0
     sku: str = ""
     url: str = ""
+    raw_data: dict[str, Any] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Loader2, Save, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Save, CheckCircle2, ChevronRight } from "lucide-react";
 import { MasterFieldRow, type MasterFieldRowValue } from "@/components/feed-management/MasterFieldRow";
 import { useMasterFields, useSaveMasterFields, type BulkMappingItem } from "@/lib/hooks/useMasterFields";
 
@@ -29,6 +29,7 @@ export default function MasterFieldsPage() {
 
   const [localMappings, setLocalMappings] = useState<Record<string, MasterFieldRowValue>>({});
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
+  const [showSourceFields, setShowSourceFields] = useState(false);
 
   // Initialize local state from fetched data
   useEffect(() => {
@@ -165,6 +166,56 @@ export default function MasterFieldsPage() {
           This is a library of universal rules for your feed. You can use them later for every channel.
         </p>
       </div>
+
+      {/* Source Fields Reference Panel */}
+      {data.source_fields.length > 0 && (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50">
+          <button
+            type="button"
+            onClick={() => setShowSourceFields((v) => !v)}
+            className="flex w-full items-center justify-between p-3 text-left"
+          >
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Available Source Fields ({data.source_fields.length})
+              </h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                These fields are available from your connected source. Use them in the mappings below.
+              </p>
+            </div>
+            <ChevronRight
+              className={`h-4 w-4 text-slate-400 transition-transform ${showSourceFields ? "rotate-90" : ""}`}
+            />
+          </button>
+          {showSourceFields && (
+            <div className="border-t border-slate-200 p-3 dark:border-slate-700">
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                {data.source_fields.map((sf) => (
+                  <div
+                    key={sf.field}
+                    className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-white dark:hover:bg-slate-800"
+                  >
+                    <span className="font-mono text-xs font-medium text-slate-700 dark:text-slate-300">
+                      {sf.field}
+                    </span>
+                    <span className="rounded bg-slate-200 px-1 py-0.5 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+                      {sf.type}
+                    </span>
+                    {sf.sample && (
+                      <span
+                        className="truncate text-[11px] text-slate-400 dark:text-slate-500"
+                        title={sf.sample}
+                      >
+                        {sf.sample.length > 30 ? sf.sample.slice(0, 30) + "…" : sf.sample}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Required Fields */}
       {requiredFields.length > 0 && (

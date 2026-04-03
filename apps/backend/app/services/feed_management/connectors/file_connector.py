@@ -143,6 +143,9 @@ def _row_to_product(row: dict[str, Any], *, fallback_id: str) -> ProductData:
     compare_raw = _get(["compare_at_price", "compare_price", "original_price", "sale_price"])
     compare_at_price = float(compare_raw.replace(",", ".")) if compare_raw else None
 
+    # Preserve all original fields as raw_data
+    raw = {k: v for k, v in row.items() if v is not None and str(v).strip()}
+
     return ProductData(
         id=_get(["id", "product_id", "sku", "item_id"]) or fallback_id,
         title=_get(["title", "name", "product_name", "product_title"]),
@@ -157,4 +160,5 @@ def _row_to_product(row: dict[str, Any], *, fallback_id: str) -> ProductData:
         inventory_quantity=_get_int(["inventory_quantity", "quantity", "stock", "stock_quantity"]),
         sku=_get(["sku", "item_sku", "variant_sku"]),
         url=_get(["url", "link", "product_url", "handle"]),
+        raw_data=raw,
     )

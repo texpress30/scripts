@@ -122,6 +122,9 @@ class FeedProductsRepository:
     ) -> tuple[list[dict[str, Any]], int]:
         """Scan up to *sample_limit* products and return all unique data keys.
 
+        Merges both standardized fields (from ``data``) and raw source fields
+        (from ``data.raw_data``) so the dropdown shows every field available.
+
         Returns (fields, products_scanned) where each field is::
 
             {"field": "price", "type": "float", "sample": "7500.0"}
@@ -140,30 +143,29 @@ class FeedProductsRepository:
 
         excluded = {
             "_id", "created_at", "updated_at", "feed_source_id",
-            "product_id", "synced_at",
+            "product_id", "synced_at", "raw_data",
         }
 
-        def _flatten(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-            flat: dict[str, Any] = {}
+        def _collect_fields(data: dict[str, Any]) -> None:
             for key, value in data.items():
-                full_key = f"{prefix}.{key}" if prefix else key
-                if isinstance(value, dict) and not key.startswith("_"):
-                    flat.update(_flatten(value, full_key))
-                else:
-                    flat[full_key] = value
-            return flat
-
-        for doc in cursor:
-            products_scanned += 1
-            raw_data = doc.get("data")
-            if not isinstance(raw_data, dict):
-                continue
-            flat = _flatten(raw_data)
-            for key, value in flat.items():
                 if key in excluded or key.startswith("_"):
                     continue
                 if key not in all_fields and value is not None:
                     all_fields[key] = value
+
+        for doc in cursor:
+            products_scanned += 1
+            data = doc.get("data")
+            if not isinstance(data, dict):
+                continue
+
+            # 1. Standardized fields (top-level keys except raw_data)
+            _collect_fields(data)
+
+            # 2. Raw source fields — surface them at top level
+            raw = data.get("raw_data")
+            if isinstance(raw, dict):
+                _collect_fields(raw)
 
         # Build response list sorted alphabetically
         def _detect_type(value: Any) -> str:
