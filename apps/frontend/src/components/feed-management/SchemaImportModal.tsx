@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Upload, CheckCircle2, AlertCircle, X } from "lucide-react";
-import { apiRequest } from "@/lib/api";
+import { Loader2, Upload, CheckCircle2, AlertCircle, X, AlertTriangle } from "lucide-react";
 
 type ImportResult = {
   status: string;
@@ -16,6 +15,9 @@ type ImportResult = {
   };
   s3_path: string | null;
   import_id: string;
+  format_detected: string | null;
+  warnings: string[];
+  fields_parsed: number;
 };
 
 type Props = {
@@ -24,6 +26,19 @@ type Props = {
   catalogType: string;
   channelSlug: string | null;
   onImportSuccess: () => void;
+};
+
+const FORMAT_OPTIONS = [
+  { value: "auto", label: "Auto-detect (recomandat)" },
+  { value: "meta_csv", label: "Meta CSV template" },
+  { value: "xml", label: "XML feed template" },
+  { value: "custom", label: "Format custom (field_key, display_name)" },
+];
+
+const FORMAT_LABELS: Record<string, string> = {
+  meta_csv: "Meta CSV template",
+  xml: "XML feed template",
+  custom: "Format custom CSV",
 };
 
 export function SchemaImportModal({
@@ -35,6 +50,7 @@ export function SchemaImportModal({
 }: Props) {
   const [slug, setSlug] = useState(channelSlug ?? "");
   const [file, setFile] = useState<File | null>(null);
+  const [templateFormat, setTemplateFormat] = useState("auto");
   const [dragOver, setDragOver] = useState(false);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -46,6 +62,7 @@ export function SchemaImportModal({
     if (open) {
       setSlug(channelSlug ?? "");
       setFile(null);
+      setTemplateFormat("auto");
       setResult(null);
       setError("");
       setImporting(false);
@@ -91,6 +108,7 @@ export function SchemaImportModal({
       const formData = new FormData();
       formData.append("channel_slug", slug.trim());
       formData.append("catalog_type", catalogType);
+      formData.append("template_format", templateFormat);
       formData.append("file", file);
 
       const token = typeof window !== "undefined" ? localStorage.getItem("mcc_token") : null;
@@ -145,6 +163,8 @@ export function SchemaImportModal({
               <div className="text-sm">
                 <p className="font-semibold text-emerald-800 dark:text-emerald-300">Import reusit!</p>
                 <ul className="mt-2 space-y-1 text-emerald-700 dark:text-emerald-400">
+                  <li>Format detectat: <strong>{FORMAT_LABELS[result.format_detected ?? ""] ?? result.format_detected}</strong></li>
+                  <li>Campuri parsate: <strong>{result.fields_parsed}</strong></li>
                   <li>Campuri noi adaugate: <strong>{result.summary.fields_added}</strong></li>
                   <li>Campuri actualizate: <strong>{result.summary.fields_updated}</strong></li>
                   <li>Campuri depreciate: <strong>{result.summary.fields_deprecated}</strong></li>
@@ -152,6 +172,16 @@ export function SchemaImportModal({
                 </ul>
               </div>
             </div>
+            {result.warnings.length > 0 && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                <div className="text-sm text-amber-700 dark:text-amber-400">
+                  {result.warnings.map((w, i) => (
+                    <p key={i}>{w}</p>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex justify-end">
               <button type="button" onClick={handleClose} className="wm-btn-primary">
                 Inchide
@@ -200,7 +230,7 @@ export function SchemaImportModal({
             {/* File drop zone */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                Fisier CSV
+                Fisier CSV sau XML
               </label>
               <div
                 className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-8 transition-colors ${
@@ -220,23 +250,39 @@ export function SchemaImportModal({
                   </p>
                 ) : (
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Trage CSV-ul aici sau click pentru selectare
+                    Trage CSV sau XML aici sau click pentru selectare
                   </p>
                 )}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.xml"
                   className="hidden"
                   onChange={handleFileChange}
                 />
               </div>
             </div>
 
-            {/* CSV format info */}
+            {/* Format selector */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Format
+              </label>
+              <select
+                value={templateFormat}
+                onChange={(e) => setTemplateFormat(e.target.value)}
+                className="wm-input h-9 w-full"
+              >
+                {FORMAT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Format info */}
             <p className="text-xs text-slate-400 dark:text-slate-500">
-              Format CSV: coloane minime <code className="font-mono">field_key</code> si <code className="font-mono">display_name</code>.
-              Optionale: description, data_type, is_required, allowed_values, format_pattern, example_value, channel_field_name.
+              Suporta: template CSV Meta Commerce Manager, sample feed XML, sau CSV custom cu coloane
+              {" "}<code className="font-mono">field_key</code> si <code className="font-mono">display_name</code>.
             </p>
 
             {/* Error */}

@@ -1,13 +1,15 @@
-"""Service layer for CSV schema import."""
+"""Service layer for schema import — supports multiple template formats."""
 
 from __future__ import annotations
 
-import csv
-import io
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from app.services.feed_management.schema_registry.adapters import (
+    FieldSpec,
+    parse_template,
+)
 from app.services.feed_management.schema_registry.repository import (
     schema_registry_repository,
 )
@@ -24,8 +26,6 @@ _VALID_DATA_TYPES = frozenset({
     "image_url",
 })
 
-_REQUIRED_CSV_COLUMNS = {"field_key", "display_name"}
-
 
 def validate_catalog_type(catalog_type: str) -> None:
     if catalog_type not in _VALID_CATALOG_TYPES:
@@ -35,33 +35,69 @@ def validate_catalog_type(catalog_type: str) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Unified import (adapter-based)
+# ---------------------------------------------------------------------------
+
+def parse_and_import(
+    *,
+    file_bytes: bytes,
+    filename: str,
+    channel_slug: str,
+    catalog_type: str,
+    template_format: str = "auto",
+) -> dict[str, Any]:
+    """Parse a template file (any supported format), upsert fields, return summary."""
+
+    # 1. Parse template via adapter
+    fields, detected_format, warnings = parse_template(
+        file_bytes, filename, template_format,
+    )
+
+    if not fields:
+        raise ValueError("Template parsed successfully but contained no fields.")
+
+    # 2. Upsert into DB
+    result = _upsert_fields(
+        fields=fields,
+        channel_slug=channel_slug,
+        catalog_type=catalog_type,
+    )
+
+    result["format_detected"] = detected_format
+    result["warnings"] = warnings
+    result["fields_parsed"] = len(fields)
+    return result
+
+
 def parse_and_import_csv(
     *,
     csv_bytes: bytes,
     channel_slug: str,
     catalog_type: str,
 ) -> dict[str, Any]:
-    """Parse CSV content and upsert fields into the schema registry.
+    """Legacy entry point — delegates to parse_and_import with auto-detect."""
+    return parse_and_import(
+        file_bytes=csv_bytes,
+        filename="upload.csv",
+        channel_slug=channel_slug,
+        catalog_type=catalog_type,
+        template_format="auto",
+    )
 
-    Returns a summary dict with fields_added, fields_updated,
-    fields_deprecated counts and the list of processed field_keys.
-    """
-    text = csv_bytes.decode("utf-8-sig")  # handles BOM
-    reader = csv.DictReader(io.StringIO(text))
 
-    if reader.fieldnames is None:
-        raise ValueError("CSV file is empty or has no header row")
+# ---------------------------------------------------------------------------
+# DB upsert logic (shared by all adapters)
+# ---------------------------------------------------------------------------
 
-    # Normalise header names (strip whitespace, lowercase)
-    normalised = {h.strip().lower(): h for h in reader.fieldnames}
-    missing = _REQUIRED_CSV_COLUMNS - set(normalised.keys())
-    if missing:
-        raise ValueError(
-            f"CSV is missing required columns: {', '.join(sorted(missing))}. "
-            f"Found columns: {', '.join(reader.fieldnames)}"
-        )
+def _upsert_fields(
+    *,
+    fields: list[FieldSpec],
+    channel_slug: str,
+    catalog_type: str,
+) -> dict[str, Any]:
+    """Upsert a list of parsed field specs into the schema registry."""
 
-    # Existing field_keys for deprecation check
     existing_keys = schema_registry_repository.count_existing_channel_fields(
         channel_slug, catalog_type,
     )
@@ -70,42 +106,31 @@ def parse_and_import_csv(
     fields_updated = 0
     imported_keys: set[str] = set()
 
-    for sort_idx, row in enumerate(reader, start=1):
-        # Normalise row keys
-        norm_row = {k.strip().lower(): (v or "").strip() for k, v in row.items()}
-
-        field_key = norm_row.get("field_key", "").strip()
-        display_name = norm_row.get("display_name", "").strip()
+    for sort_idx, spec in enumerate(fields, start=1):
+        field_key = spec["field_key"]
+        display_name = spec["display_name"]
 
         if not field_key or not display_name:
-            continue  # skip blank rows
+            continue
 
-        data_type = norm_row.get("data_type", "string").strip() or "string"
+        data_type = spec.get("data_type", "string") or "string"
         if data_type not in _VALID_DATA_TYPES:
             data_type = "string"
 
-        # Parse allowed_values from comma-separated string
-        allowed_raw = norm_row.get("allowed_values", "").strip()
-        allowed_values: list[str] | None = None
-        if allowed_raw:
-            allowed_values = [v.strip() for v in allowed_raw.split(",") if v.strip()]
-
-        is_required_raw = norm_row.get("is_required", "false").strip().lower()
-        is_required = is_required_raw in ("true", "1", "yes")
-
-        channel_field_name = norm_row.get("channel_field_name", "").strip() or field_key
-        default_value = norm_row.get("default_value", "").strip() or None
+        allowed_values = spec.get("allowed_values")
+        is_required = bool(spec.get("is_required", False))
+        channel_field_name = spec.get("channel_field_name") or field_key
 
         # 1. Upsert into feed_schema_fields
         field_id, was_inserted = schema_registry_repository.upsert_field(
             catalog_type=catalog_type,
             field_key=field_key,
             display_name=display_name,
-            description=norm_row.get("description", "").strip() or None,
+            description=spec.get("description"),
             data_type=data_type,
             allowed_values=allowed_values,
-            format_pattern=norm_row.get("format_pattern", "").strip() or None,
-            example_value=norm_row.get("example_value", "").strip() or None,
+            format_pattern=spec.get("format_pattern"),
+            example_value=spec.get("example_value"),
         )
 
         if was_inserted:
@@ -119,13 +144,13 @@ def parse_and_import_csv(
             channel_slug=channel_slug,
             is_required=is_required,
             channel_field_name=channel_field_name,
-            default_value=default_value,
+            default_value=spec.get("default_value"),
             sort_order=sort_idx,
         )
 
         imported_keys.add(field_key)
 
-    # 3. Deprecation count: existing keys not present in this CSV
+    # 3. Deprecation count
     deprecated_keys = existing_keys - imported_keys
     fields_deprecated = len(deprecated_keys)
 
@@ -137,33 +162,43 @@ def parse_and_import_csv(
     }
 
 
-def upload_csv_to_s3(
+# ---------------------------------------------------------------------------
+# S3 upload
+# ---------------------------------------------------------------------------
+
+def upload_file_to_s3(
     *,
-    csv_bytes: bytes,
+    file_bytes: bytes,
     catalog_type: str,
     channel_slug: str,
     filename: str,
 ) -> str | None:
-    """Upload the raw CSV to S3 and return the S3 key, or None on failure."""
+    """Upload the raw template file to S3 and return the S3 key."""
     try:
         from app.services.s3_provider import get_s3_client, get_s3_bucket_name
 
         bucket = get_s3_bucket_name()
         if not bucket:
-            logger.warning("S3 bucket not configured — skipping CSV upload")
+            logger.warning("S3 bucket not configured — skipping file upload")
             return None
 
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         s3_key = f"feed-schemas/{catalog_type}/{channel_slug}/{ts}_{filename}"
 
+        content_type = "application/xml" if filename.lower().endswith(".xml") else "text/csv"
+
         s3 = get_s3_client()
         s3.put_object(
             Bucket=bucket,
             Key=s3_key,
-            Body=csv_bytes,
-            ContentType="text/csv",
+            Body=file_bytes,
+            ContentType=content_type,
         )
         return s3_key
     except Exception:
-        logger.exception("Failed to upload schema CSV to S3")
+        logger.exception("Failed to upload schema file to S3")
         return None
+
+
+# Keep old name as alias for backward compat
+upload_csv_to_s3 = upload_file_to_s3
