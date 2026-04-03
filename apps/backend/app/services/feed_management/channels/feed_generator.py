@@ -210,9 +210,9 @@ class FeedGenerator:
             if value is None and spec.get("is_required") and spec.get("default_value"):
                 value = spec["default_value"]
 
-            # Warn on missing required field
+            # Log missing required field (info-level — data quality, not app error)
             if value is None and spec.get("is_required"):
-                logger.warning(
+                logger.info(
                     "Required field %s is empty for product %s", fk, product_id,
                 )
 
@@ -220,7 +220,7 @@ class FeedGenerator:
             allowed = spec.get("allowed_values")
             if value is not None and allowed and isinstance(allowed, list):
                 if str(value) not in [str(a) for a in allowed]:
-                    logger.warning(
+                    logger.info(
                         "Field %s value '%s' not in allowed_values %s for product %s",
                         fk, value, allowed, product_id,
                     )
@@ -230,7 +230,7 @@ class FeedGenerator:
             if value is not None and pattern:
                 try:
                     if not re.match(pattern, str(value)):
-                        logger.warning(
+                        logger.info(
                             "Field %s value '%s' does not match pattern '%s' for product %s",
                             fk, value, pattern, product_id,
                         )
