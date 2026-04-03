@@ -223,30 +223,38 @@ export default function MasterFieldsPage() {
           <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
             Required Fields ({requiredFields.length})
           </h2>
-          <div className="space-y-2">
-            {requiredFields.map((field) => (
-              <MasterFieldRow
-                key={field.target_field}
-                targetField={field.target_field}
-                displayName={field.display_name}
-                description={field.description}
-                required={true}
-                category={field.category}
-                fieldType={field.field_type}
-                suggestedSourceField={field.suggested_source_field}
-                sourceFields={data.source_fields}
-                value={localMappings[field.target_field] ?? {
-                  target_field: field.target_field,
-                  source_field: null,
-                  mapping_type: "direct" as const,
-                  static_value: null,
-                  template_value: null,
-                  is_required: true,
-                  sort_order: 0,
-                }}
-                onChange={(v) => handleChange(field.target_field, v)}
-              />
-            ))}
+          <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+            {/* Table header */}
+            <div className="flex items-center border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
+              <div className="w-[220px] shrink-0 border-r border-slate-200 px-3 py-2 dark:border-slate-700">Target Field</div>
+              <div className="w-[140px] shrink-0 border-r border-slate-200 px-2 py-2 text-center dark:border-slate-700">Type</div>
+              <div className="min-w-0 flex-1 px-3 py-2">Source Value</div>
+            </div>
+            <div className="divide-y divide-slate-200 dark:divide-slate-700">
+              {requiredFields.map((field) => (
+                <MasterFieldRow
+                  key={field.target_field}
+                  targetField={field.target_field}
+                  displayName={field.display_name}
+                  description={field.description}
+                  required={true}
+                  category={field.category}
+                  fieldType={field.field_type}
+                  suggestedSourceField={field.suggested_source_field}
+                  sourceFields={data.source_fields}
+                  value={localMappings[field.target_field] ?? {
+                    target_field: field.target_field,
+                    source_field: null,
+                    mapping_type: "direct" as const,
+                    static_value: null,
+                    template_value: null,
+                    is_required: true,
+                    sort_order: 0,
+                  }}
+                  onChange={(v) => handleChange(field.target_field, v)}
+                />
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -257,30 +265,38 @@ export default function MasterFieldsPage() {
           <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
             Optional Fields ({optionalFields.length})
           </h2>
-          <div className="space-y-2">
-            {optionalFields.map((field) => (
-              <MasterFieldRow
-                key={field.target_field}
-                targetField={field.target_field}
-                displayName={field.display_name}
-                description={field.description}
-                required={false}
-                category={field.category}
-                fieldType={field.field_type}
-                suggestedSourceField={field.suggested_source_field}
-                sourceFields={data.source_fields}
-                value={localMappings[field.target_field] ?? {
-                  target_field: field.target_field,
-                  source_field: null,
-                  mapping_type: "direct" as const,
-                  static_value: null,
-                  template_value: null,
-                  is_required: false,
-                  sort_order: 0,
-                }}
-                onChange={(v) => handleChange(field.target_field, v)}
-              />
-            ))}
+          <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+            {/* Table header */}
+            <div className="flex items-center border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
+              <div className="w-[220px] shrink-0 border-r border-slate-200 px-3 py-2 dark:border-slate-700">Target Field</div>
+              <div className="w-[140px] shrink-0 border-r border-slate-200 px-2 py-2 text-center dark:border-slate-700">Type</div>
+              <div className="min-w-0 flex-1 px-3 py-2">Source Value</div>
+            </div>
+            <div className="divide-y divide-slate-200 dark:divide-slate-700">
+              {optionalFields.map((field) => (
+                <MasterFieldRow
+                  key={field.target_field}
+                  targetField={field.target_field}
+                  displayName={field.display_name}
+                  description={field.description}
+                  required={false}
+                  category={field.category}
+                  fieldType={field.field_type}
+                  suggestedSourceField={field.suggested_source_field}
+                  sourceFields={data.source_fields}
+                  value={localMappings[field.target_field] ?? {
+                    target_field: field.target_field,
+                    source_field: null,
+                    mapping_type: "direct" as const,
+                    static_value: null,
+                    template_value: null,
+                    is_required: false,
+                    sort_order: 0,
+                  }}
+                  onChange={(v) => handleChange(field.target_field, v)}
+                />
+              ))}
+            </div>
           </div>
         </div>
       )}
