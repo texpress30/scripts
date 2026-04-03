@@ -101,20 +101,23 @@ def detect_format(content: bytes, filename: str) -> str:
         return "custom"
 
     # TikTok CSV: row 1 = field names (no "field_key", no "#"),
-    # row 2 = descriptions containing "Required" or "Optional"
-    lines = text.split("\n")
-    if len(lines) >= 2:
-        second_line = lines[1].strip()
-        if second_line:
-            delimiter = "\t" if "\t" in second_line else ","
-            row2_reader = csv.reader(io.StringIO(second_line), delimiter=delimiter)
-            row2_cells = next(row2_reader, [])
+    # row 2 = descriptions containing "Required" or "Optional".
+    # IMPORTANT: use csv.reader to handle quoted fields with embedded newlines,
+    # because TikTok Hotel/Flight templates have multi-line description cells.
+    try:
+        delimiter = "\t" if "\t" in first_line else ","
+        reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+        row1 = next(reader, None)
+        row2 = next(reader, None)
+        if row1 and row2:
             req_opt_count = sum(
-                1 for c in row2_cells
+                1 for c in row2
                 if re.search(r"\b(required|optional)\b", c.strip(), re.IGNORECASE)
             )
             if req_opt_count >= 3:
                 return "tiktok_csv"
+    except Exception:
+        pass  # CSV parsing failed — fall through to error
 
     raise ValueError(
         "Unrecognized template format. Supported: Meta CSV template, TikTok CSV template, "
