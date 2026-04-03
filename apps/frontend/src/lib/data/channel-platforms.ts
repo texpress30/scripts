@@ -48,6 +48,9 @@ export const CHANNEL_PLATFORMS: Platform[] = [
       { slug: "facebook_marketplace", displayName: "Facebook Marketplace", compatibleSubtypes: ["product_physical"] },
       { slug: "facebook_automotive", displayName: "Meta Automotive Ads", compatibleSubtypes: ["vehicle_offers", "vehicle_listings"] },
       { slug: "facebook_hotel", displayName: "Meta Hotel Ads", compatibleSubtypes: ["hotel_standard"] },
+      { slug: "facebook_streaming_ads", displayName: "Facebook Streaming Ads", compatibleSubtypes: ["media_multishow", "media_card"] },
+      { slug: "facebook_destination_ads", displayName: "Facebook Destination Ads", compatibleSubtypes: ["destination_standard"] },
+      { slug: "facebook_professional_services", displayName: "Facebook Professional Services", compatibleSubtypes: ["professional_services"] },
     ],
   },
   {
@@ -57,6 +60,7 @@ export const CHANNEL_PLATFORMS: Platform[] = [
     channels: [
       { slug: "tiktok_automotive_inventory", displayName: "TikTok Auto-Inventory", compatibleSubtypes: ["vehicle_listings"] },
       { slug: "tiktok", displayName: "TikTok Catalog", compatibleSubtypes: ["product_physical"] },
+      { slug: "tiktok_destination", displayName: "TikTok Destination", compatibleSubtypes: ["destination_standard"] },
     ],
   },
   {

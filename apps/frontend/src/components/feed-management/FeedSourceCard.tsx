@@ -6,7 +6,7 @@ import { MoreVertical, Eye, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import type { FeedSource, CatalogType } from "@/lib/types/feed-management";
 import { SourceTypeIcon } from "./SourceTypeIcon";
 import { FeedSourceStatusBadge } from "./FeedSourceStatusBadge";
-import { Package, Car, Home, Building, Plane, Film } from "lucide-react";
+import { Package, Car, Home, Building, Plane, Film, MapPin, Briefcase } from "lucide-react";
 
 const CATALOG_CONFIG: Record<CatalogType, { label: string; icon: typeof Package; color: string }> = {
   product: { label: "Product", icon: Package, color: "text-indigo-600 dark:text-indigo-400" },
@@ -15,6 +15,8 @@ const CATALOG_CONFIG: Record<CatalogType, { label: string; icon: typeof Package;
   hotel: { label: "Hotel", icon: Building, color: "text-amber-600 dark:text-amber-400" },
   flight: { label: "Flight", icon: Plane, color: "text-sky-600 dark:text-sky-400" },
   media: { label: "Media", icon: Film, color: "text-rose-600 dark:text-rose-400" },
+  destination: { label: "Destination", icon: MapPin, color: "text-teal-600 dark:text-teal-400" },
+  service: { label: "Service", icon: Briefcase, color: "text-violet-600 dark:text-violet-400" },
 };
 
 function CatalogTypeBadge({ type }: { type: CatalogType }) {

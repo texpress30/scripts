@@ -9,6 +9,8 @@ import {
   Building,
   Plane,
   Film,
+  MapPin,
+  Briefcase,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +80,22 @@ const CATALOG_TYPES: CatalogTypeOption[] = [
     icon: Film,
     color: "text-rose-600 dark:text-rose-400",
     fieldsPreview: "Fields: title, content_type, genre, release_date, rating, duration...",
+  },
+  {
+    type: "destination",
+    label: "Destination",
+    description: "Travel destinations & points of interest",
+    icon: MapPin,
+    color: "text-teal-600 dark:text-teal-400",
+    fieldsPreview: "Fields: name, address, city, country, latitude, longitude, category, rating...",
+  },
+  {
+    type: "service",
+    label: "Service",
+    description: "Professional services catalog",
+    icon: Briefcase,
+    color: "text-violet-600 dark:text-violet-400",
+    fieldsPreview: "Fields: title, category, price, address, phone, rating, availability...",
   },
 ];
 

@@ -88,7 +88,9 @@ export type CatalogType =
   | "home_listing"
   | "hotel"
   | "flight"
-  | "media";
+  | "media"
+  | "destination"
+  | "service";
 
 export type CatalogFieldType = "string" | "number" | "boolean" | "url" | "currency" | "date" | "enum" | "array";
 
