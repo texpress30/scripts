@@ -17,12 +17,20 @@ type GroupSummary = {
   members: string[];
 };
 
+type ConfirmedGroup = {
+  canonical_group: string;
+  aliases: string[];
+  status: string;
+};
+
 type AnalyzeResult = {
   catalog_type: string;
   model_used: string;
   total_fields: number;
   suggestions: AiSuggestion[];
   groups_summary: GroupSummary[];
+  confirmed_groups: ConfirmedGroup[];
+  self_canonical_count: number;
   ai_available: boolean;
 };
 
@@ -174,7 +182,39 @@ export function SchemaAnalyzeModal({
               Analizate <strong>{result.total_fields}</strong> campuri cu <strong>{MODEL_LABELS[result.model_used] ?? result.model_used}</strong>.
             </p>
 
-            {result.groups_summary.length === 0 ? (
+            {/* Confirmed groups (from existing aliases) */}
+            {result.confirmed_groups.length > 0 && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-900/20">
+                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle2 className="mr-1 inline h-4 w-4" />
+                  {result.confirmed_groups.length} grupuri canonice confirmate
+                </p>
+                <div className="mt-2 space-y-1">
+                  {result.confirmed_groups.map((g) => (
+                    <p key={g.canonical_group} className="text-xs text-emerald-600 dark:text-emerald-400">
+                      <code className="font-mono font-semibold">{g.canonical_group}</code>
+                      {g.aliases.length > 0 && (
+                        <span className="ml-1 text-emerald-500">
+                          ← {g.aliases.join(", ")}
+                        </span>
+                      )}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {result.self_canonical_count > 0 && (
+              <p className="text-xs text-slate-400">
+                {result.self_canonical_count} campuri self-canonical (fara echivalent pe alte platforme)
+              </p>
+            )}
+
+            {result.groups_summary.length === 0 && result.confirmed_groups.length > 0 ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400">
+                Toate campurile sunt corect grupate. Nu sunt sugestii noi.
+              </div>
+            ) : result.groups_summary.length === 0 ? (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400">
                 Fiecare camp are propriul canonic. Nu sunt grupari multi-camp detectate.
               </div>

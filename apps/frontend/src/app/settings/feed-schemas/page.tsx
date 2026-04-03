@@ -481,9 +481,19 @@ export default function FeedSchemasPage() {
                               → <code className="font-mono">{f.canonical_group}</code>
                             </span>
                           ) : f.canonical_group ? (
-                            <code className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">{f.canonical_group}</code>
+                            <span className="inline-flex items-center gap-1">
+                              <code className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">{f.canonical_group}</code>
+                              {aliasLookup.has(f.field_key) && (
+                                <span
+                                  className="cursor-help rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-medium text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400"
+                                  title={`Aliases: ${aliasLookup.get(f.field_key)!.join(", ")}`}
+                                >
+                                  🔗{aliasLookup.get(f.field_key)!.length}
+                                </span>
+                              )}
+                            </span>
                           ) : (
-                            <span className="text-xs text-slate-400">—</span>
+                            <code className="font-mono text-xs text-slate-500">{f.field_key}</code>
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{f.display_name}</td>
