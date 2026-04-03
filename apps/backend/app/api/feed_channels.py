@@ -265,6 +265,59 @@ def get_channel_products(
 
 
 # ---------------------------------------------------------------------------
+# Channel schema fields (with inheritance)
+# ---------------------------------------------------------------------------
+
+@router.get("/channels/{channel_id}/schema-fields")
+def get_channel_schema_fields(
+    channel_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Return channel-specific schema fields with inherited master mappings."""
+    _enforce_feature_flag()
+    try:
+        channel = _repo.get_by_id(channel_id)
+    except ChannelNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+
+    from app.services.feed_management.repository import FeedSourceRepository
+    from app.services.feed_management.schema_registry.repository import (
+        schema_registry_repository,
+    )
+
+    source_repo = FeedSourceRepository()
+    source = source_repo.get_by_id(channel.feed_source_id)
+    catalog_type = source.catalog_type if hasattr(source, "catalog_type") else "product"
+
+    fields = schema_registry_repository.get_channel_fields_by_channel_id(
+        channel_id=channel_id,
+        source_id=channel.feed_source_id,
+        channel_type=channel.channel_type.value,
+        catalog_type=catalog_type,
+    )
+
+    total = len(fields)
+    required_count = sum(1 for f in fields if f["is_required"])
+    optional_count = total - required_count
+    mapped_count = sum(1 for f in fields if f["mapping"] is not None)
+
+    return {
+        "channel_id": channel_id,
+        "channel_type": channel.channel_type.value,
+        "channel_name": channel.name,
+        "catalog_type": catalog_type,
+        "source_id": channel.feed_source_id,
+        "fields": fields,
+        "total": total,
+        "required_count": required_count,
+        "optional_count": optional_count,
+        "mapped_count": mapped_count,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Channel overrides
 # ---------------------------------------------------------------------------
 

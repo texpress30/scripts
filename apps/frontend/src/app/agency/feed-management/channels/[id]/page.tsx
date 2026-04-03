@@ -15,7 +15,8 @@ import {
   Play,
   Trash2,
 } from "lucide-react";
-import { useChannel, useChannelPreview } from "@/lib/hooks/useMasterFields";
+import { useChannel, useChannelPreview, useSourceFields } from "@/lib/hooks/useMasterFields";
+import { ChannelFieldsSection } from "@/components/feed-management/ChannelFieldsSection";
 
 const CHANNEL_TYPE_LABELS: Record<string, string> = {
   google_shopping: "Google Shopping",
@@ -50,6 +51,7 @@ export default function ChannelDetailPage() {
   } = useChannel(channelId);
 
   const { preview, isLoading: previewLoading, refresh: refreshPreview } = useChannelPreview(channelId);
+  const { fields: sourceFieldsList } = useSourceFields(channel?.feed_source_id ?? null);
   const [copied, setCopied] = useState(false);
   const [generateMsg, setGenerateMsg] = useState<string | null>(null);
 
@@ -222,6 +224,11 @@ export default function ChannelDetailPage() {
             Last generated: {new Date(channel.last_generated_at).toLocaleString()}
           </p>
         )}
+      </div>
+
+      {/* Channel Fields */}
+      <div className="mb-6">
+        <ChannelFieldsSection channelId={channelId} sourceFields={sourceFieldsList} />
       </div>
 
       {/* Preview */}

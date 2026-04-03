@@ -170,7 +170,7 @@ export default function MasterFieldsPage() {
           </span>
         </div>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          This is a library of universal rules for your feed. You can use them later for every channel.
+          Map source fields to canonical concepts. Each channel will automatically use its own field name.
         </p>
         <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
           Campurile sunt populate dinamic din Feed Schema Registry.{" "}
@@ -256,6 +256,9 @@ export default function MasterFieldsPage() {
                   suggestedSourceField={field.suggested_source_field}
                   sourceFields={data.source_fields}
                   channels={field.channels}
+                  aliases={"aliases" in field ? (field as any).aliases : undefined}
+                  aliasesCount={"aliases_count" in field ? (field as any).aliases_count : undefined}
+                  channelsCount={"channels_count" in field ? (field as any).channels_count : undefined}
                   value={localMappings[field.target_field] ?? {
                     target_field: field.target_field,
                     source_field: null,
@@ -299,6 +302,9 @@ export default function MasterFieldsPage() {
                   suggestedSourceField={field.suggested_source_field}
                   sourceFields={data.source_fields}
                   channels={field.channels}
+                  aliases={"aliases" in field ? (field as any).aliases : undefined}
+                  aliasesCount={"aliases_count" in field ? (field as any).aliases_count : undefined}
+                  channelsCount={"channels_count" in field ? (field as any).channels_count : undefined}
                   value={localMappings[field.target_field] ?? {
                     target_field: field.target_field,
                     source_field: null,

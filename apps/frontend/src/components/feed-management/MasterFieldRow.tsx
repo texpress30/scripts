@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import type { SourceField, ChannelBadge } from "@/lib/hooks/useMasterFields";
+import type { SourceField, ChannelBadge, FieldAlias } from "@/lib/hooks/useMasterFields";
 
 type MappingType = "direct" | "static" | "template";
 
@@ -26,6 +26,9 @@ type Props = {
   suggestedSourceField: string | null;
   sourceFields: SourceField[];
   channels?: ChannelBadge[];
+  aliases?: FieldAlias[];
+  aliasesCount?: number;
+  channelsCount?: number;
   value: MasterFieldRowValue;
   onChange: (value: MasterFieldRowValue) => void;
 };
@@ -56,6 +59,9 @@ export function MasterFieldRow({
   suggestedSourceField,
   sourceFields,
   channels,
+  aliases,
+  aliasesCount,
+  channelsCount,
   value,
   onChange,
 }: Props) {
@@ -92,7 +98,29 @@ export function MasterFieldRow({
             </span>
           )}
         </div>
-        {channels && channels.length > 0 && (
+        {/* Alias info */}
+        {aliases && aliases.length > 0 && (
+          <div className="pl-4 text-[10px] text-slate-400 dark:text-slate-500">
+            <span className="text-slate-500 dark:text-slate-400">&rarr;</span>{" "}
+            {aliases.map((a, i) => (
+              <span key={a.alias_key}>
+                {a.alias_key}
+                {a.platform_hint ? ` (${a.platform_hint})` : ""}
+                {i < aliases.length - 1 ? ", " : ""}
+              </span>
+            ))}
+          </div>
+        )}
+        {/* Channel count badge */}
+        {(channelsCount ?? 0) > 0 && (
+          <div className="pl-4">
+            <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+              Used by {channelsCount} channel{channelsCount !== 1 ? "s" : ""}
+            </span>
+          </div>
+        )}
+        {/* Channel badges */}
+        {channels && channels.length > 0 && !(aliases && aliases.length > 0) && (
           <div className="flex flex-wrap gap-1 pl-4">
             {channels.map((ch) => (
               <span
