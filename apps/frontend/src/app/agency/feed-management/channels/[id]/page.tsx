@@ -17,14 +17,7 @@ import {
 } from "lucide-react";
 import { useChannel, useChannelPreview, useSourceFields } from "@/lib/hooks/useMasterFields";
 import { ChannelFieldsSection } from "@/components/feed-management/ChannelFieldsSection";
-
-const CHANNEL_TYPE_LABELS: Record<string, string> = {
-  google_shopping: "Google Shopping",
-  facebook_product_ads: "Facebook Product Ads",
-  meta_catalog: "Meta Catalog",
-  tiktok_catalog: "TikTok Catalog",
-  custom: "Custom",
-};
+import { CHANNEL_DISPLAY_NAMES, CHANNEL_PLATFORM_MAP, getPlatformBadgeColor } from "@/lib/data/channel-platforms";
 
 const CHANNEL_SUBTYPE_LABELS: Record<string, string> = {
   google_vehicle_ads_v3: "Vehicle Listings",
@@ -136,8 +129,16 @@ export default function ChannelDetailPage() {
           <div>
             <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{channel.name}</h1>
             <div className="mt-1 flex items-center gap-2">
+              {(() => {
+                const platformInfo = CHANNEL_PLATFORM_MAP[channel.channel_type];
+                return platformInfo ? (
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${getPlatformBadgeColor(platformInfo.platform)}`}>
+                    {platformInfo.platformDisplayName}
+                  </span>
+                ) : null;
+              })()}
               <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400">
-                {CHANNEL_TYPE_LABELS[channel.channel_type] ?? channel.channel_type}
+                {CHANNEL_DISPLAY_NAMES[channel.channel_type] ?? channel.channel_type}
               </span>
               {CHANNEL_SUBTYPE_LABELS[channel.channel_type] && (
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-400">

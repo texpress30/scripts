@@ -7,14 +7,7 @@ import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { useChannels, type FeedChannel } from "@/lib/hooks/useMasterFields";
 import { AddChannelModal } from "@/components/feed-management/AddChannelModal";
-
-const CHANNEL_TYPE_LABELS: Record<string, string> = {
-  google_shopping: "Google Shopping",
-  facebook_product_ads: "Facebook Product Ads",
-  meta_catalog: "Meta Catalog",
-  tiktok_catalog: "TikTok Catalog",
-  custom: "Custom",
-};
+import { CHANNEL_DISPLAY_NAMES, CHANNEL_PLATFORM_MAP, getPlatformBadgeColor } from "@/lib/data/channel-platforms";
 
 const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; color: string; label: string }> = {
   active: { icon: CheckCircle2, color: "text-emerald-600 dark:text-emerald-400", label: "Active" },
@@ -63,6 +56,7 @@ function SourceChannelsSection({ sourceId, sourceName }: { sourceId: string; sou
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50">
               <th className="px-4 py-2.5 font-medium text-slate-600 dark:text-slate-400">Name</th>
+              <th className="px-4 py-2.5 font-medium text-slate-600 dark:text-slate-400">Platform</th>
               <th className="px-4 py-2.5 font-medium text-slate-600 dark:text-slate-400">Type</th>
               <th className="px-4 py-2.5 font-medium text-slate-600 dark:text-slate-400">Products</th>
               <th className="px-4 py-2.5 font-medium text-slate-600 dark:text-slate-400">Status</th>
@@ -73,10 +67,20 @@ function SourceChannelsSection({ sourceId, sourceName }: { sourceId: string; sou
             {channels.map((ch) => {
               const statusCfg = STATUS_CONFIG[ch.status] ?? STATUS_CONFIG.draft;
               const StatusIcon = statusCfg.icon;
+              const platformInfo = CHANNEL_PLATFORM_MAP[ch.channel_type];
               return (
                 <tr key={ch.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
                   <td className="px-4 py-2.5 font-medium text-slate-900 dark:text-slate-100">{ch.name}</td>
-                  <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">{CHANNEL_TYPE_LABELS[ch.channel_type] ?? ch.channel_type}</td>
+                  <td className="px-4 py-2.5">
+                    {platformInfo ? (
+                      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${getPlatformBadgeColor(platformInfo.platform)}`}>
+                        {platformInfo.platformDisplayName}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">{CHANNEL_DISPLAY_NAMES[ch.channel_type] ?? ch.channel_type}</td>
                   <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">{ch.included_products}</td>
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex items-center gap-1 ${statusCfg.color}`}>
