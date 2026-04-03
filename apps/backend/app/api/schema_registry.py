@@ -81,6 +81,7 @@ async def import_schema_csv(
     file: UploadFile = File(...),
     template_format: str = Form(default="auto"),
     confirmed_aliases: str = Form(default=""),
+    subtype_slug: str = Form(default=""),
     user: AuthUser = Depends(get_current_user),
 ) -> SchemaImportResponse:
     """Import a template file with field specifications for a channel + catalog type.
@@ -157,6 +158,7 @@ async def import_schema_csv(
             channel_slug=channel_slug,
             catalog_type=catalog_type,
             template_format=template_format.strip(),
+            subtype_slug=subtype_slug.strip() or None,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -291,6 +293,97 @@ async def preview_schema_import(
 
 
 # ---------------------------------------------------------------------------
+# Catalog sub-types endpoints
+# ---------------------------------------------------------------------------
+
+class CreateSubtypeRequest(BaseModel):
+    catalog_type: str
+    subtype_slug: str
+    subtype_name: str
+    description: str | None = None
+    icon_hint: str | None = None
+    sort_order: int = 0
+
+
+@router.get("/feed-management/schemas/subtypes")
+def list_subtypes(
+    catalog_type: str = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Return catalog sub-types with channel and field counts."""
+    _enforce_feature_flag()
+
+    try:
+        validate_catalog_type(catalog_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+        ) from exc
+
+    subtypes = schema_registry_repository.list_subtypes(catalog_type)
+    return {
+        "catalog_type": catalog_type,
+        "subtypes": subtypes,
+    }
+
+
+@router.post(
+    "/feed-management/schemas/subtypes",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_subtype(
+    payload: CreateSubtypeRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Create a new catalog sub-type."""
+    _enforce_feature_flag()
+
+    try:
+        validate_catalog_type(payload.catalog_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+        ) from exc
+
+    try:
+        subtype = schema_registry_repository.create_subtype(
+            catalog_type=payload.catalog_type,
+            subtype_slug=payload.subtype_slug,
+            subtype_name=payload.subtype_name,
+            description=payload.description,
+            icon_hint=payload.icon_hint,
+            sort_order=payload.sort_order,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+        ) from exc
+
+    return subtype
+
+
+@router.delete(
+    "/feed-management/schemas/subtypes/{subtype_id}",
+    status_code=status.HTTP_200_OK,
+)
+def delete_subtype(
+    subtype_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Delete a catalog sub-type (only if no channel fields reference it)."""
+    _enforce_feature_flag()
+
+    try:
+        schema_registry_repository.delete_subtype(subtype_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc),
+        ) from exc
+
+    return {"status": "ok", "id": subtype_id}
+
+
+# ---------------------------------------------------------------------------
 # Retrieval endpoints
 # ---------------------------------------------------------------------------
 
@@ -298,12 +391,15 @@ async def preview_schema_import(
 def list_schema_fields(
     catalog_type: str = Query(...),
     channel_slug: str | None = Query(default=None),
+    subtype_slug: str | None = Query(default=None),
     user: AuthUser = Depends(get_current_user),
 ) -> dict:
-    """Return schema fields for a catalog type, optionally filtered by channel.
+    """Return schema fields for a catalog type, optionally filtered by channel or subtype.
 
     When *channel_slug* is provided only fields linked to that channel are
     returned and ``is_required`` reflects that specific channel's requirement.
+    When *subtype_slug* is provided, only fields belonging to channels with that
+    subtype are returned.
     Otherwise the full superset is returned with ``is_required`` derived from
     the MAX across all channels.
     """
@@ -318,13 +414,16 @@ def list_schema_fields(
 
     if channel_slug:
         channel_slug = normalize_slug(channel_slug)
-    fields = schema_registry_repository.list_fields(catalog_type, channel_slug)
+    fields = schema_registry_repository.list_fields(
+        catalog_type, channel_slug, subtype_slug=subtype_slug,
+    )
     required_count = sum(1 for f in fields if f.get("is_required"))
     optional_count = len(fields) - required_count
 
     return {
         "catalog_type": catalog_type,
         "channel_slug": channel_slug,
+        "subtype_slug": subtype_slug,
         "total_fields": len(fields),
         "required_count": required_count,
         "optional_count": optional_count,
@@ -337,7 +436,7 @@ def list_schema_channels(
     catalog_type: str = Query(...),
     user: AuthUser = Depends(get_current_user),
 ) -> dict:
-    """Return channels that have field definitions for a catalog type."""
+    """Return channels that have field definitions for a catalog type, with subtype info."""
     _enforce_feature_flag()
 
     try:
@@ -348,6 +447,15 @@ def list_schema_channels(
         ) from exc
 
     channels = schema_registry_repository.list_channels(catalog_type)
+
+    # Enrich with subtype info
+    subtype_map = schema_registry_repository.get_channel_subtype_map(catalog_type)
+    for ch in channels:
+        slug = str(ch.get("channel_slug", ""))
+        st = subtype_map.get(slug)
+        ch["subtype_slug"] = st["subtype_slug"] if st else None
+        ch["subtype_name"] = st["subtype_name"] if st else None
+
     return {
         "catalog_type": catalog_type,
         "channels": channels,

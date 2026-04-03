@@ -56,6 +56,7 @@ def parse_and_import(
     channel_slug: str,
     catalog_type: str,
     template_format: str = "auto",
+    subtype_slug: str | None = None,
 ) -> dict[str, Any]:
     """Parse a template file (any supported format), upsert fields, return summary."""
 
@@ -77,6 +78,7 @@ def parse_and_import(
         fields=fields,
         channel_slug=channel_slug,
         catalog_type=catalog_type,
+        subtype_slug=subtype_slug,
     )
 
     result["format_detected"] = detected_format
@@ -151,6 +153,7 @@ def _upsert_fields(
     fields: list[FieldSpec],
     channel_slug: str,
     catalog_type: str,
+    subtype_slug: str | None = None,
 ) -> dict[str, Any]:
     """Upsert a list of parsed field specs into the schema registry."""
 
@@ -203,6 +206,7 @@ def _upsert_fields(
             default_value=spec.get("default_value"),
             sort_order=sort_idx,
             source_description=spec.get("description"),
+            subtype_slug=subtype_slug,
         )
 
         imported_keys.add(field_key)

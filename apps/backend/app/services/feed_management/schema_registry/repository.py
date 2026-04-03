@@ -96,6 +96,7 @@ class SchemaRegistryRepository:
         default_value: str | None,
         sort_order: int,
         source_description: str | None = None,
+        subtype_slug: str | None = None,
     ) -> None:
         with _connect() as conn:
             with conn.cursor() as cur:
@@ -104,8 +105,8 @@ class SchemaRegistryRepository:
                     INSERT INTO feed_schema_channel_fields
                         (schema_field_id, channel_slug, is_required,
                          channel_field_name, default_value, sort_order,
-                         source_description, imported_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                         source_description, subtype_slug, imported_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (schema_field_id, channel_slug) DO UPDATE SET
                         is_required        = EXCLUDED.is_required,
                         channel_field_name = EXCLUDED.channel_field_name,
@@ -116,11 +117,12 @@ class SchemaRegistryRepository:
                             THEN EXCLUDED.source_description
                             ELSE feed_schema_channel_fields.source_description
                         END,
+                        subtype_slug       = COALESCE(EXCLUDED.subtype_slug, feed_schema_channel_fields.subtype_slug),
                         imported_at        = NOW()
                     """,
                     (schema_field_id, channel_slug, is_required,
                      channel_field_name, default_value, sort_order,
-                     source_description),
+                     source_description, subtype_slug),
                 )
             conn.commit()
 
@@ -209,6 +211,7 @@ class SchemaRegistryRepository:
         catalog_type: str,
         channel_slug: str | None = None,
         canonical_only: bool = False,
+        subtype_slug: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return schema fields with aggregated channel info in a single query.
 
@@ -220,10 +223,16 @@ class SchemaRegistryRepository:
         When *canonical_only* is True, only canonical fields are returned (where
         canonical_group = field_key OR canonical_group IS NULL).  Alias counts
         and all_channels (including channels via aliases) are aggregated.
+
+        When *subtype_slug* is provided, only fields linked to channels with
+        that subtype_slug are returned.
         """
         canonical_filter = ""
         if canonical_only:
             canonical_filter = " AND (f.canonical_group = f.field_key OR f.canonical_group IS NULL)"
+        subtype_filter = ""
+        if subtype_slug:
+            subtype_filter = " AND cf.subtype_slug = %s"
 
         if channel_slug:
             sql = f"""
@@ -244,11 +253,23 @@ class SchemaRegistryRepository:
                     ) AS channels
                 FROM feed_schema_fields f
                 JOIN feed_schema_channel_fields cf ON cf.schema_field_id = f.id
-                WHERE f.catalog_type = %s AND cf.channel_slug = %s{canonical_filter}
+                WHERE f.catalog_type = %s AND cf.channel_slug = %s{canonical_filter}{subtype_filter}
                 ORDER BY cf.is_required DESC, f.is_system DESC, cf.sort_order ASC
             """
-            params: tuple[Any, ...] = (catalog_type, channel_slug)
+            params_list: list[Any] = [catalog_type, channel_slug]
+            if subtype_slug:
+                params_list.append(subtype_slug)
+            params: tuple[Any, ...] = tuple(params_list)
         else:
+            # When subtype_slug is given without channel_slug, filter via a subquery
+            subtype_join = ""
+            if subtype_slug:
+                subtype_join = (
+                    " AND f.id IN ("
+                    "   SELECT cf2.schema_field_id FROM feed_schema_channel_fields cf2"
+                    "   WHERE cf2.subtype_slug = %s"
+                    " )"
+                )
             sql = f"""
                 SELECT
                     f.id, f.field_key, f.display_name, f.description,
@@ -270,7 +291,7 @@ class SchemaRegistryRepository:
                     ) AS channels
                 FROM feed_schema_fields f
                 LEFT JOIN feed_schema_channel_fields cf ON cf.schema_field_id = f.id
-                WHERE f.catalog_type = %s{canonical_filter}
+                WHERE f.catalog_type = %s{canonical_filter}{subtype_join}
                 GROUP BY f.id, f.field_key, f.display_name, f.description,
                          f.data_type, f.allowed_values, f.format_pattern,
                          f.example_value, f.is_system,
@@ -279,7 +300,10 @@ class SchemaRegistryRepository:
                          f.is_system DESC,
                          COALESCE(MIN(cf.sort_order), 0) ASC
             """
-            params = (catalog_type,)
+            params_list2: list[Any] = [catalog_type]
+            if subtype_slug:
+                params_list2.append(subtype_slug)
+            params = tuple(params_list2)
 
         with _connect() as conn:
             with conn.cursor() as cur:
@@ -824,6 +848,137 @@ class SchemaRegistryRepository:
 
             conn.commit()
         return True
+
+    # ------------------------------------------------------------------
+    # Catalog sub-types
+    # ------------------------------------------------------------------
+
+    def list_subtypes(
+        self,
+        catalog_type: str,
+    ) -> list[dict[str, Any]]:
+        """Return sub-types for a catalog type with channel and field counts."""
+        sql = """
+            SELECT
+                st.id, st.catalog_type, st.subtype_slug, st.subtype_name,
+                st.description, st.icon_hint, st.sort_order, st.created_at,
+                COALESCE(ch_counts.channels_count, 0) AS channels_count,
+                COALESCE(ch_counts.fields_count, 0) AS fields_count,
+                COALESCE(ch_counts.channel_slugs, ARRAY[]::text[]) AS channels
+            FROM feed_catalog_subtypes st
+            LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(DISTINCT cf.channel_slug) AS channels_count,
+                    COUNT(DISTINCT cf.schema_field_id) AS fields_count,
+                    ARRAY_AGG(DISTINCT cf.channel_slug) AS channel_slugs
+                FROM feed_schema_channel_fields cf
+                WHERE cf.subtype_slug = st.subtype_slug
+            ) ch_counts ON true
+            WHERE st.catalog_type = %s
+            ORDER BY st.sort_order, st.subtype_name
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (catalog_type,))
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(zip(cols, row))
+            d["id"] = str(d["id"])
+            # Convert psycopg array to list
+            if d.get("channels") and not isinstance(d["channels"], list):
+                d["channels"] = list(d["channels"])
+            results.append(d)
+        return results
+
+    def create_subtype(
+        self,
+        *,
+        catalog_type: str,
+        subtype_slug: str,
+        subtype_name: str,
+        description: str | None = None,
+        icon_hint: str | None = None,
+        sort_order: int = 0,
+    ) -> dict[str, Any]:
+        """Create a new catalog sub-type. Returns the created row."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO feed_catalog_subtypes
+                        (catalog_type, subtype_slug, subtype_name, description, icon_hint, sort_order)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id, catalog_type, subtype_slug, subtype_name,
+                              description, icon_hint, sort_order, created_at
+                    """,
+                    (catalog_type, subtype_slug, subtype_name, description, icon_hint, sort_order),
+                )
+                cols = [desc[0] for desc in cur.description]
+                row = cur.fetchone()
+            conn.commit()
+        if row is None:
+            raise RuntimeError("Failed to create catalog subtype")
+        d = dict(zip(cols, row))
+        d["id"] = str(d["id"])
+        return d
+
+    def delete_subtype(self, subtype_id: str) -> None:
+        """Delete a sub-type only if no channel fields reference it."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                # Check for linked channel fields
+                cur.execute(
+                    """
+                    SELECT st.subtype_slug FROM feed_catalog_subtypes st
+                    WHERE st.id = %s
+                    """,
+                    (subtype_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError(f"Subtype {subtype_id} not found")
+                slug = row[0]
+
+                cur.execute(
+                    "SELECT count(*) FROM feed_schema_channel_fields WHERE subtype_slug = %s",
+                    (slug,),
+                )
+                count = cur.fetchone()[0]
+                if count > 0:
+                    raise ValueError(
+                        f"Cannot delete subtype '{slug}': {count} channel field(s) still reference it"
+                    )
+
+                cur.execute(
+                    "DELETE FROM feed_catalog_subtypes WHERE id = %s",
+                    (subtype_id,),
+                )
+            conn.commit()
+
+    def get_channel_subtype_map(self, catalog_type: str) -> dict[str, dict[str, str]]:
+        """Return {channel_slug: {subtype_slug, subtype_name}} for a catalog type."""
+        sql = """
+            SELECT DISTINCT cf.channel_slug, cf.subtype_slug, st.subtype_name
+            FROM feed_schema_channel_fields cf
+            LEFT JOIN feed_catalog_subtypes st
+                ON st.catalog_type = %s AND st.subtype_slug = cf.subtype_slug
+            JOIN feed_schema_fields f ON f.id = cf.schema_field_id
+            WHERE f.catalog_type = %s AND cf.subtype_slug IS NOT NULL
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (catalog_type, catalog_type))
+                rows = cur.fetchall()
+        result: dict[str, dict[str, str]] = {}
+        for channel_slug, subtype_slug, subtype_name in rows:
+            result[str(channel_slug)] = {
+                "subtype_slug": str(subtype_slug),
+                "subtype_name": str(subtype_name) if subtype_name else str(subtype_slug),
+            }
+        return result
 
 
 schema_registry_repository = SchemaRegistryRepository()
