@@ -84,6 +84,7 @@ export const AGENCY_SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/settings/audit-logs", label: "Audit Logs", moduleKey: "settings_audit_logs" },
   { href: "/settings/ai-agents", label: "Ai Agents", moduleKey: "settings_ai_agents" },
   { href: "/settings/storage", label: "Media Storage Usage", moduleKey: "settings_media_storage_usage" },
+  { href: "/settings/feed-schemas", label: "Feed Schemas", moduleKey: "settings_feed_schemas" },
 ] as const;
 
 export function getNavItems(pathname: string): NavItem[] {
