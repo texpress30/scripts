@@ -26,6 +26,13 @@ const CHANNEL_TYPE_LABELS: Record<string, string> = {
   custom: "Custom",
 };
 
+const CHANNEL_SUBTYPE_LABELS: Record<string, string> = {
+  google_vehicle_ads_v3: "Vehicle Listings",
+  google_vehicle_listings: "Vehicle Listings",
+  facebook_product_ads: "Vehicle Offers",
+  tiktok_automotive_inventory: "Vehicle Listings",
+};
+
 const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; bg: string; text: string; label: string }> = {
   active: { icon: CheckCircle2, bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-400", label: "Active" },
   draft: { icon: Clock, bg: "bg-slate-100 dark:bg-slate-800", text: "text-slate-600 dark:text-slate-400", label: "Draft" },
@@ -132,6 +139,11 @@ export default function ChannelDetailPage() {
               <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400">
                 {CHANNEL_TYPE_LABELS[channel.channel_type] ?? channel.channel_type}
               </span>
+              {CHANNEL_SUBTYPE_LABELS[channel.channel_type] && (
+                <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-400">
+                  {CHANNEL_SUBTYPE_LABELS[channel.channel_type]}
+                </span>
+              )}
               <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${statusCfg.bg} ${statusCfg.text}`}>
                 <StatusIcon className="h-3 w-3" />
                 {statusCfg.label}

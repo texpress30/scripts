@@ -50,11 +50,30 @@ type ChannelSummary = {
   required_count: number;
   optional_count: number;
   last_imported_at: string | null;
+  subtype_slug: string | null;
+  subtype_name: string | null;
 };
 
 type ChannelsResponse = {
   catalog_type: string;
   channels: ChannelSummary[];
+};
+
+type SubtypeInfo = {
+  id: string;
+  subtype_slug: string;
+  subtype_name: string;
+  description: string | null;
+  icon_hint: string | null;
+  sort_order: number;
+  channels_count: number;
+  fields_count: number;
+  channels: string[];
+};
+
+type SubtypesResponse = {
+  catalog_type: string;
+  subtypes: SubtypeInfo[];
 };
 
 type FieldAlias = {
@@ -137,13 +156,18 @@ export default function FeedSchemasPage() {
   const [newAliasKey, setNewAliasKey] = useState("");
   const [newAliasPlatform, setNewAliasPlatform] = useState("");
   const [addingAlias, setAddingAlias] = useState(false);
+  const [subtypes, setSubtypes] = useState<SubtypeInfo[]>([]);
+  const [loadingSubtypes, setLoadingSubtypes] = useState(true);
+  const [subtypeFilter, setSubtypeFilter] = useState<string>("");
+  const [importSubtypeSlug, setImportSubtypeSlug] = useState<string | null>(null);
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiModel, setAiModel] = useState("claude-sonnet-4-20250514");
   const [aiModels, setAiModels] = useState<string[]>(["claude-sonnet-4-20250514"]);
 
-  const handleOpenImport = useCallback((slug: string | null) => {
+  const handleOpenImport = useCallback((slug: string | null, subtypeSlug?: string | null) => {
     setImportChannelSlug(slug);
+    setImportSubtypeSlug(subtypeSlug ?? null);
     setImportModalOpen(true);
   }, []);
 
@@ -197,6 +221,28 @@ export default function FeedSchemasPage() {
         setChannels([]);
       } finally {
         if (!ignore) setLoadingChannels(false);
+      }
+    }
+    void load();
+    return () => { ignore = true; };
+  }, [catalogType, refreshKey]);
+
+  // Fetch subtypes
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      setLoadingSubtypes(true);
+      try {
+        const res = await apiRequest<SubtypesResponse>(
+          `/feed-management/schemas/subtypes?catalog_type=${catalogType}`,
+        );
+        if (ignore) return;
+        setSubtypes(res.subtypes);
+      } catch {
+        if (ignore) return;
+        setSubtypes([]);
+      } finally {
+        if (!ignore) setLoadingSubtypes(false);
       }
     }
     void load();
@@ -357,81 +403,188 @@ export default function FeedSchemasPage() {
             </div>
           </div>
 
-          {/* Channels table */}
-          <section className="wm-card shadow-sm">
-            <header className="border-b border-slate-100 p-4 dark:border-slate-700">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Canale</h2>
-              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-                Canalele care au specificatii de campuri definite pentru {catalogLabel}.
-              </p>
-            </header>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
-                  <tr>
-                    <th className="px-4 py-2.5">Canal</th>
-                    <th className="px-4 py-2.5 text-center">Campuri</th>
-                    <th className="px-4 py-2.5 text-center">Obligatorii</th>
-                    <th className="px-4 py-2.5 text-center">Optionale</th>
-                    <th className="px-4 py-2.5">Ultimul Import</th>
-                    <th className="px-4 py-2.5">Actiuni</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loadingChannels ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                        <Loader2 className="mx-auto h-5 w-5 animate-spin" />
-                      </td>
-                    </tr>
-                  ) : channels.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
-                        Nu exista scheme de canale importate. Importa un CSV pentru a incepe.
-                      </td>
-                    </tr>
-                  ) : (
-                    channels.map((ch) => (
-                      <tr key={ch.channel_slug} className="border-t border-slate-100 dark:border-slate-700">
-                        <td className="px-4 py-2.5 font-medium text-slate-900 dark:text-slate-100">
-                          {formatChannelSlug(ch.channel_slug)}
-                          <span className="ml-2 font-mono text-[10px] text-slate-400">{ch.channel_slug}</span>
-                        </td>
-                        <td className="px-4 py-2.5 text-center text-slate-700 dark:text-slate-300">{ch.fields_count}</td>
-                        <td className="px-4 py-2.5 text-center">
-                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-400">
-                            {ch.required_count}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400">{ch.optional_count}</td>
-                        <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{timeAgo(ch.last_imported_at)}</td>
-                        <td className="px-4 py-2.5">
+          {/* Channels grouped by sub-type */}
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Canale</h2>
+                <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                  Canalele care au specificatii de campuri definite pentru {catalogLabel}, grupate pe sub-type.
+                </p>
+              </div>
+            </div>
+
+            {loadingChannels || loadingSubtypes ? (
+              <div className="wm-card flex items-center justify-center py-8 shadow-sm">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Render one card per sub-type */}
+                {subtypes.map((st) => {
+                  const stChannels = channels.filter((ch) => ch.subtype_slug === st.subtype_slug);
+                  return (
+                    <div key={st.subtype_slug} className="wm-card shadow-sm">
+                      <header className="border-b border-slate-100 p-4 dark:border-slate-700">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{st.icon_hint === "car" ? "🚗" : st.icon_hint === "money" ? "💰" : st.icon_hint === "tag" ? "🏷️" : st.icon_hint === "box" ? "📦" : st.icon_hint === "download" ? "⬇️" : st.icon_hint === "building" ? "🏨" : st.icon_hint === "plane" ? "✈️" : st.icon_hint === "home" ? "🏠" : st.icon_hint === "tv" ? "📺" : st.icon_hint === "film" ? "🎬" : "📋"}</span>
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{st.subtype_name}</h3>
+                        </div>
+                        {st.description && (
+                          <p className="mt-0.5 pl-7 text-xs text-slate-500 dark:text-slate-400">{st.description}</p>
+                        )}
+                      </header>
+                      {stChannels.length === 0 ? (
+                        <div className="flex flex-col items-center py-6 text-center">
+                          <p className="text-sm text-slate-400 dark:text-slate-500">Niciun canal importat inca</p>
                           <button
                             type="button"
-                            onClick={() => handleOpenImport(ch.channel_slug)}
-                            className="wm-btn-secondary inline-flex items-center gap-1 text-xs"
+                            onClick={() => handleOpenImport(null, st.subtype_slug)}
+                            className="wm-btn-secondary mt-2 inline-flex items-center gap-1 text-xs"
                           >
-                            <Upload className="h-3 w-3" />
-                            {ch.last_imported_at ? "Re-import" : "Import CSV"}
+                            <Plus className="h-3 w-3" />
+                            Import Canal Nou
                           </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-sm">
+                            <thead className="bg-slate-50 text-left text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
+                              <tr>
+                                <th className="px-4 py-2">Canal</th>
+                                <th className="px-4 py-2 text-center">Campuri</th>
+                                <th className="px-4 py-2 text-center">Obl</th>
+                                <th className="px-4 py-2 text-center">Opt</th>
+                                <th className="px-4 py-2">Ultimul Import</th>
+                                <th className="px-4 py-2">Actiuni</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stChannels.map((ch) => (
+                                <tr key={ch.channel_slug} className="border-t border-slate-100 dark:border-slate-700">
+                                  <td className="px-4 py-2 font-medium text-slate-900 dark:text-slate-100">
+                                    {formatChannelSlug(ch.channel_slug)}
+                                    <span className="ml-2 font-mono text-[10px] text-slate-400">{ch.channel_slug}</span>
+                                  </td>
+                                  <td className="px-4 py-2 text-center text-slate-700 dark:text-slate-300">{ch.fields_count}</td>
+                                  <td className="px-4 py-2 text-center">
+                                    <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-400">{ch.required_count}</span>
+                                  </td>
+                                  <td className="px-4 py-2 text-center text-slate-500 dark:text-slate-400">{ch.optional_count}</td>
+                                  <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{timeAgo(ch.last_imported_at)}</td>
+                                  <td className="px-4 py-2">
+                                    <button type="button" onClick={() => handleOpenImport(ch.channel_slug, st.subtype_slug)} className="wm-btn-secondary inline-flex items-center gap-1 text-xs">
+                                      <Upload className="h-3 w-3" />
+                                      {ch.last_imported_at ? "Re-import" : "Import CSV"}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Channels without sub-type (legacy) */}
+                {(() => {
+                  const subtypeSlugs = new Set(subtypes.map((s) => s.subtype_slug));
+                  const legacyChannels = channels.filter((ch) => !ch.subtype_slug || !subtypeSlugs.has(ch.subtype_slug));
+                  if (legacyChannels.length === 0 && subtypes.length > 0) return null;
+                  if (legacyChannels.length === 0 && subtypes.length === 0 && channels.length === 0) {
+                    return (
+                      <div className="wm-card flex flex-col items-center py-8 text-center shadow-sm">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          Nu exista scheme de canale importate. Importa un CSV pentru a incepe.
+                        </p>
+                      </div>
+                    );
+                  }
+                  if (legacyChannels.length === 0) return null;
+                  return (
+                    <div className="wm-card shadow-sm">
+                      <header className="border-b border-slate-100 p-4 dark:border-slate-700">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">❓</span>
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Fara sub-type</h3>
+                        </div>
+                        <p className="mt-0.5 pl-7 text-xs text-slate-500 dark:text-slate-400">
+                          Aceste canale nu au sub-type setat. Poti seta sub-type-ul la re-import.
+                        </p>
+                      </header>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
+                            <tr>
+                              <th className="px-4 py-2">Canal</th>
+                              <th className="px-4 py-2 text-center">Campuri</th>
+                              <th className="px-4 py-2 text-center">Obl</th>
+                              <th className="px-4 py-2 text-center">Opt</th>
+                              <th className="px-4 py-2">Ultimul Import</th>
+                              <th className="px-4 py-2">Actiuni</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {legacyChannels.map((ch) => (
+                              <tr key={ch.channel_slug} className="border-t border-slate-100 dark:border-slate-700">
+                                <td className="px-4 py-2 font-medium text-slate-900 dark:text-slate-100">
+                                  {formatChannelSlug(ch.channel_slug)}
+                                  <span className="ml-2 font-mono text-[10px] text-slate-400">{ch.channel_slug}</span>
+                                </td>
+                                <td className="px-4 py-2 text-center text-slate-700 dark:text-slate-300">{ch.fields_count}</td>
+                                <td className="px-4 py-2 text-center">
+                                  <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-400">{ch.required_count}</span>
+                                </td>
+                                <td className="px-4 py-2 text-center text-slate-500 dark:text-slate-400">{ch.optional_count}</td>
+                                <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{timeAgo(ch.last_imported_at)}</td>
+                                <td className="px-4 py-2">
+                                  <button type="button" onClick={() => handleOpenImport(ch.channel_slug)} className="wm-btn-secondary inline-flex items-center gap-1 text-xs">
+                                    <Upload className="h-3 w-3" />
+                                    {ch.last_imported_at ? "Re-import" : "Import CSV"}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </section>
 
           {/* All fields table */}
           <section className="wm-card shadow-sm">
             <header className="border-b border-slate-100 p-4 dark:border-slate-700">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                Toate Campurile — {catalogLabel}
-              </h2>
-              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-                Superset-ul de campuri disponibile din schema registry.
-              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                    Toate Campurile — {catalogLabel}
+                  </h2>
+                  <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                    Superset-ul de campuri disponibile din schema registry.
+                  </p>
+                </div>
+                {subtypes.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Filtru sub-type:</label>
+                    <select
+                      value={subtypeFilter}
+                      onChange={(e) => setSubtypeFilter(e.target.value)}
+                      className="wm-input h-8 w-auto text-xs"
+                    >
+                      <option value="">Toate</option>
+                      {subtypes.map((st) => (
+                        <option key={st.subtype_slug} value={st.subtype_slug}>{st.subtype_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
             </header>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
@@ -459,7 +612,12 @@ export default function FeedSchemasPage() {
                       </td>
                     </tr>
                   ) : (
-                    fields.map((f) => (
+                    fields.filter((f) => {
+                      if (!subtypeFilter) return true;
+                      // Show fields that belong to channels in the selected subtype
+                      const stChannelSlugs = new Set(channels.filter((ch) => ch.subtype_slug === subtypeFilter).map((ch) => ch.channel_slug));
+                      return f.channels.some((ch) => stChannelSlugs.has(ch.channel_slug));
+                    }).map((f) => (
                       <tr key={f.field_key} className="border-t border-slate-100 dark:border-slate-700">
                         <td className="px-4 py-2.5">
                           <code className="font-mono text-xs text-slate-800 dark:text-slate-200">{f.field_key}</code>
@@ -660,6 +818,7 @@ export default function FeedSchemasPage() {
             onClose={() => setImportModalOpen(false)}
             catalogType={catalogType}
             channelSlug={importChannelSlug}
+            subtypeSlug={importSubtypeSlug}
             onImportSuccess={handleImportSuccess}
           />
         </main>

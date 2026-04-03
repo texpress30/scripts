@@ -44,11 +44,19 @@ type PreviewResult = {
   ai_suggestions_available: boolean;
 };
 
+type SubtypeOption = {
+  id: string;
+  subtype_slug: string;
+  subtype_name: string;
+  description: string | null;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
   catalogType: string;
   channelSlug: string | null;
+  subtypeSlug?: string | null;
   onImportSuccess: () => void;
 };
 
@@ -82,11 +90,15 @@ export function SchemaImportModal({
   onClose,
   catalogType,
   channelSlug,
+  subtypeSlug: initialSubtypeSlug,
   onImportSuccess,
 }: Props) {
   const [slug, setSlug] = useState(channelSlug ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [templateFormat, setTemplateFormat] = useState("auto");
+  const [selectedSubtype, setSelectedSubtype] = useState(initialSubtypeSlug ?? "");
+  const [subtypeOptions, setSubtypeOptions] = useState<SubtypeOption[]>([]);
+  const [loadingSubtypes, setLoadingSubtypes] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
@@ -102,6 +114,7 @@ export function SchemaImportModal({
       setSlug(channelSlug ?? "");
       setFile(null);
       setTemplateFormat("auto");
+      setSelectedSubtype(initialSubtypeSlug ?? "");
       setResult(null);
       setPreview(null);
       setAcceptedAliases({});
@@ -109,8 +122,22 @@ export function SchemaImportModal({
       setLoading(false);
       setStep("form");
       setDragOver(false);
+
+      // Fetch subtypes for this catalog type
+      setLoadingSubtypes(true);
+      const token = typeof window !== "undefined" ? localStorage.getItem("mcc_token") : null;
+      fetch(`/api/feed-management/schemas/subtypes?catalog_type=${catalogType}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => {
+          if (data?.subtypes) setSubtypeOptions(data.subtypes);
+          else setSubtypeOptions([]);
+        })
+        .catch(() => setSubtypeOptions([]))
+        .finally(() => setLoadingSubtypes(false));
     }
-  }, [open, channelSlug]);
+  }, [open, channelSlug, catalogType, initialSubtypeSlug]);
 
   useEffect(() => {
     if (!open) return;
@@ -140,6 +167,7 @@ export function SchemaImportModal({
     fd.append("catalog_type", catalogType);
     fd.append("template_format", templateFormat);
     fd.append("file", file!);
+    if (selectedSubtype) fd.append("subtype_slug", selectedSubtype);
     return fd;
   }
 
@@ -407,6 +435,26 @@ export function SchemaImportModal({
               <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Catalog type</label>
               <input type="text" value={catalogType} readOnly className="wm-input bg-slate-50 dark:bg-slate-800" />
             </div>
+
+            {subtypeOptions.length > 0 && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Sub-type</label>
+                <select
+                  value={selectedSubtype}
+                  onChange={(e) => setSelectedSubtype(e.target.value)}
+                  className="wm-input h-9 w-full"
+                  disabled={loadingSubtypes}
+                >
+                  <option value="">— Fara sub-type (generic) —</option>
+                  {subtypeOptions.map((st) => (
+                    <option key={st.subtype_slug} value={st.subtype_slug}>{st.subtype_name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                  Sub-type-ul determina ce varianta a catalogului se foloseste. Ex: Vehicle Listings = inventar cu VIN, Vehicle Offers = cu finantare.
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Fisier CSV sau XML</label>
