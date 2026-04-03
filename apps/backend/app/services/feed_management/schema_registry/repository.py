@@ -375,4 +375,119 @@ class SchemaRegistryRepository:
         return str(row[0])
 
 
+    # ------------------------------------------------------------------
+    # feed_field_aliases
+    # ------------------------------------------------------------------
+
+    def get_aliases(self, catalog_type: str) -> dict[str, str]:
+        """Return {alias_key: canonical_key} for a catalog type."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT alias_key, canonical_key FROM feed_field_aliases WHERE catalog_type = %s",
+                    (catalog_type,),
+                )
+                rows = cur.fetchall()
+        return {str(r[0]): str(r[1]) for r in rows}
+
+    def list_aliases(self, catalog_type: str) -> list[dict[str, Any]]:
+        """Return all aliases for a catalog type."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, catalog_type, canonical_key, alias_key, platform_hint, created_at
+                    FROM feed_field_aliases
+                    WHERE catalog_type = %s
+                    ORDER BY canonical_key, alias_key
+                    """,
+                    (catalog_type,),
+                )
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+        return [dict(zip(cols, r)) | {"id": str(r[0])} for r in rows]
+
+    def create_alias(
+        self,
+        *,
+        catalog_type: str,
+        canonical_key: str,
+        alias_key: str,
+        platform_hint: str | None,
+    ) -> dict[str, Any]:
+        """Create a new alias. Returns the created row."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                # Validate canonical_key exists
+                cur.execute(
+                    "SELECT 1 FROM feed_schema_fields WHERE catalog_type = %s AND field_key = %s",
+                    (catalog_type, canonical_key),
+                )
+                if not cur.fetchone():
+                    raise ValueError(
+                        f"canonical_key '{canonical_key}' does not exist in "
+                        f"feed_schema_fields for catalog_type '{catalog_type}'"
+                    )
+
+                # Validate alias_key isn't already a canonical key
+                cur.execute(
+                    "SELECT 1 FROM feed_field_aliases WHERE catalog_type = %s AND canonical_key = %s",
+                    (catalog_type, alias_key),
+                )
+                if cur.fetchone():
+                    raise ValueError(
+                        f"alias_key '{alias_key}' is already used as a canonical_key — "
+                        f"would create a cycle"
+                    )
+
+                cur.execute(
+                    """
+                    INSERT INTO feed_field_aliases (catalog_type, canonical_key, alias_key, platform_hint)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id, catalog_type, canonical_key, alias_key, platform_hint, created_at
+                    """,
+                    (catalog_type, canonical_key, alias_key, platform_hint),
+                )
+                cols = [desc[0] for desc in cur.description]
+                row = cur.fetchone()
+            conn.commit()
+        d = dict(zip(cols, row))
+        d["id"] = str(d["id"])
+        return d
+
+    def delete_alias(self, alias_id: str) -> None:
+        """Delete an alias by ID."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM feed_field_aliases WHERE id = %s RETURNING id",
+                    (alias_id,),
+                )
+                if not cur.fetchone():
+                    raise ValueError(f"Alias {alias_id} not found")
+            conn.commit()
+
+    def get_aliases_for_fields(self, catalog_type: str) -> dict[str, list[dict[str, str]]]:
+        """Return {canonical_key: [{alias_key, platform_hint}, ...]} for display."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT canonical_key, alias_key, platform_hint
+                    FROM feed_field_aliases
+                    WHERE catalog_type = %s
+                    ORDER BY canonical_key, alias_key
+                    """,
+                    (catalog_type,),
+                )
+                rows = cur.fetchall()
+        result: dict[str, list[dict[str, str]]] = {}
+        for canonical, alias, hint in rows:
+            result.setdefault(str(canonical), []).append({
+                "alias_key": str(alias),
+                "platform_hint": str(hint) if hint else "",
+            })
+        return result
+
+
 schema_registry_repository = SchemaRegistryRepository()

@@ -67,7 +67,12 @@ def parse_and_import(
     if not fields:
         raise ValueError("Template parsed successfully but contained no fields.")
 
-    # 2. Upsert into DB
+    # 2. Resolve aliases: map platform-specific names to canonical keys
+    fields, alias_count = _resolve_aliases(fields, catalog_type)
+    if alias_count:
+        warnings.append(f"{alias_count} field(s) resolved via aliases to canonical keys.")
+
+    # 3. Upsert into DB
     result = _upsert_fields(
         fields=fields,
         channel_slug=channel_slug,
@@ -94,6 +99,47 @@ def parse_and_import_csv(
         catalog_type=catalog_type,
         template_format="auto",
     )
+
+
+# ---------------------------------------------------------------------------
+# Alias resolution
+# ---------------------------------------------------------------------------
+
+def _resolve_aliases(
+    fields: list[dict[str, Any]],
+    catalog_type: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """Resolve alias field_keys to their canonical equivalents.
+
+    Returns (resolved_fields, alias_count).
+    """
+    try:
+        aliases = schema_registry_repository.get_aliases(catalog_type)
+    except Exception:
+        logger.debug("Failed to load aliases, skipping resolution", exc_info=True)
+        return fields, 0
+
+    if not aliases:
+        return fields, 0
+
+    resolved: list[dict[str, Any]] = []
+    count = 0
+    for field in fields:
+        original_key = field["field_key"]
+        if original_key in aliases:
+            canonical = aliases[original_key]
+            field["field_key"] = canonical
+            # Preserve original name as channel_field_name
+            if not field.get("channel_field_name") or field["channel_field_name"] == original_key:
+                field["channel_field_name"] = original_key
+            logger.info("Resolved alias: %s → %s for %s", original_key, canonical, catalog_type)
+            count += 1
+        else:
+            if not field.get("channel_field_name"):
+                field["channel_field_name"] = original_key
+        resolved.append(field)
+
+    return resolved, count
 
 
 # ---------------------------------------------------------------------------

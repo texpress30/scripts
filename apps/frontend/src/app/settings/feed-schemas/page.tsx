@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus, Upload } from "lucide-react";
+import { Loader2, Plus, Upload, Trash2, Link2 } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -51,6 +51,15 @@ type ChannelSummary = {
 type ChannelsResponse = {
   catalog_type: string;
   channels: ChannelSummary[];
+};
+
+type FieldAlias = {
+  id: string;
+  catalog_type: string;
+  canonical_key: string;
+  alias_key: string;
+  platform_hint: string | null;
+  created_at: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -118,6 +127,12 @@ export default function FeedSchemasPage() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importChannelSlug, setImportChannelSlug] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [aliases, setAliases] = useState<FieldAlias[]>([]);
+  const [loadingAliases, setLoadingAliases] = useState(true);
+  const [newAliasCanonical, setNewAliasCanonical] = useState("");
+  const [newAliasKey, setNewAliasKey] = useState("");
+  const [newAliasPlatform, setNewAliasPlatform] = useState("");
+  const [addingAlias, setAddingAlias] = useState(false);
 
   const handleOpenImport = useCallback((slug: string | null) => {
     setImportChannelSlug(slug);
@@ -180,7 +195,70 @@ export default function FeedSchemasPage() {
     return () => { ignore = true; };
   }, [catalogType, refreshKey]);
 
+  // Fetch aliases
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      setLoadingAliases(true);
+      try {
+        const res = await apiRequest<{ catalog_type: string; aliases: FieldAlias[] }>(
+          `/feed-management/schemas/aliases?catalog_type=${catalogType}`,
+        );
+        if (ignore) return;
+        setAliases(res.aliases);
+      } catch {
+        if (ignore) return;
+        setAliases([]);
+      } finally {
+        if (!ignore) setLoadingAliases(false);
+      }
+    }
+    void load();
+    return () => { ignore = true; };
+  }, [catalogType, refreshKey]);
+
+  async function handleAddAlias() {
+    if (!newAliasCanonical || !newAliasKey) return;
+    setAddingAlias(true);
+    try {
+      await apiRequest("/feed-management/schemas/aliases", {
+        method: "POST",
+        body: JSON.stringify({
+          catalog_type: catalogType,
+          canonical_key: newAliasCanonical,
+          alias_key: newAliasKey,
+          platform_hint: newAliasPlatform || null,
+        }),
+      });
+      setNewAliasCanonical("");
+      setNewAliasKey("");
+      setNewAliasPlatform("");
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Eroare la adaugare alias");
+    } finally {
+      setAddingAlias(false);
+    }
+  }
+
+  async function handleDeleteAlias(id: string) {
+    try {
+      await apiRequest(`/feed-management/schemas/aliases/${id}`, { method: "DELETE" });
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Eroare la stergere alias");
+    }
+  }
+
   const catalogLabel = CATALOG_TYPES.find((c) => c.value === catalogType)?.label ?? catalogType;
+
+  // Build alias lookup: canonical_key → list of alias_keys
+  const aliasLookup = new Map<string, string[]>();
+  for (const a of aliases) {
+    const list = aliasLookup.get(a.canonical_key) ?? [];
+    list.push(a.alias_key + (a.platform_hint ? ` (${a.platform_hint})` : ""));
+    aliasLookup.set(a.canonical_key, list);
+  }
 
   return (
     <ProtectedPage>
@@ -346,6 +424,14 @@ export default function FeedSchemasPage() {
                           {f.is_system && (
                             <span className="ml-1.5 text-amber-500" title="System field">&#9733;</span>
                           )}
+                          {aliasLookup.has(f.field_key) && (
+                            <span
+                              className="ml-1.5 cursor-help text-indigo-400"
+                              title={`Aliases: ${aliasLookup.get(f.field_key)!.join(", ")}`}
+                            >
+                              <Link2 className="inline h-3 w-3" />
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{f.display_name}</td>
                         <td className="px-4 py-2.5">
@@ -384,6 +470,117 @@ export default function FeedSchemasPage() {
               </table>
             </div>
           </section>
+          {/* Aliases section */}
+          <section className="wm-card shadow-sm">
+            <header className="border-b border-slate-100 p-4 dark:border-slate-700">
+              <div className="flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-slate-400" />
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  Alias-uri Campuri — {catalogLabel}
+                </h2>
+              </div>
+              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                Unifica campuri care au nume diferite pe platforme diferite (ex: vehicle_offer_id = vehicle_id).
+              </p>
+            </header>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
+                  <tr>
+                    <th className="px-4 py-2.5">Camp Canonic</th>
+                    <th className="px-4 py-2.5">Alias</th>
+                    <th className="px-4 py-2.5">Platforma</th>
+                    <th className="px-4 py-2.5 w-16"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingAliases ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-6 text-center text-slate-400">
+                        <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                      </td>
+                    </tr>
+                  ) : aliases.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                        Nu exista alias-uri pentru {catalogLabel}.
+                      </td>
+                    </tr>
+                  ) : (
+                    aliases.map((a) => (
+                      <tr key={a.id} className="border-t border-slate-100 dark:border-slate-700">
+                        <td className="px-4 py-2">
+                          <code className="font-mono text-xs text-slate-800 dark:text-slate-200">{a.canonical_key}</code>
+                        </td>
+                        <td className="px-4 py-2">
+                          <code className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{a.alias_key}</code>
+                        </td>
+                        <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{a.platform_hint ?? "—"}</td>
+                        <td className="px-4 py-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteAlias(a.id)}
+                            className="text-slate-400 hover:text-red-500"
+                            title="Sterge alias"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Add alias form */}
+            <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 p-4 dark:border-slate-700">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Camp Canonic</label>
+                <select
+                  value={newAliasCanonical}
+                  onChange={(e) => setNewAliasCanonical(e.target.value)}
+                  className="wm-input h-8 w-44 text-xs"
+                >
+                  <option value="">— Selecteaza —</option>
+                  {fields.map((f) => (
+                    <option key={f.field_key} value={f.field_key}>{f.field_key}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Alias Key</label>
+                <input
+                  type="text"
+                  value={newAliasKey}
+                  onChange={(e) => setNewAliasKey(e.target.value)}
+                  placeholder="ex: vehicle_offer_id"
+                  className="wm-input h-8 w-44 text-xs"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Platforma</label>
+                <input
+                  type="text"
+                  value={newAliasPlatform}
+                  onChange={(e) => setNewAliasPlatform(e.target.value)}
+                  placeholder="meta, tiktok..."
+                  className="wm-input h-8 w-32 text-xs"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleAddAlias()}
+                disabled={!newAliasCanonical || !newAliasKey || addingAlias}
+                className="wm-btn-secondary inline-flex h-8 items-center gap-1 text-xs"
+              >
+                {addingAlias ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                Adauga
+              </button>
+            </div>
+          </section>
+
           {/* Import modal */}
           <SchemaImportModal
             open={importModalOpen}
