@@ -5,6 +5,7 @@ spec dicts ready for upsert into feed_schema_fields / feed_schema_channel_fields
 
 Supported formats:
 - **Meta CSV**: rows 1=metadata, 2=field names, 3=examples
+- **TikTok CSV**: rows 1=field names, 2=descriptions with Required/Optional, 3=examples
 - **XML feed**: generic sample feed (Meta, Google, any RSS)
 - **Custom CSV**: our own format with explicit field_key/display_name columns
 """
@@ -99,8 +100,24 @@ def detect_format(content: bytes, filename: str) -> str:
     if "field_key" in headers:
         return "custom"
 
+    # TikTok CSV: row 1 = field names (no "field_key", no "#"),
+    # row 2 = descriptions containing "Required" or "Optional"
+    lines = text.split("\n")
+    if len(lines) >= 2:
+        second_line = lines[1].strip()
+        if second_line:
+            delimiter = "\t" if "\t" in second_line else ","
+            row2_reader = csv.reader(io.StringIO(second_line), delimiter=delimiter)
+            row2_cells = next(row2_reader, [])
+            req_opt_count = sum(
+                1 for c in row2_cells
+                if re.search(r"\b(required|optional)\b", c.strip(), re.IGNORECASE)
+            )
+            if req_opt_count >= 3:
+                return "tiktok_csv"
+
     raise ValueError(
-        "Unrecognized template format. Supported: Meta CSV template, "
+        "Unrecognized template format. Supported: Meta CSV template, TikTok CSV template, "
         "XML feed template, or custom CSV with field_key/display_name columns."
     )
 
@@ -169,6 +186,111 @@ def parse_meta_csv(content: bytes) -> tuple[list[FieldSpec], list[str]]:
             "data_type": _infer_data_type(field_key, example),
             "is_required": is_required,
             "allowed_values": None,
+            "format_pattern": None,
+            "example_value": example,
+            "channel_field_name": raw_name,
+        })
+
+    return fields, warnings
+
+
+# ---------------------------------------------------------------------------
+# TikTok CSV adapter
+# ---------------------------------------------------------------------------
+
+_SUPPORTED_VALUES_RE = re.compile(
+    r"Supported values?:\s*(.+?)(?:\.|$)", re.IGNORECASE,
+)
+
+
+def _extract_supported_values(text: str) -> list[str] | None:
+    """Extract allowed values from 'Supported values: A, B, or C' patterns."""
+    m = _SUPPORTED_VALUES_RE.search(text)
+    if not m:
+        return None
+    raw = m.group(1).strip().rstrip(".")
+    # Remove trailing "or" joiner: "A, B, or C" → "A, B, C"
+    raw = re.sub(r",?\s+or\s+", ", ", raw)
+    values = [v.strip() for v in raw.split(",") if v.strip()]
+    return values if values else None
+
+
+def parse_tiktok_csv(content: bytes) -> tuple[list[FieldSpec], list[str]]:
+    """Parse TikTok Auto Inventory CSV template.
+
+    Row 1 = field names, Row 2 = descriptions with Required/Optional, Row 3 = examples.
+    Returns (fields, warnings).
+    """
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    # Detect delimiter
+    first_line = text.split("\n", 1)[0]
+    delimiter = "\t" if "\t" in first_line else ","
+
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    rows = list(reader)
+
+    if len(rows) < 2:
+        raise ValueError("TikTok CSV template must have at least 2 rows (field names + descriptions)")
+
+    field_names_row = rows[0]
+    desc_row = rows[1]
+    example_row = rows[2] if len(rows) > 2 else []
+
+    warnings: list[str] = []
+    fields: list[FieldSpec] = []
+    seen_keys: set[str] = set()
+
+    for i, raw_name in enumerate(field_names_row):
+        raw_name = raw_name.strip()
+        if not raw_name:
+            continue
+
+        # Parse description cell for required/optional
+        desc_cell = desc_row[i].strip() if i < len(desc_row) else ""
+        desc_lower = desc_cell.lower()
+
+        # Determine required status
+        if desc_lower.startswith("required"):
+            is_required = True
+        elif desc_lower.startswith("optional"):
+            is_required = False
+        elif "not required" in desc_lower:
+            is_required = False
+        elif "required" in desc_lower:
+            is_required = True
+        else:
+            is_required = False
+
+        # Clean description: strip "Required." or "Optional." prefix
+        description: str | None = desc_cell
+        description = re.sub(r"^(Required|Optional)\s*\.?\s*", "", description, flags=re.IGNORECASE).strip()
+        if not description:
+            description = None
+
+        # Extract allowed values from "Supported values:" pattern
+        allowed_values = _extract_supported_values(desc_cell) if desc_cell else None
+
+        # Example value
+        example = example_row[i].strip() if i < len(example_row) else None
+        if example == "":
+            example = None
+
+        field_key = _clean_field_key(raw_name)
+        if field_key in seen_keys:
+            continue
+        seen_keys.add(field_key)
+
+        fields.append({
+            "field_key": field_key,
+            "display_name": _make_display_name(raw_name),
+            "description": description,
+            "data_type": _infer_data_type(field_key, example),
+            "is_required": is_required,
+            "allowed_values": allowed_values,
             "format_pattern": None,
             "example_value": example,
             "channel_field_name": raw_name,
@@ -342,7 +464,7 @@ def parse_template(
 ) -> tuple[list[FieldSpec], str, list[str]]:
     """Parse a template file and return (fields, detected_format, warnings).
 
-    *template_format* can be 'auto', 'meta_csv', 'xml', or 'custom'.
+    *template_format* can be 'auto', 'meta_csv', 'tiktok_csv', 'xml', or 'custom'.
     """
     if template_format == "auto":
         fmt = detect_format(content, filename)
@@ -351,6 +473,8 @@ def parse_template(
 
     if fmt == "meta_csv":
         fields, warnings = parse_meta_csv(content)
+    elif fmt == "tiktok_csv":
+        fields, warnings = parse_tiktok_csv(content)
     elif fmt == "xml":
         fields, warnings = parse_xml_template(content)
     elif fmt == "custom":
