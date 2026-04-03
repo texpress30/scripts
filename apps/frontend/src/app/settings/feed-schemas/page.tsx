@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, Upload } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, Plus, Upload } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
+import { SchemaImportModal } from "@/components/feed-management/SchemaImportModal";
 import { apiRequest } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -114,6 +115,18 @@ export default function FeedSchemasPage() {
   const [loadingFields, setLoadingFields] = useState(true);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [error, setError] = useState("");
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importChannelSlug, setImportChannelSlug] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleOpenImport = useCallback((slug: string | null) => {
+    setImportChannelSlug(slug);
+    setImportModalOpen(true);
+  }, []);
+
+  const handleImportSuccess = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   // Fetch fields
   useEffect(() => {
@@ -143,7 +156,7 @@ export default function FeedSchemasPage() {
     }
     void load();
     return () => { ignore = true; };
-  }, [catalogType]);
+  }, [catalogType, refreshKey]);
 
   // Fetch channels
   useEffect(() => {
@@ -165,7 +178,7 @@ export default function FeedSchemasPage() {
     }
     void load();
     return () => { ignore = true; };
-  }, [catalogType]);
+  }, [catalogType, refreshKey]);
 
   const catalogLabel = CATALOG_TYPES.find((c) => c.value === catalogType)?.label ?? catalogType;
 
@@ -181,7 +194,7 @@ export default function FeedSchemasPage() {
             </p>
           </div>
 
-          {/* Catalog type selector */}
+          {/* Catalog type selector + global import button */}
           <div className="flex items-center gap-3">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Catalog Type:</label>
             <select
@@ -193,6 +206,14 @@ export default function FeedSchemasPage() {
                 <option key={ct.value} value={ct.value}>{ct.label}</option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => handleOpenImport(null)}
+              className="wm-btn-primary inline-flex items-center gap-1.5 text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Import Canal Nou
+            </button>
           </div>
 
           {error && (
@@ -268,12 +289,11 @@ export default function FeedSchemasPage() {
                         <td className="px-4 py-2.5">
                           <button
                             type="button"
-                            disabled
-                            className="wm-btn-secondary inline-flex items-center gap-1 text-xs opacity-50"
-                            title="Import CSV — in curand"
+                            onClick={() => handleOpenImport(ch.channel_slug)}
+                            className="wm-btn-secondary inline-flex items-center gap-1 text-xs"
                           >
                             <Upload className="h-3 w-3" />
-                            Import CSV
+                            {ch.last_imported_at ? "Re-import" : "Import CSV"}
                           </button>
                         </td>
                       </tr>
@@ -364,6 +384,14 @@ export default function FeedSchemasPage() {
               </table>
             </div>
           </section>
+          {/* Import modal */}
+          <SchemaImportModal
+            open={importModalOpen}
+            onClose={() => setImportModalOpen(false)}
+            catalogType={catalogType}
+            channelSlug={importChannelSlug}
+            onImportSuccess={handleImportSuccess}
+          />
         </main>
       </AppShell>
     </ProtectedPage>
