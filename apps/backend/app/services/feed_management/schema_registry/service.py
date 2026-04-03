@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _VALID_CATALOG_TYPES = frozenset({
     "product", "vehicle", "vehicle_offer", "home_listing",
     "hotel", "hotel_room", "flight", "trip", "media",
+    "destination", "service",
 })
 
 _VALID_DATA_TYPES = frozenset({
