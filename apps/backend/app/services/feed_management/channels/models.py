@@ -8,10 +8,54 @@ from pydantic import BaseModel, Field
 
 
 class ChannelType(str, enum.Enum):
+    # Google
     google_shopping = "google_shopping"
+    google_vehicle_ads_v3 = "google_vehicle_ads_v3"
+    google_vehicle_listings = "google_vehicle_listings"
+    google_local_inventory = "google_local_inventory"
+    google_product_reviews = "google_product_reviews"
+    google_regional_inventory = "google_regional_inventory"
+    google_manufacturers = "google_manufacturers"
+    google_hotel_ads = "google_hotel_ads"
+    google_real_estate = "google_real_estate"
+    google_jobs = "google_jobs"
+    google_things_to_do = "google_things_to_do"
+    # Meta
     facebook_product_ads = "facebook_product_ads"
+    facebook_country = "facebook_country"
+    facebook_language = "facebook_language"
+    facebook_marketplace = "facebook_marketplace"
+    facebook_automotive = "facebook_automotive"
+    facebook_hotel = "facebook_hotel"
     meta_catalog = "meta_catalog"
+    # TikTok
+    tiktok_automotive_inventory = "tiktok_automotive_inventory"
+    tiktok = "tiktok"
     tiktok_catalog = "tiktok_catalog"
+    # Bing
+    bing = "bing"
+    # Social & Ads
+    pinterest = "pinterest"
+    snapchat = "snapchat"
+    linkedin = "linkedin"
+    twitter = "twitter"
+    reddit_catalog = "reddit_catalog"
+    criteo = "criteo"
+    trade_desk = "trade_desk"
+    perplexity = "perplexity"
+    gpt_shopping = "gpt_shopping"
+    # Marketplaces RO
+    compari_ro = "compari_ro"
+    okazii_ro = "okazii_ro"
+    price_ro = "price_ro"
+    shopmania_ro = "shopmania_ro"
+    glami_ro = "glami_ro"
+    # Affiliate
+    daisycon = "daisycon"
+    klarna = "klarna"
+    awin = "awin"
+    shareasale = "shareasale"
+    # Custom
     custom = "custom"
 
 
