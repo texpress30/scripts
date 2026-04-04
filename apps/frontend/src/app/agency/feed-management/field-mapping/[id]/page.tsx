@@ -3,9 +3,39 @@
 import { useState, useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Loader2, Save, CheckCircle2, ChevronRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Save, CheckCircle2, ChevronRight, Sparkles, X, Check } from "lucide-react";
 import { MasterFieldRow, type MasterFieldRowValue } from "@/components/feed-management/MasterFieldRow";
 import { useMasterFields, useSaveMasterFields, type BulkMappingItem } from "@/lib/hooks/useMasterFields";
+import { apiRequest } from "@/lib/api";
+
+type AiSuggestion = {
+  target_field: string;
+  source_field: string;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+};
+
+type AiSuggestResponse = {
+  source_id: string;
+  catalog_type: string;
+  suggestions: AiSuggestion[];
+  ai_available: boolean;
+};
+
+const CONFIDENCE_STYLES: Record<string, { badge: string; label: string }> = {
+  high: {
+    badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    label: "High",
+  },
+  medium: {
+    badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    label: "Medium",
+  },
+  low: {
+    badge: "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400",
+    label: "Low",
+  },
+};
 
 const CATALOG_LABELS: Record<string, string> = {
   product: "Product",
@@ -30,6 +60,67 @@ export default function MasterFieldsPage() {
   const [localMappings, setLocalMappings] = useState<Record<string, MasterFieldRowValue>>({});
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
   const [showSourceFields, setShowSourceFields] = useState(false);
+
+  // AI auto-mapping state
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
+  const [aiSelected, setAiSelected] = useState<Set<string>>(new Set());
+  const [showAiPanel, setShowAiPanel] = useState(false);
+
+  async function handleAiSuggest() {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await apiRequest<AiSuggestResponse>(
+        `/feed-sources/${sourceId}/master-fields/ai-suggest`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      if (!res.ai_available) {
+        setAiError("AI suggestions not available. Check AI configuration in settings.");
+        return;
+      }
+      // Filter out suggestions for already-mapped fields
+      const mapped = new Set(Object.keys(localMappings).filter(
+        (k) => localMappings[k]?.source_field || localMappings[k]?.static_value,
+      ));
+      const filtered = res.suggestions.filter((s) => !mapped.has(s.target_field));
+      if (filtered.length === 0) {
+        setAiError("No new AI suggestions. All matchable fields are already mapped.");
+        return;
+      }
+      setAiSuggestions(filtered);
+      // Auto-select high and medium confidence
+      setAiSelected(new Set(filtered.filter((s) => s.confidence !== "low").map((s) => s.target_field)));
+      setShowAiPanel(true);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Failed to get AI suggestions.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function applyAiSuggestions() {
+    setLocalMappings((prev) => {
+      const next = { ...prev };
+      for (const s of aiSuggestions) {
+        if (!aiSelected.has(s.target_field)) continue;
+        next[s.target_field] = {
+          target_field: s.target_field,
+          source_field: s.source_field,
+          mapping_type: "direct",
+          static_value: null,
+          template_value: null,
+          is_required: next[s.target_field]?.is_required ?? false,
+          sort_order: next[s.target_field]?.sort_order ?? 0,
+        };
+      }
+      return next;
+    });
+    setSaveStatus("idle");
+    setShowAiPanel(false);
+    setAiSuggestions([]);
+  }
 
   // Initialize local state from fetched data
   useEffect(() => {
@@ -179,6 +270,130 @@ export default function MasterFieldsPage() {
           </Link>
         </p>
       </div>
+
+      {/* AI Auto-Map Button */}
+      <div className="mb-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void handleAiSuggest()}
+          disabled={aiLoading}
+          className="wm-btn-secondary inline-flex items-center gap-2"
+        >
+          {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          Auto-map with AI
+        </button>
+        {aiError && (
+          <span className="text-xs text-amber-600 dark:text-amber-400">{aiError}</span>
+        )}
+      </div>
+
+      {/* AI Suggestions Review Panel */}
+      {showAiPanel && aiSuggestions.length > 0 && (
+        <div className="mb-6 overflow-hidden rounded-lg border border-indigo-200 bg-indigo-50/50 dark:border-indigo-800 dark:bg-indigo-950/20">
+          <div className="flex items-center justify-between border-b border-indigo-200 px-4 py-3 dark:border-indigo-800">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-indigo-500" />
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                AI Suggestions ({aiSuggestions.length})
+              </h3>
+              <span className="text-xs text-slate-400">
+                {aiSelected.size} selected
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAiSelected(new Set(aiSuggestions.map((s) => s.target_field)))}
+                className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+              >
+                Accept All
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiSelected(new Set(aiSuggestions.filter((s) => s.confidence === "high").map((s) => s.target_field)))}
+                className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+              >
+                High Only
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiSelected(new Set())}
+                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                Clear
+              </button>
+              <button type="button" onClick={() => setShowAiPanel(false)} className="ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="max-h-[360px] divide-y divide-indigo-100 overflow-y-auto dark:divide-indigo-900/40">
+            {aiSuggestions.map((s) => {
+              const conf = CONFIDENCE_STYLES[s.confidence] ?? CONFIDENCE_STYLES.low;
+              const isChecked = aiSelected.has(s.target_field);
+              return (
+                <label
+                  key={s.target_field}
+                  className={`flex cursor-pointer items-start gap-3 px-4 py-2.5 transition hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 ${
+                    isChecked ? "bg-indigo-100/30 dark:bg-indigo-900/10" : ""
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {
+                      setAiSelected((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(s.target_field)) next.delete(s.target_field);
+                        else next.add(s.target_field);
+                        return next;
+                      });
+                    }}
+                    className="mt-1 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-medium text-slate-700 dark:text-slate-300">
+                        {s.source_field}
+                      </span>
+                      <ArrowRight className="h-3 w-3 shrink-0 text-slate-400" />
+                      <span className="font-mono text-xs font-medium text-indigo-700 dark:text-indigo-400">
+                        {s.target_field}
+                      </span>
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${conf.badge}`}>
+                        {conf.label}
+                      </span>
+                    </div>
+                    {s.reason && (
+                      <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">{s.reason}</p>
+                    )}
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-indigo-200 px-4 py-3 dark:border-indigo-800">
+            <button
+              type="button"
+              onClick={() => setShowAiPanel(false)}
+              className="wm-btn-secondary text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={applyAiSuggestions}
+              disabled={aiSelected.size === 0}
+              className="wm-btn-primary inline-flex items-center gap-1.5 text-sm"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Apply {aiSelected.size} Mapping{aiSelected.size !== 1 ? "s" : ""}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Source Fields Reference Panel */}
       {data.source_fields.length > 0 && (

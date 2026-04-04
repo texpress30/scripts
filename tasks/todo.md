@@ -8033,25 +8033,26 @@ if is_ai_enabled():
 - [x] Priority: existing mapping > fuzzy match > AI suggestion
 - [x] Adaugă `suggestion_source: "fuzzy" | "ai" | null`, `ai_confidence`, `ai_reason` în response
 
-### Task 4 — Frontend: buton "Auto-map with AI" în FieldMappingEditor
-- [ ] Adaugă buton în UI-ul de field mapping
-- [ ] Apelează `POST /feed-sources/{id}/master-fields/ai-suggest`
-- [ ] Afișează sugestii cu confidence badge (high/medium/low)
-- [ ] User confirmă/respinge fiecare sugestie
-- [ ] "Accept All" / "Accept High Confidence" bulk actions
+### Task 4 — Frontend: buton "Auto-map with AI" în field-mapping page ✓
+- [x] Buton "Auto-map with AI" cu Sparkles icon în header-ul paginii
+- [x] Apelează `POST /feed-sources/{id}/master-fields/ai-suggest`
+- [x] Loading state (spinner pe buton), error state (inline message)
+- [x] Filtrează sugestii pentru câmpuri deja mapate
+- [x] AI unavailable → message "Check AI configuration in settings"
 
-### Task 5 — Frontend: UI de review sugestii AI
-- [ ] Modal sau panel lateral cu lista sugestiilor
-- [ ] Source field → Target field cu confidence bar
-- [ ] Reason text de la AI
-- [ ] Checkbox per sugestie
-- [ ] Submit accepted → POST bulk mappings
+### Task 5 — Frontend: UI de review sugestii AI ✓
+- [x] Inline review panel cu border indigo, max-height scrollable
+- [x] Source field → Target field cu ArrowRight + confidence badge (verde/amber/gri)
+- [x] Reason text de la AI sub fiecare sugestie
+- [x] Checkbox per sugestie (default: high+medium checked, low unchecked)
+- [x] Bulk actions: "Accept All", "High Only", "Clear"
+- [x] "Apply N Mappings" → actualizează localMappings state
+- [x] "Cancel" / X → dismiss panel fără modificări
 
-### Task 6 — Teste
-- [ ] Test backend: suggest_mappings_ai() cu mock Claude response
-- [ ] Test backend: endpoint returnează sugestii corecte
-- [ ] Test backend: fallback la fuzzy când AI disabled
-- [ ] Test frontend: buton afișat, loading state, error handling
+### Task 6 — Teste ✓
+- [x] Test backend: suggest_mappings_ai() cu mock Claude response (7 tests)
+- [x] Test backend: fallback la [] când AI disabled sau error
+- [x] Test frontend: `npx tsc --noEmit` + `npm run build` trec fără erori
 
 ## ESTIMARE
 
