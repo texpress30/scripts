@@ -131,8 +131,13 @@ def ai_suggest_mappings(
     source_fields, _ = _get_sf(source_id)
     target_fields = _get_target_fields(catalog_type)
 
+    # Exclude target fields that already have saved mappings in DB
+    saved = _repo.get_by_source(source_id)
+    saved_targets = {m.target_field for m in saved if m.source_field}
+    unmapped_targets = [tf for tf in target_fields if tf["field_key"] not in saved_targets]
+
     model_override = payload.model if payload else None
-    suggestions = suggest_mappings_ai(source_fields, target_fields, catalog_type, model=model_override)
+    suggestions = suggest_mappings_ai(source_fields, unmapped_targets, catalog_type, model=model_override)
 
     return {
         "source_id": source_id,
