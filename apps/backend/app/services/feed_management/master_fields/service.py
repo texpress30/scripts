@@ -243,32 +243,15 @@ def get_mappings_with_suggestions(
     source_fields, _scanned = get_source_fields(source_id)
     source_field_names = [f["field"] for f in source_fields]
 
-    # Build AI suggestions for unmapped fields (if enabled)
-    ai_map: dict[str, dict[str, Any]] = {}
-    unmapped_targets = [tf for tf in target_fields if tf["field_key"] not in mapped_targets]
-    if unmapped_targets:
-        ai_results = suggest_mappings_ai(source_fields, unmapped_targets, catalog_type)
-        for a in ai_results:
-            ai_map[a["target_field"]] = a
-
     # Build suggestions for unmapped required/optional fields
+    # AI suggestions are NOT called here (expensive Claude API call on every page load).
+    # Use the explicit POST /master-fields/ai-suggest endpoint instead.
     suggestions: list[dict[str, Any]] = []
     for tf in target_fields:
         field_key = tf["field_key"]
         if field_key in mapped_targets:
             continue
-        fuzzy = _suggest_source_field(tf, source_field_names)
-        ai_hit = ai_map.get(field_key)
-        # Priority: fuzzy match wins (fast, free); AI fills gaps
-        if fuzzy:
-            suggested = fuzzy
-            suggestion_source = "fuzzy"
-        elif ai_hit:
-            suggested = ai_hit["source_field"]
-            suggestion_source = "ai"
-        else:
-            suggested = None
-            suggestion_source = None
+        suggested = _suggest_source_field(tf, source_field_names)
         suggestions.append({
             "target_field": field_key,
             "display_name": tf["display_name"],
@@ -277,9 +260,6 @@ def get_mappings_with_suggestions(
             "required": tf.get("is_required", False),
             "category": tf.get("category", ""),
             "suggested_source_field": suggested,
-            "suggestion_source": suggestion_source,
-            "ai_confidence": ai_hit["confidence"] if ai_hit else None,
-            "ai_reason": ai_hit["reason"] if ai_hit else None,
             "enum_values": tf.get("allowed_values"),
             "google_attribute": tf.get("google_attribute"),
             "facebook_attribute": tf.get("facebook_attribute"),

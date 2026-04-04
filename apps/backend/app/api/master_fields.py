@@ -137,7 +137,15 @@ def ai_suggest_mappings(
     unmapped_targets = [tf for tf in target_fields if tf["field_key"] not in saved_targets]
 
     model_override = payload.model if payload else None
+
+    logger.info(
+        "AI suggest: source_id=%s catalog=%s source_fields=%d unmapped_targets=%d saved=%d ai_enabled=%s",
+        source_id, catalog_type, len(source_fields), len(unmapped_targets), len(saved_targets), is_ai_enabled(),
+    )
+
     suggestions = suggest_mappings_ai(source_fields, unmapped_targets, catalog_type, model=model_override)
+
+    logger.info("AI suggest: returned %d suggestions", len(suggestions))
 
     return {
         "source_id": source_id,

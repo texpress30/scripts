@@ -47,6 +47,8 @@ const CATALOG_LABELS: Record<string, string> = {
   flight: "Flight",
   trip: "Trip",
   media: "Media",
+  destination: "Destination",
+  service: "Service",
 };
 
 export default function MasterFieldsPage() {
