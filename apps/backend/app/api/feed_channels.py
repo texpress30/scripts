@@ -246,11 +246,20 @@ def get_channel_products(
     )
 
     # Transform
+    from app.services.feed_management.connectors.base import strip_html
+
     transformed: list[dict[str, Any]] = []
     for product in raw_products:
         data = product.get("data", {})
         if not isinstance(data, dict):
             continue
+        # Strip HTML from description fields before transform (safety net for stale data)
+        for _dk in ("description", "short_description"):
+            if _dk in data and isinstance(data[_dk], str) and "<" in data[_dk]:
+                data[_dk] = strip_html(data[_dk])
+            raw = data.get("raw_data")
+            if isinstance(raw, dict) and _dk in raw and isinstance(raw[_dk], str) and "<" in raw[_dk]:
+                raw[_dk] = strip_html(raw[_dk])
         row = feed_generator._transform_product(data, master_mappings, override_map)
         transformed.append(row)
 

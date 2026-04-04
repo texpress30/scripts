@@ -312,11 +312,19 @@ class FeedGenerator:
         Raw fields are added only when they don't conflict with an existing
         standardized key, so mappings can reference both standardized names
         (``title``) and raw source names (``body_html``, ``vendor``, …).
+
+        Description fields are stripped of HTML as a safety net for stale data.
         """
+        from app.services.feed_management.connectors.base import strip_html
+
         raw = data.get("raw_data")
         if not isinstance(raw, dict):
             return data
         merged = dict(data)
+        # Strip HTML from descriptions (safety net for data synced before strip fix)
+        for dk in ("description", "short_description"):
+            if dk in merged and isinstance(merged[dk], str) and "<" in merged[dk]:
+                merged[dk] = strip_html(merged[dk])
         for key, value in raw.items():
             if key not in merged:
                 merged[key] = value
