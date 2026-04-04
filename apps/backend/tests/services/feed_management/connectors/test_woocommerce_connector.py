@@ -308,6 +308,146 @@ class TestErrorHandling:
         assert "Cannot connect" in result.message
 
 
+# -- meta_data extraction -----------------------------------------------------
+
+class TestMetaDataExtraction:
+    def test_meta_data_fields_extracted(self):
+        """meta_data custom fields appear in raw_data with meta_ prefix."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "kilometraj", "value": "236116"},
+            {"id": 2, "key": "_brand", "value": "BMW"},
+            {"id": 3, "key": "_model", "value": "X1"},
+            {"id": 4, "key": "an_fabricatie", "value": "2015"},
+            {"id": 5, "key": "combustibil", "value": "Diesel"},
+            {"id": 6, "key": "transmisie", "value": "Automata"},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["meta_kilometraj"] == "236116"
+        assert raw["meta_brand"] == "BMW"
+        assert raw["meta_model"] == "X1"
+        assert raw["meta_an_fabricatie"] == "2015"
+        assert raw["meta_combustibil"] == "Diesel"
+        assert raw["meta_transmisie"] == "Automata"
+
+    def test_meta_data_skips_wp_internal(self):
+        """WordPress/WooCommerce internal meta keys are excluded."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "_edit_lock", "value": "1234567890:1"},
+            {"id": 2, "key": "_wp_old_slug", "value": "old-name"},
+            {"id": 3, "key": "_thumbnail_id", "value": "123"},
+            {"id": 4, "key": "_wc_average_rating", "value": "4.5"},
+            {"id": 5, "key": "kilometraj", "value": "100000"},
+        ])
+        raw = _flatten_raw(woo)
+        assert "meta__edit_lock" not in raw
+        assert "meta_edit_lock" not in raw
+        assert "meta_wp_old_slug" not in raw
+        assert "meta_thumbnail_id" not in raw
+        assert "meta_wc_average_rating" not in raw
+        assert raw["meta_kilometraj"] == "100000"
+
+    def test_meta_data_does_not_overwrite_scalar(self):
+        """meta_data fields don't overwrite already-extracted standard fields."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "name", "value": "Should Not Overwrite"},
+            {"id": 2, "key": "price", "value": "9999"},
+            {"id": 3, "key": "custom_field", "value": "kept"},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["name"] == "T-Shirt"  # original scalar preserved
+        assert raw["price"] == "19.99"   # original scalar preserved
+        assert raw["meta_custom_field"] == "kept"
+
+    def test_meta_data_empty_values_skipped(self):
+        """meta entries with empty/None values are skipped."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "empty_field", "value": ""},
+            {"id": 2, "key": "null_field", "value": None},
+            {"id": 3, "key": "valid_field", "value": "ok"},
+        ])
+        raw = _flatten_raw(woo)
+        assert "meta_empty_field" not in raw
+        assert "meta_null_field" not in raw
+        assert raw["meta_valid_field"] == "ok"
+
+    def test_meta_data_numeric_values_as_string(self):
+        """Numeric meta values are stored as strings."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "putere", "value": 150},
+            {"id": 2, "key": "numar_usi", "value": 4},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["meta_putere"] == "150"
+        assert raw["meta_numar_usi"] == "4"
+
+    def test_meta_data_no_meta_data_key(self):
+        """Products without meta_data key don't break."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product()  # no meta_data key
+        raw = _flatten_raw(woo)
+        # Should still have standard fields
+        assert raw["name"] == "T-Shirt"
+        assert raw["price"] == "19.99"
+
+
+# -- currency -----------------------------------------------------------------
+
+class TestCurrency:
+    def test_default_currency_is_usd(self):
+        c = _connector()
+        assert c._currency == "USD"
+
+    def test_currency_from_config(self):
+        c = _connector(currency="EUR")
+        assert c._currency == "EUR"
+
+    def test_fetch_currency_updates_from_settings(self):
+        c = _connector()
+        assert c._currency == "USD"
+
+        settings_response = [
+            {"id": "woocommerce_currency", "value": "EUR"},
+            {"id": "woocommerce_currency_pos", "value": "left"},
+        ]
+
+        async def fake_get(url, **kwargs):
+            if "/settings/general" in url:
+                return _FakeResponse(settings_response)
+            return _FakeResponse([])
+
+        async def run():
+            mock_client = AsyncMock()
+            mock_client.get = fake_get
+            await c._fetch_currency(mock_client)
+
+        asyncio.run(run())
+        assert c._currency == "EUR"
+
+    def test_fetch_currency_keeps_fallback_on_error(self):
+        c = _connector(currency="RON")
+
+        async def fake_get(url, **kwargs):
+            raise Exception("network error")
+
+        async def run():
+            mock_client = AsyncMock()
+            mock_client.get = fake_get
+            await c._fetch_currency(mock_client)
+
+        asyncio.run(run())
+        assert c._currency == "RON"  # unchanged
+
+    def test_currency_used_in_product_mapping(self):
+        c = _connector(currency="EUR")
+        products = c._map_woo_product(_simple_product())
+        assert products[0].currency == "EUR"
+
+
 # -- get_product_count --------------------------------------------------------
 
 class TestProductCount:

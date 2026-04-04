@@ -7825,3 +7825,119 @@ Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `
 | hotel          | google_hotel_ads, facebook_hotel                              | —                                     |
 | flight         | (niciun canal specific flight)                                | —                                     |
 | trip           | (niciun canal specific trip)                                  | —                                     |
+
+# =============================================================================
+# DISCOVERY: WooCommerce Data Extraction — câmpuri lipsă + currency (2026-04-04)
+# =============================================================================
+
+## PROBLEMA
+
+Feed source-ul WooCommerce (ROC AUTOMOBILE) extrage doar câmpuri standard (30 available fields).
+Câmpuri auto din `meta_data` și `attributes` WooCommerce lipsesc complet: kilometraj, brand, model,
+caroserie, transmisie, combustibil, an fabricație, motor, uși, culoare, dotări, VIN, etc.
+Currency arată USD în loc de EUR.
+
+## FIȘIERE CHEIE
+
+- `apps/backend/app/services/feed_management/connectors/woocommerce_connector.py` — conectorul WooCommerce
+- `apps/backend/app/services/feed_management/connectors/base.py` — ProductData model (currency default "USD")
+- `apps/backend/app/services/feed_management/products_repository.py` — stocare MongoDB
+- `apps/backend/app/services/feed_management/master_fields/service.py` — field detection + mapping suggestions
+
+## CAUZA 1: meta_data NU e extras din răspunsul WooCommerce API
+
+**Fișier:** `woocommerce_connector.py:242-285` (funcția `_flatten_raw`)
+
+`_SCALAR_KEYS` (linia 246-251) conține doar câmpuri standard:
+```
+id, name, slug, permalink, status, featured, description, short_description,
+sku, price, regular_price, sale_price, on_sale, manage_stock, stock_quantity,
+stock_status, weight, purchase_note, menu_order, type
+```
+
+WooCommerce API v3 returnează `meta_data` ca array de `{key, value}` objects:
+```json
+"meta_data": [
+  {"id": 123, "key": "kilometraj", "value": "236116"},
+  {"id": 124, "key": "_brand", "value": "BMW"},
+  {"id": 125, "key": "_model", "value": "X1"}
+]
+```
+
+**Acest array nu e citit nicăieri.** Funcția `_flatten_raw` pur și simplu îl ignoră.
+
+## CAUZA 2: attributes sunt parțial extrase
+
+**Fișier:** `woocommerce_connector.py:272-277`
+
+Codul citește `woo.get("attributes")` și le flatten-uiește ca `attribute_{name}`.
+Dar pentru ROC AUTOMOBILE, datele auto sunt în `meta_data`, nu în `attributes`.
+Attributes WooCommerce sunt taxonomy-based (Color, Size), nu custom fields.
+
+## CAUZA 3: currency hardcoded USD
+
+**Fișier:** `woocommerce_connector.py:42`
+```python
+self._currency = str(config.get("currency") or "USD")
+```
+
+Currency-ul real (EUR) e citit doar în `test_connection()` (linia 74-85) din
+`GET /settings/general` → `woocommerce_currency`. Dar:
+- `test_connection()` rulează doar la testare manuală a conexiunii
+- `fetch_products()` folosește `self._currency` (linia 187) care rămâne "USD"
+- Sync-ul programat nu trece prin `test_connection()`, deci currency rămâne USD
+
+**Fișier:** `base.py:26` — `currency: str = "USD"` default în ProductData.
+
+## FLOW-UL DATELOR (și unde se pierd)
+
+```
+WooCommerce API (/wp-json/wc/v3/products)
+  ↓ răspuns JSON cu meta_data[], attributes[], price, etc.
+fetch_products() [linia 125]
+  ↓
+_map_woo_product() [linia 181]
+  ↓ currency = self._currency = "USD" (linia 187)
+ProductData(raw_data=_flatten_raw(woo)) [linia 238]
+  ↓ _flatten_raw() IGNORĂ meta_data complet (linia 242-285)
+MongoDB upsert [products_repository.py:44]
+  ↓ meta_data fields NU sunt stocate
+get_all_unique_fields() [products_repository.py:117]
+  ↓ scanează MongoDB, nu găsește meta_data fields
+Available Source Fields (30 câmpuri) — lipsesc toate câmpurile auto
+```
+
+## PLAN DE IMPLEMENTARE
+
+### Task 1 — Extrage meta_data din WooCommerce response ✓
+- [x] Modifică `_flatten_raw()` pentru a itera `woo.get("meta_data", [])`
+- [x] Pentru fiecare meta entry: `raw[f"meta_{clean_key}"] = value` (cu prefix `meta_` pentru claritate)
+- [x] Filtrează meta keys interne WP/WC (`_edit_`, `_wp_`, `_thumbnail`, `_wc_`, `_product_`, etc.)
+- [x] Păstrează meta keys utile (kilometraj, brand, model, an_fabricatie, combustibil, etc.)
+- [x] Naming: `meta_kilometraj`, `meta_brand`, `meta_model` (prefix `meta_` + strip leading `_`)
+
+### Task 2 — Fix currency: fetch din WooCommerce Settings la sync ✓
+- [x] Adaugă `_fetch_currency()` method care face GET `/settings/general`
+- [x] Apelat la începutul `fetch_products()`, înainte de procesarea produselor
+- [x] Fallback la config currency sau "USD" dacă call-ul eșuează
+
+### Task 3 — Adaugă currency în raw_data
+- [ ] (opțional) În `_flatten_raw()`, adaugă `raw["currency"] = currency` explicit
+- Currency-ul e deja setat corect pe ProductData.currency prin fix-ul din Task 2
+
+### Task 4 — Re-sync after fix
+- [ ] După deploy, trigger manual sync pe sursa ROC AUTOMOBILE
+- [ ] Verifică că Available Source Fields include meta_data fields (meta_kilometraj, meta_brand, etc.)
+- [ ] Verifică că currency arată EUR
+- [ ] Re-configurează field mapping: meta_kilometraj → mileage, meta_brand → make, etc.
+
+### Task 5 — Teste ✓
+- [x] Test: _flatten_raw() extrage meta_data fields (6 tests)
+- [x] Test: meta keys interne WP/WC sunt filtrate
+- [x] Test: meta nu suprascrie câmpuri standard
+- [x] Test: valori goale/None skip-uite
+- [x] Test: valori numerice convertite la string
+- [x] Test: currency fetch din settings API
+- [x] Test: currency fallback la eroare
+- [x] Test: currency used in product mapping
+- [x] 12 teste noi, toate trec (2 failures pre-existente în TestErrorHandling)
