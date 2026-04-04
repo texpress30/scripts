@@ -165,6 +165,110 @@ class TestProductMapping:
         assert products[0].inventory_quantity == 0
 
 
+# -- meta_box extraction (JetEngine) -------------------------------------------
+
+class TestMetaBoxExtraction:
+    def test_taxonomy_dict_extracted(self):
+        """meta_box dict entries with 'name' key are extracted."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_box={
+            "brand": {"term_id": 18, "name": "Volkswagen", "slug": "volkswagen"},
+            "model": {"term_id": 225, "name": "Touran", "slug": "touran"},
+        })
+        raw = _flatten_raw(woo)
+        assert raw["brand"] == "Volkswagen"
+        assert raw["model"] == "Touran"
+
+    def test_taxonomy_array_extracted(self):
+        """meta_box array-of-dicts entries are joined."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_box={
+            "tip_oferta": [{"name": "Stoc intern", "term_id": 56}],
+            "norma_de_poluare": [{"name": "EURO 5"}],
+        })
+        raw = _flatten_raw(woo)
+        assert raw["tip_oferta"] == "Stoc intern"
+        assert raw["norma_de_poluare"] == "EURO 5"
+
+    def test_empty_string_skipped(self):
+        """meta_box empty string values are skipped."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_box={"rata": ""})
+        raw = _flatten_raw(woo)
+        assert "rata" not in raw
+
+    def test_empty_array_skipped(self):
+        """meta_box empty arrays are skipped."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_box={"Dotari": [], "dotari_de_siguranta": []})
+        raw = _flatten_raw(woo)
+        assert "dotari" not in raw
+        assert "dotari_de_siguranta" not in raw
+
+    def test_scalar_string_extracted(self):
+        """meta_box non-empty string values are extracted."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_box={"rata": "250 EUR/luna"})
+        raw = _flatten_raw(woo)
+        assert raw["rata"] == "250 EUR/luna"
+
+    def test_does_not_overwrite_existing(self):
+        """meta_box fields don't overwrite already-extracted fields."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_box={"name": {"name": "Should Not Overwrite"}})
+        raw = _flatten_raw(woo)
+        assert raw["name"] == "T-Shirt"
+
+    def test_full_roc_automobile_product(self):
+        """Realistic ROC AUTOMOBILE product with meta_box from JetEngine."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(
+            meta_box={
+                "brand": {"term_id": 18, "name": "Volkswagen", "taxonomy": "product_cat"},
+                "model": {"term_id": 225, "name": "Touran"},
+                "caroserie": {"term_id": 5, "name": "Monovolum"},
+                "transmisie": {"term_id": 8, "name": "Automata"},
+                "combustibil": {"term_id": 3, "name": "Diesel"},
+                "an_fabricatie": {"term_id": 12, "name": "2012"},
+                "capacitate_motor": {"term_id": 15, "name": "2.0L"},
+                "numar_usi": {"term_id": 20, "name": "5 usi"},
+                "culoare": {"term_id": 25, "name": "Alb"},
+                "norma_de_poluare": [{"name": "EURO 5"}],
+                "tip_oferta": [{"name": "Stoc intern"}],
+                "rata": "",
+                "Dotari": [],
+                "dotari_de_siguranta": [],
+            },
+            meta_data=[
+                {"id": 1, "key": "kilometraj", "value": "285.419"},
+                {"id": 2, "key": "putere", "value": "140 CP"},
+            ],
+        )
+        raw = _flatten_raw(woo)
+        assert raw["brand"] == "Volkswagen"
+        assert raw["model"] == "Touran"
+        assert raw["caroserie"] == "Monovolum"
+        assert raw["transmisie"] == "Automata"
+        assert raw["combustibil"] == "Diesel"
+        assert raw["an_fabricatie"] == "2012"
+        assert raw["capacitate_motor"] == "2.0L"
+        assert raw["numar_usi"] == "5 usi"
+        assert raw["culoare"] == "Alb"
+        assert raw["norma_de_poluare"] == "EURO 5"
+        assert raw["tip_oferta"] == "Stoc intern"
+        assert "rata" not in raw
+        assert "dotari" not in raw
+        assert raw["meta_kilometraj"] == "285.419"
+        assert raw["meta_putere"] == "140 CP"
+
+    def test_no_meta_box_key(self):
+        """Products without meta_box don't break."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product()
+        raw = _flatten_raw(woo)
+        assert raw["name"] == "T-Shirt"
+
+
 # -- attribute extraction ------------------------------------------------------
 
 class TestAttributeExtraction:

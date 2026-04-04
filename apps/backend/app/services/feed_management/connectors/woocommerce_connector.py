@@ -153,14 +153,6 @@ class WooCommerceConnector(BaseConnector):
                 if not products:
                     break
 
-                # DEBUG: trace raw API response for first product
-                if page == 1 and products:
-                    _first = products[0]
-                    print(f"WOO_RAW_KEYS product_id={_first.get('id','?')} keys={sorted(_first.keys())}", flush=True)
-                    for _ck in ['brands', 'meta_box', 'attributes', 'meta_data']:
-                        _v = _first.get(_ck, 'MISSING')
-                        print(f"  {_ck}: {type(_v).__name__} = {str(_v)[:500]}", flush=True)
-
                 for woo_product in products:
                     variations: list[dict[str, Any]] = []
                     if woo_product.get("type") == "variable":
@@ -263,14 +255,8 @@ class WooCommerceConnector(BaseConnector):
         )]
 
 
-_FLATTEN_TRACED = False
-
 def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -> dict[str, Any]:
     """Extract a flat dict of presentable raw fields from a WooCommerce product."""
-    global _FLATTEN_TRACED
-    if not _FLATTEN_TRACED:
-        _FLATTEN_TRACED = True
-        print(f"FLATTEN_INPUT id={woo.get('id','?')} keys={sorted(woo.keys())}", flush=True)
     raw: dict[str, Any] = {}
     # Scalar fields from the parent product
     _SCALAR_KEYS = (
@@ -350,6 +336,26 @@ def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -
         for key in ("sku", "price", "regular_price", "sale_price", "stock_quantity", "weight"):
             if key in variation and variation[key] is not None:
                 raw[f"variant_{key}"] = variation[key]
+
+    # meta_box — JetEngine and similar plugins expose custom fields here
+    # Contains taxonomy terms as dicts, arrays of terms, and scalar values
+    # e.g. {"brand": {"name": "BMW", ...}, "tip_oferta": [{"name": "Stoc intern"}], "rata": ""}
+    meta_box = woo.get("meta_box")
+    if isinstance(meta_box, dict):
+        for key, value in meta_box.items():
+            clean_key = key.lower().replace("-", "_").replace(" ", "_")
+            if clean_key in raw:
+                continue
+            if isinstance(value, dict) and "name" in value:
+                raw[clean_key] = str(value["name"])
+            elif isinstance(value, list) and value and isinstance(value[0], dict) and "name" in value[0]:
+                names = [str(t["name"]) for t in value if t.get("name")]
+                if names:
+                    raw[clean_key] = ", ".join(names)
+            elif isinstance(value, str) and value:
+                raw[clean_key] = value
+            elif isinstance(value, (int, float)) and value is not None:
+                raw[clean_key] = str(value)
 
     # Top-level taxonomy objects (auto dealer plugins like JetEngine inject these)
     # e.g. "brand": {"term_id": 17, "name": "BMW", "taxonomy": "product_cat"}
