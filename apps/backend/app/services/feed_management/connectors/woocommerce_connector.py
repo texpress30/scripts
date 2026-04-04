@@ -153,6 +153,14 @@ class WooCommerceConnector(BaseConnector):
                 if not products:
                     break
 
+                # DEBUG: trace raw API response for first product
+                if page == 1 and products:
+                    _first = products[0]
+                    print(f"WOO_RAW_KEYS product_id={_first.get('id','?')} keys={sorted(_first.keys())}", flush=True)
+                    for _ck in ['brand', 'model', 'caroserie', 'transmisie', 'combustibil', 'an_fabricatie', 'culoare']:
+                        _v = _first.get(_ck, 'MISSING')
+                        print(f"  {_ck}: {type(_v).__name__} = {str(_v)[:120]}", flush=True)
+
                 for woo_product in products:
                     variations: list[dict[str, Any]] = []
                     if woo_product.get("type") == "variable":
@@ -255,8 +263,14 @@ class WooCommerceConnector(BaseConnector):
         )]
 
 
+_FLATTEN_TRACED = False
+
 def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -> dict[str, Any]:
     """Extract a flat dict of presentable raw fields from a WooCommerce product."""
+    global _FLATTEN_TRACED
+    if not _FLATTEN_TRACED:
+        _FLATTEN_TRACED = True
+        print(f"FLATTEN_INPUT id={woo.get('id','?')} keys={sorted(woo.keys())}", flush=True)
     raw: dict[str, Any] = {}
     # Scalar fields from the parent product
     _SCALAR_KEYS = (
