@@ -6,7 +6,6 @@ Uses cursor-based pagination (Link header) and maps Shopify products
 
 from __future__ import annotations
 
-import html
 import logging
 import re
 from datetime import datetime
@@ -21,6 +20,7 @@ from app.services.feed_management.connectors.base import (
     ProductData,
     ProductVariant,
     ValidationResult,
+    strip_html as _strip_html,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,15 +28,6 @@ logger = logging.getLogger(__name__)
 _API_VERSION = "2024-01"
 _PAGE_LIMIT = 250
 _SHOPIFY_DOMAIN_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$")
-
-
-def _strip_html(text: str) -> str:
-    """Remove HTML tags and decode entities."""
-    if not text:
-        return ""
-    clean = re.sub(r"<[^>]+>", " ", str(text))
-    clean = html.unescape(clean)
-    return re.sub(r"\s+", " ", clean).strip()
 
 
 def _normalize_shop_url(raw: str) -> str:
