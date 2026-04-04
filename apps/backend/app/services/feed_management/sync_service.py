@@ -127,6 +127,13 @@ class FeedSyncService:
         try:
             async for product in connector.fetch_products():
                 total_count += 1
+                if total_count == 1:
+                    # Log first product's raw_data keys for diagnostics
+                    rd_keys = sorted(product.raw_data.keys()) if product.raw_data else []
+                    logger.info(
+                        "SYNC first product id=%s raw_data_keys(%d)=%s",
+                        product.id, len(rd_keys), rd_keys,
+                    )
                 batch.append(product)
 
                 if len(batch) >= SYNC_BATCH_SIZE:

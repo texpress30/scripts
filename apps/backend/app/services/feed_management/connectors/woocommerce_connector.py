@@ -340,7 +340,14 @@ def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -
     # Top-level taxonomy objects (auto dealer plugins like JetEngine inject these)
     # e.g. "brand": {"term_id": 17, "name": "BMW", "taxonomy": "product_cat"}
     # e.g. "norma_de_poluare": [{"name": "EURO 5", ...}]
+    _KNOWN_COMPLEX_KEYS = frozenset({
+        "categories", "tags", "images", "attributes", "dimensions",
+        "meta_data", "downloads", "related_ids", "grouped_products",
+        "_links", "default_attributes",
+    })
     for key, value in woo.items():
+        if key in _KNOWN_COMPLEX_KEYS:
+            continue
         clean_key = key.lower().replace(" ", "_")
         if clean_key in raw:
             continue
