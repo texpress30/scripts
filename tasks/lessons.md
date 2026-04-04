@@ -1,5 +1,13 @@
 # Lessons
 
+- 2026-04-04: PostgreSQL `ALTER TYPE ADD VALUE` nu poate fi folosit în aceeași tranzacție cu INSERT-uri care referă noile valori. Migrația care adaugă enum values trebuie separată într-un fișier SQL propriu, executat înainte de seed data. Eroare: `unsafe use of new value “X” of enum type`.
+
+- 2026-04-04: `Record<CatalogType, ...>` în TypeScript prinde la compile time dacă lipsesc entries pentru noile union members — util ca safety net când extinzi un union type. Trei fișiere (FeedSourceCard, SourceMappingsCard, field-mapping/page) au dat eroare TS automat.
+
+- 2026-04-04: Hardcoded frozensets/arrays de catalog types (ex. `_VALID_CATALOG_TYPES` în Python, `CATALOG_TYPES` array în feed-schemas page) blochează noile tipuri — trebuie verificate și extinse manual. Grep pentru pattern-urile de enumerare a tipurilor existente.
+
+- 2026-04-04: Railway mapează Python `logger.warning` (stderr) la `severity: error` — mesajele de validare date quality (câmpuri lipsă, enum mismatches) trebuie loggate la `logger.info` ca să nu polueze error logs.
+
 - 2026-03-25: După orice răspuns incomplet de tip status-only (ex. „Implemented.”), finalizez obligatoriu workflow-ul complet în același turn: verificări executate, commit făcut și `make_pr` apelat înainte de mesajul final.
 
 - 2026-03-25: Pentru Media Tracker migrez business/manual pe regulă Data-layer-first la nivel de săptămână (nu pe zi), cu fallback legacy strict pe săptămânile fără rânduri Data layer și fără combinare în aceeași săptămână.

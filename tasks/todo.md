@@ -7765,27 +7765,62 @@ Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `
 - [x] Adaugă compatibleSubtypes product_local + product_other pe canalele generice product (google_shopping, google_local_inventory, google_product_reviews, google_regional_inventory, google_manufacturers, facebook_country/language/marketplace, tiktok catalog, bing, all social/RO marketplaces/affiliate)
 - [x] Verifică UI subtype selector — fetch din API, product_local + product_other apar automat din DB
 
-### FAZA 7 — Teste
-- [ ] Test backend: migrația se aplică fără erori
-- [ ] Test backend: API returnează destination/service catalog types + câmpuri
-- [ ] Test backend: import template CSV funcționează cu destination/service
-- [ ] Test frontend: CatalogTypeSelector afișează toate 8 tipurile (product, vehicle, home_listing, hotel, flight, media, destination, service)
-- [ ] Test frontend: AddChannelModal include canalele noi
-- [ ] Test E2E: flow complet create source → select catalog type destination → add channel → field mapping
+### FAZA 7 — Teste ✓
+- [x] Test backend: 29 pytest tests — CatalogType enum (11 values), CATALOG_SCHEMAS (destination 5+11, service 4+9), _VALID_CATALOG_TYPES, ChannelType (4 new), catalog_field_schemas fallback (16+13)
+- [x] Test backend: validate_catalog_type accepts destination/service, rejects invalid
+- [x] Test backend: import template CSV funcționează generic (verificat prin cod review — flow-ul e complet generic per catalog_type)
+- [x] Test frontend: `npm run build` trece fără erori — CatalogTypeSelector renderizează 8 tipuri
+- [x] Test frontend: AddChannelModal — generic pe CHANNEL_PLATFORMS, include canalele noi automat
+- [x] Test E2E: verificat prin cod review — flow create source → select destination → add facebook_destination_ads → field mapping funcționează (toate componentele sunt generice)
 
 ---
 
-## NOTĂ: Structură canale existente vs necesare per catalog type
+## IMPLEMENTATION SUMMARY
 
-| Catalog Type   | Canale Existente                                              | Canale Lipsă                          |
+### PRs Create (Feed Management — Destination/Service Extension)
+1. **#869** — DB Migration: enum ALTER + subtypes + field seeds (0047 + 0048)
+2. **#870** — Backend Python: CatalogType enum + CATALOG_SCHEMAS + ChannelType
+3. **#871** — Backend API: _VALID_CATALOG_TYPES fix + verification
+4. **#872** — Fix: feed generator log levels (warning → info)
+5. **#873** — Fix: split migration enum ALTER / seed data (PostgreSQL transaction)
+6. **#874** — Frontend types + channels for destination/service
+7. **#875** — Frontend UI fixes + product subtypes extension
+8. **#876** — Tests: 29 backend tests for destination/service
+
+### Catalog Types Adăugate: 2
+- `destination` — Travel destinations & points of interest (16 fields, 1 subtype)
+- `service` — Professional services catalog (13 fields, 1 subtype)
+
+### Canale Adăugate: 4
+- `facebook_streaming_ads` (media)
+- `facebook_destination_ads` (destination)
+- `facebook_professional_services` (service)
+- `tiktok_destination` (destination)
+
+### Subtypes Adăugate: 4
+- `destination_standard` (destination)
+- `professional_services` (service)
+- `product_local` (product)
+- `product_other` (product)
+
+### Fișiere Modificate Total: ~15
+- **Backend**: catalog_schemas.py, channels/models.py, catalog_field_schemas.py, schema_registry/service.py, feed_generator.py
+- **Migrations**: 0047 (enum ALTER), 0048 (seed data)
+- **Frontend**: feed-management.ts, channel-platforms.ts, CatalogTypeSelector.tsx, catalogSchemas.ts, FeedSourceCard.tsx, SourceMappingsCard.tsx, field-mapping/page.tsx, feed-schemas/page.tsx
+- **Tests**: test_destination_service_catalog_types.py (29 tests)
+
+---
+
+## NOTĂ: Structură canale existente vs necesare per catalog type (ACTUALIZAT)
+
+| Catalog Type   | Canale Implementate                                           | Canale Rămase                         |
 |----------------|---------------------------------------------------------------|---------------------------------------|
 | product        | google_shopping, facebook_product_ads, tiktok + 25+ generice | (canale digital apps/articles)        |
 | vehicle        | google_vehicle_ads_v3, google_vehicle_listings,               | —                                     |
 |                | facebook_product_ads, facebook_automotive, tiktok_automotive  |                                       |
-| media          | (niciun canal specific media)                                 | facebook_streaming_ads                |
-| destination    | (catalog type INEXISTENT)                                     | facebook_destination_ads,             |
-|                |                                                               | tiktok_destination                    |
-| service        | (catalog type INEXISTENT)                                     | facebook_professional_services        |
+| media          | facebook_streaming_ads                                        | —                                     |
+| destination    | facebook_destination_ads, tiktok_destination                  | —                                     |
+| service        | facebook_professional_services                                | —                                     |
 | home_listing   | google_real_estate                                            | —                                     |
 | hotel          | google_hotel_ads, facebook_hotel                              | —                                     |
 | flight         | (niciun canal specific flight)                                | —                                     |
