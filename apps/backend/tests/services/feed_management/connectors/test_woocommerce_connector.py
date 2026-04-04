@@ -234,6 +234,30 @@ class TestAttributeExtraction:
         assert raw["all_categories"] == "Volkswagen, SUV, Auto Second Hand"
 
 
+class TestMetaComplexValues:
+    def test_dict_values_skipped(self):
+        """Meta entries with dict values are skipped (serialized objects)."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "jet_engine_data", "value": {"field_1": "x", "field_2": "y"}},
+            {"id": 2, "key": "simple_field", "value": "ok"},
+        ])
+        raw = _flatten_raw(woo)
+        assert "meta_jet_engine_data" not in raw
+        assert raw["meta_simple_field"] == "ok"
+
+    def test_list_values_skipped(self):
+        """Meta entries with list values are skipped."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "gallery_ids", "value": [1, 2, 3]},
+            {"id": 2, "key": "putere", "value": "150"},
+        ])
+        raw = _flatten_raw(woo)
+        assert "meta_gallery_ids" not in raw
+        assert raw["meta_putere"] == "150"
+
+
 class TestMetaFilterNotTooAggressive:
     def test_product_prefixed_plugin_meta_not_filtered(self):
         """Plugin meta keys like _product_brand should NOT be filtered."""

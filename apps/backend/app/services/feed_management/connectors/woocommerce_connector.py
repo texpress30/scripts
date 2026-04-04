@@ -255,8 +255,24 @@ class WooCommerceConnector(BaseConnector):
         )]
 
 
+_DIAG_LOGGED = False  # log raw structure for first product only
+
+
 def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -> dict[str, Any]:
     """Extract a flat dict of presentable raw fields from a WooCommerce product."""
+    global _DIAG_LOGGED
+    if not _DIAG_LOGGED:
+        _DIAG_LOGGED = True
+        _top_keys = sorted(woo.keys())
+        _attr_summary = [
+            {"name": a.get("name"), "options": a.get("options"), "option": a.get("option")}
+            for a in (woo.get("attributes") or [])
+        ]
+        _meta_keys = [m.get("key") for m in (woo.get("meta_data") or [])]
+        logger.info(
+            "WOO_DIAG first product id=%s top_keys=%s attributes=%s meta_keys=%s",
+            woo.get("id"), _top_keys, _attr_summary, _meta_keys,
+        )
     raw: dict[str, Any] = {}
     # Scalar fields from the parent product
     _SCALAR_KEYS = (
@@ -317,6 +333,9 @@ def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -
         key = str(meta.get("key") or "")
         value = meta.get("value")
         if not key or value is None or value == "":
+            continue
+        # Skip complex nested values (serialized objects, arrays of objects)
+        if isinstance(value, (dict, list)):
             continue
         # Skip WordPress/WooCommerce internal meta
         key_lower = key.lower()
