@@ -122,6 +122,20 @@ class WooCommerceConnector(BaseConnector):
             logger.exception("WooCommerce test_connection unexpected error for %s", self._store_url)
             return ConnectionTestResult(success=False, message=f"Eroare la testarea conexiunii: {type(exc).__name__}: {exc}")
 
+    async def _fetch_currency(self, client: httpx.AsyncClient) -> None:
+        """Fetch store currency from WooCommerce Settings API."""
+        try:
+            resp = await client.get(self._api_url("/settings/general"))
+            if resp.status_code == 200:
+                for setting in resp.json():
+                    if setting.get("id") == "woocommerce_currency":
+                        value = setting.get("value")
+                        if value:
+                            self._currency = str(value)
+                        break
+        except Exception:
+            pass  # keep existing self._currency as fallback
+
     async def fetch_products(self, since: datetime | None = None) -> AsyncIterator[ProductData]:
         params: dict[str, Any] = {"per_page": _PER_PAGE, "status": "publish", "orderby": "id", "order": "asc"}
         if since is not None:
@@ -129,6 +143,8 @@ class WooCommerceConnector(BaseConnector):
 
         page = 1
         async with httpx.AsyncClient(auth=self._auth(), timeout=_REQUEST_TIMEOUT) as client:
+            # Fetch real currency before processing products
+            await self._fetch_currency(client)
             while True:
                 params["page"] = page
                 resp = await client.get(self._api_url("/products"), params=params)
@@ -275,6 +291,29 @@ def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -
         options = attr.get("options") or []
         if attr_name and options:
             raw[f"attribute_{attr_name}"] = ", ".join(str(o) for o in options)
+
+    # meta_data — custom fields (e.g. auto dealer plugins: kilometraj, brand, model)
+    _WP_INTERNAL_META_PREFIXES = (
+        "_edit_", "_wp_", "_thumbnail", "_oembed", "_wc_", "_product_",
+        "_sku", "_price", "_regular_price", "_sale_price", "_stock",
+        "_manage_stock", "_backorders", "_sold_individually", "_virtual",
+        "_downloadable", "_download_", "_purchase_note", "_variation_",
+        "_crosssell_", "_upsell_",
+    )
+    for meta in woo.get("meta_data") or []:
+        key = str(meta.get("key") or "")
+        value = meta.get("value")
+        if not key or value is None or value == "":
+            continue
+        # Skip WordPress/WooCommerce internal meta
+        key_lower = key.lower()
+        if any(key_lower.startswith(p) for p in _WP_INTERNAL_META_PREFIXES):
+            continue
+        # Normalize: strip leading underscores, lowercase
+        clean_key = key.lstrip("_").lower().replace(" ", "_")
+        # Don't overwrite fields already extracted (name, price, etc.)
+        if clean_key not in raw:
+            raw[f"meta_{clean_key}"] = str(value) if not isinstance(value, str) else value
 
     # Variation overrides
     if variation:
