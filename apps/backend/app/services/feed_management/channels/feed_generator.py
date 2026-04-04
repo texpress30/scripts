@@ -315,7 +315,7 @@ class FeedGenerator:
 
         Description fields are stripped of HTML as a safety net for stale data.
         """
-        from app.services.feed_management.connectors.base import strip_html
+        from app.services.feed_management.connectors.base import flatten_images, strip_html
 
         raw = data.get("raw_data")
         if not isinstance(raw, dict):
@@ -329,6 +329,9 @@ class FeedGenerator:
             if key not in merged:
                 merged[key] = value
         merged.pop("raw_data", None)
+        # Flatten images if not already done (safety net for stale data)
+        if "images" in merged and "image_0_url" not in merged:
+            flatten_images(merged)
         return merged
 
     @staticmethod
