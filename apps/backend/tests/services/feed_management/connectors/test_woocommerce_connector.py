@@ -258,6 +258,91 @@ class TestMetaComplexValues:
         assert raw["meta_putere"] == "150"
 
 
+class TestTaxonomyObjectExtraction:
+    def test_single_taxonomy_dict(self):
+        """Top-level dict with 'name' key extracted (e.g. brand from JetEngine)."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(brand={"term_id": 17, "name": "BMW", "taxonomy": "product_cat"})
+        raw = _flatten_raw(woo)
+        assert raw["brand"] == "BMW"
+
+    def test_taxonomy_array_single(self):
+        """Top-level array of dicts with 'name' extracted."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(norma_de_poluare=[{"name": "EURO 5", "term_id": 42}])
+        raw = _flatten_raw(woo)
+        assert raw["norma_de_poluare"] == "EURO 5"
+
+    def test_taxonomy_array_multiple(self):
+        """Multiple taxonomy terms joined with comma."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(Dotari=[{"name": "ABS"}, {"name": "ESP"}, {"name": "Climatronic"}])
+        raw = _flatten_raw(woo)
+        assert raw["dotari"] == "ABS, ESP, Climatronic"
+
+    def test_taxonomy_empty_array_skipped(self):
+        """Empty taxonomy array is skipped."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(Dotari=[], dotari_de_siguranta=[])
+        raw = _flatten_raw(woo)
+        assert "dotari" not in raw
+        assert "dotari_de_siguranta" not in raw
+
+    def test_taxonomy_key_lowercased(self):
+        """Uppercase taxonomy keys are lowercased."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(Caroserie={"name": "SUV", "term_id": 5})
+        raw = _flatten_raw(woo)
+        assert raw["caroserie"] == "SUV"
+
+    def test_taxonomy_does_not_overwrite_scalar(self):
+        """Taxonomy extraction doesn't overwrite already-extracted fields."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(name="T-Shirt")
+        # name is already in _SCALAR_KEYS, should not be overwritten
+        raw = _flatten_raw(woo)
+        assert raw["name"] == "T-Shirt"
+
+    def test_full_auto_dealer_product(self):
+        """Realistic auto dealer product with multiple taxonomy fields."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(
+            brand={"term_id": 17, "name": "Volkswagen"},
+            model={"term_id": 33, "name": "Touran"},
+            caroserie={"term_id": 5, "name": "Monovolum"},
+            transmisie={"term_id": 8, "name": "Automata"},
+            combustibil={"term_id": 3, "name": "Diesel"},
+            an_fabricatie={"term_id": 12, "name": "2012"},
+            capacitate_motor={"term_id": 15, "name": "2.0L"},
+            numar_usi={"term_id": 20, "name": "5 usi"},
+            culoare={"term_id": 25, "name": "Alb"},
+            norma_de_poluare=[{"name": "EURO 5"}],
+            tip_oferta=[{"name": "Stoc intern"}],
+            Dotari=[],
+            dotari_de_siguranta=[],
+            meta_data=[
+                {"id": 1, "key": "kilometraj", "value": "236116"},
+                {"id": 2, "key": "putere", "value": "140 CP"},
+            ],
+        )
+        raw = _flatten_raw(woo)
+        assert raw["brand"] == "Volkswagen"
+        assert raw["model"] == "Touran"
+        assert raw["caroserie"] == "Monovolum"
+        assert raw["transmisie"] == "Automata"
+        assert raw["combustibil"] == "Diesel"
+        assert raw["an_fabricatie"] == "2012"
+        assert raw["capacitate_motor"] == "2.0L"
+        assert raw["numar_usi"] == "5 usi"
+        assert raw["culoare"] == "Alb"
+        assert raw["norma_de_poluare"] == "EURO 5"
+        assert raw["tip_oferta"] == "Stoc intern"
+        assert "dotari" not in raw
+        assert "dotari_de_siguranta" not in raw
+        assert raw["meta_kilometraj"] == "236116"
+        assert raw["meta_putere"] == "140 CP"
+
+
 class TestMetaFilterNotTooAggressive:
     def test_product_prefixed_plugin_meta_not_filtered(self):
         """Plugin meta keys like _product_brand should NOT be filtered."""
