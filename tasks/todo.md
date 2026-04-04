@@ -7941,3 +7941,135 @@ Available Source Fields (30 câmpuri) — lipsesc toate câmpurile auto
 - [x] Test: currency fallback la eroare
 - [x] Test: currency used in product mapping
 - [x] 12 teste noi, toate trec (2 failures pre-existente în TestErrorHandling)
+
+# =============================================================================
+# DISCOVERY: AI Auto-Mapping pentru Field Mapping (2026-04-04)
+# =============================================================================
+
+## INFRASTRUCTURA AI EXISTENTĂ
+
+### Provider: Anthropic Claude API
+- **Fișier:** `apps/backend/app/services/feed_management/schema_registry/ai_suggestions.py`
+- **Modele:** claude-sonnet-4-20250514 (default), claude-haiku-4-5-20251001, claude-opus-4-6
+- **Config:** `ANTHROPIC_API_KEY` (config.py:238), `AI_ALIAS_SUGGESTIONS_ENABLED` (config.py:239)
+- **Temperature:** 0 (deterministic), **Max tokens:** 2000, **Timeout:** 15s (30s Opus)
+
+### Funcții AI existente (ai_suggestions.py)
+1. **`suggest_aliases()`** (linia 95) — potrivește câmpuri noi cu canonice existente
+2. **`analyze_existing_fields()`** (linia 169) — detectează duplicate în superset
+3. **`suggest_canonical_groups()`** (linia 255) — grupează câmpuri semantic
+
+### Pattern AI reutilizabil
+```python
+from ai_suggestions import is_ai_enabled, _call_claude, _parse_json_response
+
+if is_ai_enabled():
+    raw = _call_claude(system="...", user_content="...", model=None)
+    result = _parse_json_response(raw)
+```
+- `_call_claude()` (linia 53) — wrapper Anthropic API cu error handling
+- `_parse_json_response()` (linia 78) — extrage JSON din markdown code blocks
+- `is_ai_enabled()` (linia 36) — verifică API key + feature flag
+
+### Endpoints AI existente (schema_registry.py)
+- `GET /feed-management/schemas/ai-status` — status AI (enabled, model)
+- `POST /feed-management/schemas/import/preview` — preview import cu AI alias suggestions
+- `POST /feed-management/schemas/analyze` — analiză câmpuri + canonical grouping
+- `POST /feed-management/schemas/analyze/confirm` — execută merge-uri sugerate
+
+## STRUCTURA FIELD MAPPING
+
+### Source Fields (din MongoDB)
+- **Fișier:** `products_repository.py:117-214` (`get_all_unique_fields()`)
+- Scanează max 100 documente din `feed_products` collection
+- Returnează: `[{field, type, sample}]` — field name, detected type, sample value
+- Include: top-level keys + raw_data keys (meta_*, attribute_*)
+- Exclude: _id, created_at, raw_data, underscore-prefixed
+
+### Target Fields (din DB)
+- **Fișier:** `master_fields/service.py:29-77` (`_get_target_fields()`)
+- Primary: `feed_schema_fields` table (DB-first via schema_registry_repository)
+- Fallback: hardcoded `catalog_field_schemas.py`
+- Structura: `{field_key, display_name, description, data_type, is_required, channels, ...}`
+
+### Mapping Storage
+- **Tabel:** `master_field_mappings` (migrație 0039)
+- **Coloane:** feed_source_id, target_field, source_field, mapping_type (direct/static/template), static_value, template_value, is_required, sort_order
+- **Unique:** (feed_source_id, target_field) — un mapping per target per source
+- **Repository:** `master_fields/repository.py` — upsert(), bulk_save(), get_by_source()
+
+### Sugestii existente (fuzzy matching)
+- **Fișier:** `master_fields/service.py:104-138` (`_suggest_source_field()`)
+- 4-tier fallback chain:
+  1. Exact normalized match (lowercase, replace `-`/` ` cu `_`)
+  2. Google attribute match (`g:title` → match variants)
+  3. Target name in source name (`product_title` → match `shop_product_title`)
+  4. Source name in target name (`title` → match `product_title`)
+- **Limitări:** no semantic understanding, fails on abbreviations (qty vs quantity), nu înțelege context auto (meta_kilometraj → mileage)
+
+### API Contract (frontend)
+- **GET** `/feed-sources/{id}/master-fields` → `{mappings, suggestions, source_fields, mapped_count}`
+- **POST** `/feed-sources/{id}/master-fields` → `{mappings: [{target_field, source_field, mapping_type, ...}]}`
+
+## PLAN DE IMPLEMENTARE — AI AUTO-MAPPING
+
+### Task 1 — Backend: funcție `suggest_mappings_ai()` în master_fields/service.py ✓
+- [x] Creează funcție care trimite source_fields + target_fields la Claude
+- [x] Prompt generic: "field mapping expert for {catalog_type}" cu semantic matching
+- [x] Input: source fields cu sample values + target fields cu descriptions
+- [x] Output: `[{target_field, source_field, confidence, reason}]` — validat contra field names reale
+- [x] Reutilizează `_call_claude()` și `_parse_json_response()` din ai_suggestions.py
+- [x] Fallback: returnează [] dacă AI disabled sau call eșuează
+- [x] 7 teste: mock AI response, disabled, error, invalid fields, markdown, product/vehicle
+
+### Task 2 — Backend: endpoint `POST /feed-sources/{id}/master-fields/ai-suggest` ✓
+- [x] Endpoint nou în master_fields router
+- [x] Acceptă opțional: model override în body
+- [x] Returnează: `{source_id, catalog_type, suggestions: [...], ai_available: bool}`
+- [x] Protected cu auth + feature flag (_enforce_feature_flag)
+
+### Task 3 — Backend: integrare în `get_mappings_with_suggestions()` ✓
+- [x] După fuzzy matching, apelează `suggest_mappings_ai()` pentru unmapped targets
+- [x] Priority: existing mapping > fuzzy match > AI suggestion
+- [x] Adaugă `suggestion_source: "fuzzy" | "ai" | null`, `ai_confidence`, `ai_reason` în response
+
+### Task 4 — Frontend: buton "Auto-map with AI" în FieldMappingEditor
+- [ ] Adaugă buton în UI-ul de field mapping
+- [ ] Apelează `POST /feed-sources/{id}/master-fields/ai-suggest`
+- [ ] Afișează sugestii cu confidence badge (high/medium/low)
+- [ ] User confirmă/respinge fiecare sugestie
+- [ ] "Accept All" / "Accept High Confidence" bulk actions
+
+### Task 5 — Frontend: UI de review sugestii AI
+- [ ] Modal sau panel lateral cu lista sugestiilor
+- [ ] Source field → Target field cu confidence bar
+- [ ] Reason text de la AI
+- [ ] Checkbox per sugestie
+- [ ] Submit accepted → POST bulk mappings
+
+### Task 6 — Teste
+- [ ] Test backend: suggest_mappings_ai() cu mock Claude response
+- [ ] Test backend: endpoint returnează sugestii corecte
+- [ ] Test backend: fallback la fuzzy când AI disabled
+- [ ] Test frontend: buton afișat, loading state, error handling
+
+## ESTIMARE
+
+| Task | Complexitate | Fișiere | Estimare |
+|------|-------------|---------|----------|
+| Backend AI function | Mediu | master_fields/service.py | ~60 linii |
+| Backend endpoint | Mic | master_fields API | ~30 linii |
+| Backend integration | Mic | service.py | ~20 linii |
+| Frontend buton + API call | Mediu | FieldMappingEditor + hook | ~80 linii |
+| Frontend review UI | Mediu-Mare | component nou | ~150 linii |
+| Teste | Mic | test files | ~50 linii |
+
+**Total estimat: 2-3 PRs, ~400 linii cod nou**
+
+## NOTE
+
+- Claude API e deja configurat și funcțional (folosit în Feed Schemas AI analysis)
+- Pattern-ul de AI call e bine stabilit: `_call_claude()` → `_parse_json_response()`
+- Feature flag `AI_ALIAS_SUGGESTIONS_ENABLED` controlează toate funcțiile AI
+- Prompt-ul trebuie adaptat pentru field mapping (nu alias matching)
+- Fuzzy suggestions rămân ca fallback rapid (nu necesită API call)

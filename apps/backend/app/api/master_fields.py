@@ -20,6 +20,7 @@ from app.services.feed_management.master_fields.repository import (
 from app.services.feed_management.master_fields.service import (
     get_mappings_with_suggestions,
     get_source_fields,
+    suggest_mappings_ai,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,44 @@ def delete_master_field(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
     return {"status": "ok", "id": mapping_id}
+
+
+class AiSuggestRequest(BaseModel):
+    model: str | None = None
+
+
+@router.post("/feed-sources/{source_id}/master-fields/ai-suggest")
+def ai_suggest_mappings(
+    source_id: str,
+    payload: AiSuggestRequest | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Use AI to suggest source→target field mappings."""
+    _enforce_feature_flag()
+
+    from app.services.feed_management.schema_registry.ai_suggestions import is_ai_enabled
+    from app.services.feed_management.repository import FeedSourceRepository
+
+    source = FeedSourceRepository().get_by_id(source_id)
+    catalog_type = source.catalog_type if hasattr(source, "catalog_type") else "product"
+
+    from app.services.feed_management.master_fields.service import (
+        get_source_fields as _get_sf,
+        _get_target_fields,
+    )
+
+    source_fields, _ = _get_sf(source_id)
+    target_fields = _get_target_fields(catalog_type)
+
+    model_override = payload.model if payload else None
+    suggestions = suggest_mappings_ai(source_fields, target_fields, catalog_type, model=model_override)
+
+    return {
+        "source_id": source_id,
+        "catalog_type": catalog_type,
+        "suggestions": suggestions,
+        "ai_available": is_ai_enabled(),
+    }
 
 
 @router.get(
