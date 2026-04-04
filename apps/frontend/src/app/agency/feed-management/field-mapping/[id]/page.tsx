@@ -80,11 +80,12 @@ export default function MasterFieldsPage() {
         setAiError("AI suggestions not available. Check AI configuration in settings.");
         return;
       }
-      // Filter out suggestions for already-mapped fields
-      const mapped = new Set(Object.keys(localMappings).filter(
-        (k) => localMappings[k]?.source_field || localMappings[k]?.static_value,
-      ));
-      const filtered = res.suggestions.filter((s) => !mapped.has(s.target_field));
+      // Filter out suggestions for fields with SAVED mappings (from DB),
+      // not fuzzy/AI pre-filled suggestions in local state
+      const savedTargets = new Set(
+        (data?.mappings ?? []).filter((m) => m.source_field).map((m) => m.target_field),
+      );
+      const filtered = res.suggestions.filter((s) => !savedTargets.has(s.target_field));
       if (filtered.length === 0) {
         setAiError("No new AI suggestions. All matchable fields are already mapped.");
         return;
