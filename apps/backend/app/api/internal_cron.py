@@ -137,3 +137,62 @@ async def run_scheduled_syncs(request: Request) -> dict:
 async def cron_health() -> dict:
     """Simple health check for the cron system."""
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@router.get("/diag/feed-product-raw")
+async def diag_feed_product_raw(request: Request, source_id: str = "") -> dict:
+    """TEMPORARY diagnostic: return stored product data from MongoDB.
+
+    Shows what _flatten_raw() extracted — the raw_data dict is the
+    flattened output, not the original WooCommerce API response.
+
+    Usage: GET /internal/diag/feed-product-raw?source_id=<uuid>
+    Protected by X-Internal-Key header.
+    """
+    _verify_cron_key(request)
+
+    from app.services.mongo_provider import get_mongo_collection
+
+    collection = get_mongo_collection("feed_products")
+    if collection is None:
+        return {"error": "MongoDB not configured"}
+
+    query: dict = {}
+    if source_id:
+        query["feed_source_id"] = source_id
+
+    # Get first 3 products for comparison
+    docs = list(collection.find(query, {"data": 1, "_id": 0}).limit(3))
+    if not docs:
+        return {"error": "No products found", "query": query}
+
+    products = []
+    for doc in docs:
+        data = doc.get("data", {})
+        raw = data.get("raw_data", {})
+        products.append({
+            "product_id": data.get("id"),
+            "title": data.get("title", "")[:80],
+            "currency": data.get("currency"),
+            "price": data.get("price"),
+            "raw_data_keys": sorted(raw.keys()),
+            "attribute_fields": {k: v for k, v in raw.items() if k.startswith("attribute_")},
+            "meta_fields": {k: str(v)[:80] for k, v in raw.items() if k.startswith("meta_")},
+            "other_fields": {k: str(v)[:80] for k, v in raw.items()
+                            if not k.startswith("attribute_") and not k.startswith("meta_")
+                            and k not in ("images",)},
+        })
+
+    # Aggregate all unique raw_data keys across products
+    all_keys: set[str] = set()
+    for doc in docs:
+        raw = doc.get("data", {}).get("raw_data", {})
+        all_keys.update(raw.keys())
+
+    return {
+        "products_sampled": len(products),
+        "all_raw_data_keys": sorted(all_keys),
+        "attribute_key_count": sum(1 for k in all_keys if k.startswith("attribute_")),
+        "meta_key_count": sum(1 for k in all_keys if k.startswith("meta_")),
+        "products": products,
+    }
