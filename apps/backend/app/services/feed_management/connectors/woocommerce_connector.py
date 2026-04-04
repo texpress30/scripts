@@ -241,7 +241,7 @@ class WooCommerceConnector(BaseConnector):
         return [ProductData(
             id=str(woo.get("id", "")),
             title=str(woo.get("name") or ""),
-            description=str(woo.get("short_description") or woo.get("description") or ""),
+            description=strip_html(woo.get("short_description") or woo.get("description") or ""),
             price=price,
             compare_at_price=compare,
             currency=currency,
