@@ -165,6 +165,103 @@ class TestProductMapping:
         assert products[0].inventory_quantity == 0
 
 
+# -- attribute extraction ------------------------------------------------------
+
+class TestAttributeExtraction:
+    def test_taxonomy_attributes_extracted(self):
+        """Product attributes with options[] are extracted as attribute_{name}."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(attributes=[
+            {"name": "Brand", "options": ["BMW"], "position": 0, "visible": True},
+            {"name": "Model", "options": ["X1"], "position": 1, "visible": True},
+            {"name": "Combustibil", "options": ["Diesel"], "position": 2, "visible": True},
+            {"name": "An fabricatie", "options": ["2015"], "position": 3, "visible": True},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["attribute_brand"] == "BMW"
+        assert raw["attribute_model"] == "X1"
+        assert raw["attribute_combustibil"] == "Diesel"
+        assert raw["attribute_an_fabricatie"] == "2015"
+
+    def test_attribute_single_option_not_joined(self):
+        """Single-option attribute returns plain string, not comma-joined."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(attributes=[
+            {"name": "Color", "options": ["Red"]},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["attribute_color"] == "Red"
+
+    def test_attribute_multiple_options_joined(self):
+        """Multi-option attribute values are comma-joined."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(attributes=[
+            {"name": "Dotari", "options": ["ABS", "ESP", "Climatronic"]},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["attribute_dotari"] == "ABS, ESP, Climatronic"
+
+    def test_variation_attribute_option_singular(self):
+        """Variation attributes use 'option' (singular) instead of 'options'."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(attributes=[
+            {"name": "Size", "option": "Large", "options": []},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["attribute_size"] == "Large"
+
+    def test_attribute_empty_options_skipped(self):
+        """Attributes with no options and no option are skipped."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(attributes=[
+            {"name": "Empty", "options": []},
+            {"name": "Valid", "options": ["OK"]},
+        ])
+        raw = _flatten_raw(woo)
+        assert "attribute_empty" not in raw
+        assert raw["attribute_valid"] == "OK"
+
+    def test_all_categories_field(self):
+        """Multiple categories are joined in all_categories."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(categories=[
+            {"id": 1, "name": "Volkswagen"},
+            {"id": 2, "name": "SUV"},
+            {"id": 3, "name": "Auto Second Hand"},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["category"] == "Volkswagen"
+        assert raw["all_categories"] == "Volkswagen, SUV, Auto Second Hand"
+
+
+class TestMetaFilterNotTooAggressive:
+    def test_product_prefixed_plugin_meta_not_filtered(self):
+        """Plugin meta keys like _product_brand should NOT be filtered."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "_product_brand", "value": "BMW"},
+            {"id": 2, "key": "_product_model", "value": "X1"},
+            {"id": 3, "key": "_product_year", "value": "2015"},
+        ])
+        raw = _flatten_raw(woo)
+        assert raw["meta_product_brand"] == "BMW"
+        assert raw["meta_product_model"] == "X1"
+        assert raw["meta_product_year"] == "2015"
+
+    def test_internal_product_meta_still_filtered(self):
+        """WC internal _product_image_gallery etc. still filtered."""
+        from app.services.feed_management.connectors.woocommerce_connector import _flatten_raw
+        woo = _simple_product(meta_data=[
+            {"id": 1, "key": "_product_image_gallery", "value": "123,456"},
+            {"id": 2, "key": "_product_url", "value": "http://example.com"},
+            {"id": 3, "key": "kilometraj", "value": "100000"},
+        ])
+        raw = _flatten_raw(woo)
+        assert "meta_product_image_gallery" not in raw
+        assert "meta_product_url" not in raw
+        assert raw["meta_kilometraj"] == "100000"
+
+
 # -- fetch_products -----------------------------------------------------------
 
 class TestFetchProducts:
