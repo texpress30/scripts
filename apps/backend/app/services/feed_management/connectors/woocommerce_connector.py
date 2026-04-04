@@ -273,6 +273,8 @@ def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -
     categories = woo.get("categories") or []
     if categories:
         raw["category"] = categories[0].get("name", "")
+        if len(categories) > 1:
+            raw["all_categories"] = ", ".join(c.get("name", "") for c in categories)
     tags = woo.get("tags") or []
     if tags:
         raw["tags"] = ", ".join(t.get("name", "") for t in tags)
@@ -288,13 +290,24 @@ def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -
     attrs = woo.get("attributes") or []
     for attr in attrs:
         attr_name = str(attr.get("name", "")).lower().replace(" ", "_")
+        if not attr_name:
+            continue
+        # WooCommerce uses "options" (array) for product attributes,
+        # and "option" (string) for variation attributes
         options = attr.get("options") or []
-        if attr_name and options:
-            raw[f"attribute_{attr_name}"] = ", ".join(str(o) for o in options)
+        option_single = attr.get("option", "")
+        if options:
+            value = ", ".join(str(o) for o in options) if len(options) > 1 else str(options[0])
+        elif option_single:
+            value = str(option_single)
+        else:
+            continue
+        raw[f"attribute_{attr_name}"] = value
 
     # meta_data — custom fields (e.g. auto dealer plugins: kilometraj, brand, model)
     _WP_INTERNAL_META_PREFIXES = (
-        "_edit_", "_wp_", "_thumbnail", "_oembed", "_wc_", "_product_",
+        "_edit_", "_wp_", "_thumbnail", "_oembed", "_wc_",
+        "_product_image_gallery", "_product_url", "_product_button_text",
         "_sku", "_price", "_regular_price", "_sale_price", "_stock",
         "_manage_stock", "_backorders", "_sold_individually", "_virtual",
         "_downloadable", "_download_", "_purchase_note", "_variation_",
