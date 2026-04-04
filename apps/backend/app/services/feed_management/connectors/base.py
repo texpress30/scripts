@@ -1,11 +1,40 @@
 from __future__ import annotations
 
 import abc
+import re
 from dataclasses import dataclass
 from datetime import datetime
+from html import unescape
 from typing import Any, AsyncIterator
 
 from pydantic import BaseModel, Field
+
+
+def strip_html(text: str | None) -> str:
+    """Remove HTML tags and decode entities, preserving text structure.
+
+    - Replaces block-level closing tags (</p>, </div>, </li>, <br>) with
+      newlines so paragraph structure is kept.
+    - Strips all remaining HTML tags.
+    - Decodes HTML entities (&amp; → &).
+    - Normalises whitespace within lines and collapses blank lines.
+    """
+    if not text:
+        return ""
+    s = str(text)
+    # Block-level breaks → newline
+    s = re.sub(r"<br\s*/?>|</p>|</div>|</li>", "\n", s, flags=re.IGNORECASE)
+    # Strip remaining tags
+    s = re.sub(r"<[^>]+>", " ", s)
+    # Decode entities
+    s = unescape(s)
+    # Normalise inline whitespace (preserve newlines)
+    s = re.sub(r"[^\S\n]+", " ", s)
+    # Collapse multiple blank lines
+    s = re.sub(r"\n\s*\n+", "\n\n", s)
+    # Trim each line + global
+    s = "\n".join(line.strip() for line in s.splitlines())
+    return s.strip()
 
 
 class ProductVariant(BaseModel):

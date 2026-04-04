@@ -20,6 +20,7 @@ from app.services.feed_management.connectors.base import (
     ProductData,
     ProductVariant,
     ValidationResult,
+    strip_html,
 )
 
 logger = logging.getLogger(__name__)
@@ -217,7 +218,7 @@ class WooCommerceConnector(BaseConnector):
                 results.append(ProductData(
                     id=f"{woo['id']}_{var['id']}",
                     title=var_title,
-                    description=str(woo.get("short_description") or woo.get("description") or ""),
+                    description=strip_html(woo.get("short_description") or woo.get("description") or ""),
                     price=price,
                     compare_at_price=compare,
                     currency=currency,
@@ -267,7 +268,11 @@ def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -
     )
     for key in _SCALAR_KEYS:
         if key in woo:
-            raw[key] = woo[key]
+            value = woo[key]
+            # Strip HTML from description fields in raw_data too
+            if key in ("description", "short_description") and isinstance(value, str):
+                value = strip_html(value)
+            raw[key] = value
 
     # Useful nested data flattened
     categories = woo.get("categories") or []
