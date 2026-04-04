@@ -157,9 +157,9 @@ class WooCommerceConnector(BaseConnector):
                 if page == 1 and products:
                     _first = products[0]
                     print(f"WOO_RAW_KEYS product_id={_first.get('id','?')} keys={sorted(_first.keys())}", flush=True)
-                    for _ck in ['brand', 'model', 'caroserie', 'transmisie', 'combustibil', 'an_fabricatie', 'culoare']:
+                    for _ck in ['brands', 'meta_box', 'attributes', 'meta_data']:
                         _v = _first.get(_ck, 'MISSING')
-                        print(f"  {_ck}: {type(_v).__name__} = {str(_v)[:120]}", flush=True)
+                        print(f"  {_ck}: {type(_v).__name__} = {str(_v)[:500]}", flush=True)
 
                 for woo_product in products:
                     variations: list[dict[str, Any]] = []
