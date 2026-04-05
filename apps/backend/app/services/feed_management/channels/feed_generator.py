@@ -10,9 +10,69 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
+from xml.etree.ElementTree import Element, SubElement, tostring, fromstring, register_namespace
 from xml.sax.saxutils import escape as xml_escape
 
+# Regex to strip XML-invalid control characters (keeps \t, \n, \r)
+_XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Regex for characters invalid in XML element names
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Convert a value to an XML-safe escaped string."""
+    if value is None:
+        return ""
+    text = str(value)
+    text = _XML_CONTROL_CHARS_RE.sub("", text)
+    return xml_escape(text)
+
+
+def _sanitize_xml_tag(name: str) -> str:
+    """Convert a field name to a valid XML element name."""
+    tag = name.replace(" ", "_")
+    tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    if tag and tag[0].isdigit():
+        tag = f"_{tag}"
+    return tag or "_unknown"
+
 from pydantic import BaseModel
+
+
+# Regex to strip XML-invalid control characters (keeps \t, \n, \r)
+_XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Regex for valid XML element name: starts with letter or _, then letters/digits/_/-/.
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Convert a value to an XML-safe escaped string.
+
+    - Converts to string
+    - Strips control characters invalid in XML
+    - Escapes &, <, >
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    text = _XML_CONTROL_CHARS_RE.sub("", text)
+    return xml_escape(text)
+
+
+def _sanitize_xml_tag(name: str) -> str:
+    """Convert a field name to a valid XML element name.
+
+    - Replaces spaces with underscores
+    - Strips characters invalid in XML element names
+    - Prepends underscore if name starts with a digit
+    """
+    tag = name.replace(" ", "_")
+    tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    if tag and tag[0].isdigit():
+        tag = f"_{tag}"
+    return tag or "_unknown"
 
 from app.services.feed_management.channels.models import (
     ChannelType,
@@ -20,6 +80,46 @@ from app.services.feed_management.channels.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# XML namespace constants
+GOOGLE_NS = "http://base.google.com/ns/1.0"
+ATOM_NS = "http://www.w3.org/2005/Atom"
+
+register_namespace("g", GOOGLE_NS)
+register_namespace("atom", ATOM_NS)
+
+# Regex to strip XML-invalid control characters (keeps \t, \n, \r)
+_XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# Only allow letters, digits, underscore, hyphen in XML tag names (no dots)
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_\-]")
+
+# Max length for text fields in XML (prevents giant descriptions)
+_MAX_XML_TEXT_LENGTH = 5000
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Strip control chars from value for XML text content."""
+    if value is None:
+        return ""
+    text = _XML_CONTROL_CHARS_RE.sub("", str(value))
+    if len(text) > _MAX_XML_TEXT_LENGTH:
+        text = text[:_MAX_XML_TEXT_LENGTH].rsplit(" ", 1)[0] + "..."
+    return text
+
+
+def _sanitize_xml_tag(name: str) -> str:
+    """Convert a field name to a valid XML element name.
+
+    Strips brackets, dots, and other invalid chars. Collapses consecutive
+    underscores and trims trailing ones.
+    """
+    tag = name.replace(" ", "_")
+    tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    tag = re.sub(r"_+", "_", tag)  # collapse consecutive underscores
+    tag = tag.strip("_")
+    if tag and tag[0].isdigit():
+        tag = f"n{tag}"
+    return tag or "unknown"
 
 
 def _utcnow() -> datetime:
@@ -100,12 +200,16 @@ class FeedGenerator:
             # 5. Format feed
             content = self._format_feed(
                 transformed, channel.channel_type, channel.feed_format,
+                channel=channel,
             )
 
             # 6. Upload to S3
             ext = channel.feed_format.value
             s3_key = f"channel-feeds/{channel.feed_source_id}/{channel_id}/feed.{ext}"
-            content_type = self._content_type(channel.feed_format)
+            if channel.feed_format == FeedFormat.xml and channel.channel_type != ChannelType.custom:
+                content_type = "application/rss+xml; charset=utf-8"
+            else:
+                content_type = self._content_type(channel.feed_format)
             self._upload_to_s3(s3_key, content, content_type)
 
             # 7. Build public feed URL
@@ -316,9 +420,13 @@ class FeedGenerator:
         standardized key, so mappings can reference both standardized names
         (``title``) and raw source names (``body_html``, ``vendor``, …).
 
-        Description fields are stripped of HTML as a safety net for stale data.
+        Safety nets applied during merge:
+        - HTML stripped from description fields (stale data from before strip fix)
+        - Images array flattened into image_N_url/tag fields (stale data
+          or data synced before flatten feature; always re-applies current
+          tag rules so updated defaults take effect immediately)
         """
-        from app.services.feed_management.connectors.base import strip_html
+        from app.services.feed_management.connectors.base import flatten_images, strip_html
 
         raw = data.get("raw_data")
         if not isinstance(raw, dict):
@@ -332,6 +440,9 @@ class FeedGenerator:
             if key not in merged:
                 merged[key] = value
         merged.pop("raw_data", None)
+        # Flatten images — always re-apply to ensure current tag rules are used
+        if "images" in merged:
+            flatten_images(merged)
         return merged
 
     @staticmethod
@@ -371,6 +482,7 @@ class FeedGenerator:
         products: list[dict[str, Any]],
         channel_type: ChannelType,
         feed_format: FeedFormat,
+        channel: Any = None,
     ) -> str:
         if feed_format == FeedFormat.csv:
             return self._format_csv(products)
@@ -379,33 +491,61 @@ class FeedGenerator:
         if feed_format == FeedFormat.json:
             return json.dumps({"items": products}, ensure_ascii=False, indent=2)
 
-        # XML — use Google Shopping RSS 2.0 for google_shopping, generic otherwise
-        if channel_type == ChannelType.google_shopping:
-            return self._format_google_shopping_xml(products)
-        return self._format_xml(products)
+        # XML — RSS 2.0 with g: namespace for ALL platform channels.
+        # Only custom channels use the generic <feed><entry> format.
+        if channel_type == ChannelType.custom:
+            return self._format_xml(products)
+        return self._format_rss_xml(products, channel)
 
-    def _format_google_shopping_xml(self, products: list[dict[str, Any]]) -> str:
-        lines: list[str] = [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">',
-            "<channel>",
-            "<title>Product Feed</title>",
-            "<link>https://api.omarosa.ro</link>",
-            "<description>Google Shopping Feed</description>",
-        ]
+    def _format_rss_xml(
+        self,
+        products: list[dict[str, Any]],
+        channel: Any = None,
+    ) -> str:
+        """Generate RSS 2.0 XML with g: namespace (Google/Meta/TikTok compatible)."""
+        rss = Element("rss", {"version": "2.0"})
+        ch_el = SubElement(rss, "channel")
+
+        title_el = SubElement(ch_el, "title")
+        title_el.text = (channel.name if channel else None) or "Product Feed"
+        link_el = SubElement(ch_el, "link")
+        link_el.text = "https://api.omarosa.ro"
+        desc_el = SubElement(ch_el, "description")
+        desc_el.text = "Automotive inventory feed"
+
+        if channel and hasattr(channel, "feed_url") and channel.feed_url:
+            SubElement(ch_el, f"{{{ATOM_NS}}}link", {
+                "href": f"https://admin.omarosa.ro/api{channel.feed_url}",
+                "rel": "self",
+                "type": "application/rss+xml",
+            })
+
         for product in products:
-            lines.append("  <item>")
-            for field, value in product.items():
+            item = SubElement(ch_el, "item")
+            for field_name, value in product.items():
                 if value is None:
                     continue
-                tag = f"g:{field}"
-                lines.append(f"    <{tag}>{xml_escape(str(value))}</{tag}>")
-            lines.append("  </item>")
-        lines.append("</channel>")
-        lines.append("</rss>")
-        return "\n".join(lines)
+                val_str = _sanitize_xml_value(value)
+                if not val_str.strip():
+                    continue
+                tag = _sanitize_xml_tag(str(field_name))
+                el = SubElement(item, f"{{{GOOGLE_NS}}}{tag}")
+                el.text = val_str
+
+        xml_decl = '<?xml version="1.0" encoding="utf-8"?>\n'
+        xml_str = xml_decl + tostring(rss, encoding="unicode")
+
+        # Validate before returning — never produce invalid XML
+        try:
+            fromstring(xml_str)
+        except Exception as exc:
+            logger.error("Generated RSS XML is invalid: %s", exc)
+            raise ValueError(f"Generated RSS XML is invalid: {exc}") from exc
+
+        return xml_str
 
     def _format_xml(self, products: list[dict[str, Any]]) -> str:
+        """Generic XML feed — only used for custom channels."""
         lines: list[str] = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             f'<feed count="{len(products)}">',
@@ -415,10 +555,8 @@ class FeedGenerator:
             for field, value in product.items():
                 if value is None:
                     continue
-                safe_key = str(field).replace(" ", "_")
-                lines.append(
-                    f"    <{safe_key}>{xml_escape(str(value))}</{safe_key}>"
-                )
+                tag = _sanitize_xml_tag(str(field))
+                lines.append(f"    <{tag}>{xml_escape(_sanitize_xml_value(value))}</{tag}>")
             lines.append("  </entry>")
         lines.append("</feed>")
         return "\n".join(lines)
