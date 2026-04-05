@@ -10,11 +10,41 @@ import csv
 import io
 import json
 import logging
+import re
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.sax.saxutils import escape as xml_escape
 
 logger = logging.getLogger(__name__)
+
+# Regex to strip XML-invalid control characters (keeps \t, \n, \r)
+_XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Regex for characters invalid in XML element names
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Convert a value to an XML-safe escaped string."""
+    if value is None:
+        return ""
+    text = str(value)
+    text = _XML_CONTROL_CHARS_RE.sub("", text)
+    return xml_escape(text)
+
+
+def _sanitize_xml_tag(name: str) -> str:
+    """Convert a field name to a valid XML element name."""
+    tag = name.replace(" ", "_")
+    tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    if tag and tag[0].isdigit():
+        tag = f"_{tag}"
+    return tag or "_unknown"
+
+
+def _sanitize_text_for_element(text: str) -> str:
+    """Strip control chars from text destined for ElementTree .text assignment."""
+    return _XML_CONTROL_CHARS_RE.sub("", text)
 
 # ---------------------------------------------------------------------------
 # Google Shopping required/optional fields
@@ -140,8 +170,8 @@ class FeedFormatter:
                 value = product.get(field)
                 if value is None:
                     continue
-                tag = f"g:{field}"
-                lines.append(f"    <{tag}>{xml_escape(str(value))}</{tag}>")
+                tag = f"g:{_sanitize_xml_tag(field)}"
+                lines.append(f"    <{tag}>{_sanitize_xml_value(value)}</{tag}>")
             lines.append("  </item>")
         lines.append("</channel>")
         lines.append("</rss>")
@@ -173,7 +203,7 @@ class FeedFormatter:
     def _dict_to_xml(self, parent: Element, data: dict[str, Any]) -> None:
         """Recursively convert a dict to XML sub-elements."""
         for key, value in data.items():
-            safe_key = str(key).replace(" ", "_")
+            safe_key = _sanitize_xml_tag(str(key))
             if isinstance(value, dict):
                 child = SubElement(parent, safe_key)
                 self._dict_to_xml(child, value)
@@ -183,10 +213,10 @@ class FeedFormatter:
                     if isinstance(item, dict):
                         self._dict_to_xml(child, item)
                     else:
-                        child.text = str(item)
+                        child.text = _sanitize_text_for_element(str(item))
             else:
                 child = SubElement(parent, safe_key)
-                child.text = str(value) if value is not None else ""
+                child.text = _sanitize_text_for_element(str(value)) if value is not None else ""
 
     @staticmethod
     def _xml_to_string(root: Element) -> str:
