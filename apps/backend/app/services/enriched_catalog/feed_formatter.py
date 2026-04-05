@@ -24,13 +24,11 @@ ATOM_NS = "http://www.w3.org/2005/Atom"
 register_namespace("g", GOOGLE_NS)
 register_namespace("atom", ATOM_NS)
 
-# Regex to strip XML-invalid control characters (keeps \t, \n, \r)
 _XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
 
 
 def _sanitize_xml_tag(name: str) -> str:
-    """Convert a field name to a valid XML element name."""
     tag = name.replace(" ", "_")
     tag = _XML_TAG_INVALID_RE.sub("_", tag)
     if tag and tag[0].isdigit():
@@ -39,15 +37,7 @@ def _sanitize_xml_tag(name: str) -> str:
 
 
 def _sanitize_text(text: str) -> str:
-    """Strip control chars from text for XML."""
     return _XML_CONTROL_CHARS_RE.sub("", text)
-
-
-def _sanitize_xml_value(value: Any) -> str:
-    """Convert a value to XML-safe escaped string."""
-    if value is None:
-        return ""
-    return xml_escape(_sanitize_text(str(value)))
 
 # ---------------------------------------------------------------------------
 # Google Shopping required/optional fields
@@ -154,7 +144,7 @@ class FeedFormatter:
         return buf.getvalue()
 
     # ------------------------------------------------------------------
-    # RSS 2.0 XML with g: namespace (Google Shopping / Meta compatible)
+    # RSS 2.0 XML with g: namespace (Google/Meta/TikTok compatible)
     # ------------------------------------------------------------------
 
     def format_rss_xml(
@@ -163,10 +153,7 @@ class FeedFormatter:
         title: str = "Product Feed",
         feed_url: str | None = None,
     ) -> str:
-        """Generate RSS 2.0 XML feed with g: namespace (Google/Meta compatible).
-
-        All product fields are emitted with the g: prefix.
-        """
+        """Generate RSS 2.0 XML feed with g: namespace."""
         rss = Element("rss", {"version": "2.0"})
         ch_el = SubElement(rss, "channel")
 

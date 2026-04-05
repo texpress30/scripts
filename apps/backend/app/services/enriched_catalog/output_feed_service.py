@@ -474,7 +474,7 @@ class OutputFeedService:
             return feed_formatter.format_as_json(products)
         if feed_format == "csv":
             return feed_formatter.format_as_csv(products)
-        # Default: RSS XML (compatible with Google/Meta)
+        # Default: RSS 2.0 XML (compatible with Google/Meta/TikTok)
         return feed_formatter.format_rss_xml(products, title=feed.get("name", "Product Feed"))
 
     def _upload_to_s3(self, s3_key: str, content: str, content_type: str) -> None:

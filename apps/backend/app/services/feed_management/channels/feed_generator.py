@@ -92,19 +92,12 @@ register_namespace("atom", ATOM_NS)
 _XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
 
-# Channel types that use Meta/Facebook RSS 2.0 format
-_META_CHANNEL_TYPES = {
-    ChannelType.facebook_product_ads,
-    ChannelType.facebook_country,
-}
-
 
 def _sanitize_xml_value(value: Any) -> str:
-    """Convert a value to an XML-safe escaped string."""
+    """Strip control chars from value for XML text content."""
     if value is None:
         return ""
-    text = str(value)
-    return _XML_CONTROL_CHARS_RE.sub("", text)
+    return _XML_CONTROL_CHARS_RE.sub("", str(value))
 
 
 def _sanitize_xml_tag(name: str) -> str:
@@ -200,11 +193,8 @@ class FeedGenerator:
             # 6. Upload to S3
             ext = channel.feed_format.value
             s3_key = f"channel-feeds/{channel.feed_source_id}/{channel_id}/feed.{ext}"
-            # Use RSS content type for Google/Meta channels
-            if channel.feed_format == FeedFormat.xml and (
-                channel.channel_type == ChannelType.google_shopping
-                or channel.channel_type in _META_CHANNEL_TYPES
-            ):
+            # Use RSS content type for non-custom XML channels
+            if channel.feed_format == FeedFormat.xml and channel.channel_type != ChannelType.custom:
                 content_type = "application/rss+xml; charset=utf-8"
             else:
                 content_type = self._content_type(channel.feed_format)
@@ -486,21 +476,22 @@ class FeedGenerator:
         if feed_format == FeedFormat.json:
             return json.dumps({"items": products}, ensure_ascii=False, indent=2)
 
-        # XML — RSS 2.0 with g: namespace for Google/Meta, generic for others
-        if channel_type == ChannelType.google_shopping or channel_type in _META_CHANNEL_TYPES:
-            return self._format_rss_xml(products, channel)
-        return self._format_xml(products)
+        # XML — RSS 2.0 with g: namespace for ALL channels (Google, Meta,
+        # TikTok, Bing, etc.) — this is the format every platform expects.
+        # Only custom channels use the generic <feed><entry> format.
+        if channel_type == ChannelType.custom:
+            return self._format_xml(products)
+        return self._format_rss_xml(products, channel)
 
     def _format_rss_xml(
         self,
         products: list[dict[str, Any]],
         channel: Any = None,
     ) -> str:
-        """Generate RSS 2.0 XML with g: namespace (Google/Meta compatible)."""
+        """Generate RSS 2.0 XML with g: namespace (Google/Meta/TikTok compatible)."""
         rss = Element("rss", {"version": "2.0"})
         ch_el = SubElement(rss, "channel")
 
-        # Channel header
         title_el = SubElement(ch_el, "title")
         title_el.text = (channel.name if channel else None) or "Product Feed"
         link_el = SubElement(ch_el, "link")
@@ -508,7 +499,6 @@ class FeedGenerator:
         desc_el = SubElement(ch_el, "description")
         desc_el.text = "Automotive inventory feed"
 
-        # Add atom:link self-reference if we have the feed URL
         if channel and hasattr(channel, "feed_url") and channel.feed_url:
             SubElement(ch_el, f"{{{ATOM_NS}}}link", {
                 "href": f"https://admin.omarosa.ro/api{channel.feed_url}",
@@ -516,7 +506,6 @@ class FeedGenerator:
                 "type": "application/rss+xml",
             })
 
-        # Items
         for product in products:
             item = SubElement(ch_el, "item")
             for field_name, value in product.items():
@@ -533,7 +522,7 @@ class FeedGenerator:
         return xml_decl + tostring(rss, encoding="unicode")
 
     def _format_xml(self, products: list[dict[str, Any]]) -> str:
-        """Generic XML feed format (non-RSS, for custom channels)."""
+        """Generic XML feed format — only used for custom channels."""
         lines: list[str] = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             f'<feed count="{len(products)}">',
