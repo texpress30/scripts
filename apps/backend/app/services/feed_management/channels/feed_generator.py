@@ -345,9 +345,12 @@ class FeedGenerator:
                 result[out_name] = value
 
         # Also include any extra mapped fields not in spec (from master_mappings)
-        # so we don't lose data that the user explicitly mapped
+        # so we don't lose data that the user explicitly mapped.
+        # Skip keys already in result — spec-renamed fields take precedence
+        # (e.g., spec renames "description" → "offer_description"; a master
+        # mapping with target "offer_description" must not overwrite it).
         for key, value in row.items():
-            if key not in spec_map and value is not None:
+            if key not in spec_map and key not in result and value is not None:
                 result[key] = value
 
         return result
