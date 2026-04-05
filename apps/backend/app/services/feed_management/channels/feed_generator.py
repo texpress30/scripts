@@ -118,8 +118,12 @@ _GOOGLE_RSS_TYPES = frozenset({
     ChannelType.google_things_to_do,
 })
 
-# Fields that are rendered as nested <image><url>...<tag>...</image> in Meta format
-_IMAGE_FIELD_PREFIX = "image_"
+# Pattern matching image URL/tag fields: image_0_url, image[0].url, image_0_tag, etc.
+# After _apply_field_specs, keys may be raw channel_field_names like "image[0].url"
+# or sanitized canonical names like "image_0_url". Match both.
+_IMAGE_URL_RE = re.compile(r"^image[^a-zA-Z0-9]*(\d+)[^a-zA-Z0-9]*(?:url|link)", re.IGNORECASE)
+_IMAGE_TAG_RE = re.compile(r"^image[^a-zA-Z0-9]*(\d+)[^a-zA-Z0-9]*tag", re.IGNORECASE)
+_IMAGE_FIELD_RE = re.compile(r"^image", re.IGNORECASE)
 
 
 def _sanitize_xml_value(value: Any) -> str:
@@ -531,9 +535,6 @@ class FeedGenerator:
     # Meta Vehicle Offers: <listings><listing> — no namespace
     # ------------------------------------------------------------------
 
-    # Fields consumed by nested <image> logic — excluded from flat output
-    _META_IMAGE_SKIP = {"image_link", "image_count"}
-
     def _format_meta_listings_xml(
         self,
         products: list[dict[str, Any]],
@@ -546,35 +547,48 @@ class FeedGenerator:
         for product in products:
             listing = SubElement(root, "listing")
 
-            # 1. Nested <image> elements FIRST (Meta template order)
-            has_images = False
-            for i in range(20):
-                img_url = product.get(f"image_{i}_url")
-                if not img_url:
-                    break
-                img_tag = product.get(f"image_{i}_tag", "")
-                image_el = SubElement(listing, "image")
-                SubElement(image_el, "url").text = _sanitize_xml_value(img_url)
-                if img_tag:
-                    SubElement(image_el, "tag").text = _sanitize_xml_value(img_tag)
-                has_images = True
+            # 1. Collect image URL/tag pairs from product dict.
+            #    Keys may be canonical (image_0_url) or raw channel names
+            #    (image[0].url) — match by regex, pair by index.
+            image_urls: dict[int, str] = {}
+            image_tags: dict[int, str] = {}
+            image_keys: set[str] = set()
 
-            # Fallback: use image_link if no image_N_url fields exist
-            if not has_images:
+            for key, val in product.items():
+                if val is None:
+                    continue
+                m_url = _IMAGE_URL_RE.match(key)
+                m_tag = _IMAGE_TAG_RE.match(key)
+                if m_url:
+                    image_urls[int(m_url.group(1))] = str(val)
+                    image_keys.add(key)
+                elif m_tag:
+                    image_tags[int(m_tag.group(1))] = str(val)
+                    image_keys.add(key)
+                elif _IMAGE_FIELD_RE.match(key):
+                    image_keys.add(key)
+
+            # Render nested <image> elements FIRST (Meta template order)
+            for idx in sorted(image_urls.keys()):
+                image_el = SubElement(listing, "image")
+                SubElement(image_el, "url").text = _sanitize_xml_value(image_urls[idx])
+                tag_val = image_tags.get(idx)
+                if tag_val:
+                    SubElement(image_el, "tag").text = _sanitize_xml_value(tag_val)
+
+            # Fallback: use image_link if no indexed images found
+            if not image_urls:
                 img_link = product.get("image_link")
                 if img_link:
                     image_el = SubElement(listing, "image")
                     SubElement(image_el, "url").text = _sanitize_xml_value(img_link)
 
-            # 2. All other fields — plain, NO namespace prefix
+            # 2. All other fields — plain, NO namespace prefix.
+            #    Skip all image-related keys (consumed above).
             for field_name, value in product.items():
                 if value is None:
                     continue
-                # Skip image_N_url/tag — already rendered as nested <image>
-                if field_name.startswith(_IMAGE_FIELD_PREFIX):
-                    continue
-                # Skip fields consumed by image logic
-                if field_name in self._META_IMAGE_SKIP:
+                if field_name in image_keys:
                     continue
                 val_str = _sanitize_xml_value(value)
                 if not val_str.strip():

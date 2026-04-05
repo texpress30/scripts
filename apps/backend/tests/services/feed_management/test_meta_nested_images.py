@@ -114,6 +114,43 @@ class TestImageLinkFallback:
         assert root.find("listing/image") is None
 
 
+class TestRawChannelFieldNames:
+    """Test with raw channel_field_names from schema registry (image[0].url)."""
+
+    def test_bracket_notation_creates_nested_images(self):
+        """After _apply_field_specs, keys may be image[0].url — must still nest."""
+        product = {
+            "image[0].url": "https://img.test/bracket0.jpg",
+            "image[0].tag[0]": "Față",
+            "image[1].url": "https://img.test/bracket1.jpg",
+            "image[1].tag[0]": "Spate",
+            "image_link": "https://img.test/link.jpg",
+            "title": "Test Car",
+        }
+        xml = _gen()._format_meta_listings_xml([product])
+        root = fromstring(xml)
+        images = root.findall("listing/image")
+        assert len(images) == 2
+        assert images[0].find("url").text == "https://img.test/bracket0.jpg"
+        assert images[0].find("tag").text == "Față"
+        # No flat fields
+        assert "image[0]" not in xml
+        assert "<image_link>" not in xml
+
+    def test_mixed_notation(self):
+        """Product has both canonical and raw field names."""
+        product = {
+            "image_0_url": "https://img.test/canon.jpg",
+            "image_0_tag": "Față",
+            "image[1].url": "https://img.test/raw.jpg",
+            "title": "Mixed",
+        }
+        xml = _gen()._format_meta_listings_xml([product])
+        root = fromstring(xml)
+        images = root.findall("listing/image")
+        assert len(images) == 2
+
+
 class TestFeedFormatterMetaImages:
 
     def test_nested_images(self):
@@ -129,3 +166,15 @@ class TestFeedFormatterMetaImages:
         xml = _fmt().format_meta_listings_xml([product])
         root = fromstring(xml)
         assert root.find("listing/image/url").text == "https://fb.jpg"
+
+    def test_bracket_notation(self):
+        product = {
+            "image[0].url": "https://img.test/0.jpg",
+            "image[0].tag[0]": "Față",
+            "title": "Test",
+        }
+        xml = _fmt().format_meta_listings_xml([product])
+        root = fromstring(xml)
+        images = root.findall("listing/image")
+        assert len(images) == 1
+        assert "<image[0]" not in xml

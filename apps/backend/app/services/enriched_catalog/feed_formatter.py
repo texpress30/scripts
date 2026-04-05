@@ -35,6 +35,11 @@ def _sanitize_xml_tag(name: str) -> str:
     return tag or "unknown"
 
 
+_IMAGE_URL_RE = re.compile(r"^image[^a-zA-Z0-9]*(\d+)[^a-zA-Z0-9]*(?:url|link)", re.IGNORECASE)
+_IMAGE_TAG_RE = re.compile(r"^image[^a-zA-Z0-9]*(\d+)[^a-zA-Z0-9]*tag", re.IGNORECASE)
+_IMAGE_FIELD_RE = re.compile(r"^image", re.IGNORECASE)
+
+
 def _sanitize_text(text: str) -> str:
     text = _XML_CONTROL_CHARS_RE.sub("", text)
     if len(text) > _MAX_XML_TEXT_LENGTH:
@@ -158,36 +163,48 @@ class FeedFormatter:
         root = Element("listings")
         SubElement(root, "title").text = title
 
-        _skip = {"image_link", "image_count"}
         for product in products:
             listing = SubElement(root, "listing")
 
-            # 1. Nested <image> elements FIRST
-            has_images = False
-            for i in range(20):
-                img_url = product.get(f"image_{i}_url")
-                if not img_url:
-                    break
-                img_tag = product.get(f"image_{i}_tag", "")
-                image_el = SubElement(listing, "image")
-                SubElement(image_el, "url").text = _sanitize_text(str(img_url))
-                if img_tag:
-                    SubElement(image_el, "tag").text = _sanitize_text(str(img_tag))
-                has_images = True
+            # 1. Collect image URL/tag pairs by index (handles both
+            #    canonical keys like image_0_url and raw channel names
+            #    like image[0].url)
+            image_urls: dict[int, str] = {}
+            image_tags: dict[int, str] = {}
+            image_keys: set[str] = set()
 
-            if not has_images:
+            for key, val in product.items():
+                if val is None:
+                    continue
+                m_url = _IMAGE_URL_RE.match(key)
+                m_tag = _IMAGE_TAG_RE.match(key)
+                if m_url:
+                    image_urls[int(m_url.group(1))] = str(val)
+                    image_keys.add(key)
+                elif m_tag:
+                    image_tags[int(m_tag.group(1))] = str(val)
+                    image_keys.add(key)
+                elif _IMAGE_FIELD_RE.match(key):
+                    image_keys.add(key)
+
+            for idx in sorted(image_urls.keys()):
+                image_el = SubElement(listing, "image")
+                SubElement(image_el, "url").text = _sanitize_text(image_urls[idx])
+                tag_val = image_tags.get(idx)
+                if tag_val:
+                    SubElement(image_el, "tag").text = _sanitize_text(tag_val)
+
+            if not image_urls:
                 img_link = product.get("image_link")
                 if img_link:
                     image_el = SubElement(listing, "image")
                     SubElement(image_el, "url").text = _sanitize_text(str(img_link))
 
-            # 2. Other fields — skip image flat fields
+            # 2. Other fields — skip all image-related keys
             for field_name, value in product.items():
                 if value is None:
                     continue
-                if field_name.startswith(_IMAGE_FIELD_PREFIX):
-                    continue
-                if field_name in _skip:
+                if field_name in image_keys:
                     continue
                 val_str = _sanitize_text(str(value))
                 if not val_str.strip():
