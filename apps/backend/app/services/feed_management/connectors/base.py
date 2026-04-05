@@ -43,10 +43,16 @@ def strip_html(text: str | None) -> str:
 
 MAX_FEED_IMAGES = 20
 
+VALID_IMAGE_TAGS = ["Față", "Spate", "Interior", "Bord", "Lateral", "Portbagaj", "None"]
+
 DEFAULT_IMAGE_TAG_RULES: list[dict[str, Any]] = [
-    {"range": [0, 0], "tag": "Față"},
-    {"range": [1, 1], "tag": "Spate"},
-    {"range": [2, 3], "tag": "Lateral"},
+    {"range": [0, 1], "tag": "Față"},
+    {"range": [2, 2], "tag": "Spate"},
+    {"range": [3, 4], "tag": "Lateral"},
+    {"range": [5, 6], "tag": "Interior"},
+    {"range": [7, 7], "tag": "Bord"},
+    {"range": [8, 8], "tag": "Interior"},
+    {"range": [9, 9], "tag": "Portbagaj"},
     {"default": "Interior"},
 ]
 
@@ -55,13 +61,14 @@ def flatten_images(raw: dict[str, Any], tag_rules: list[dict[str, Any]] | None =
     """Flatten ``images`` array into indexed ``image_N_url`` + ``image_N_tag`` fields.
 
     Modifies *raw* in place.  The original ``images`` array is kept intact.
+    Always re-generates tags from rules (ensures stale tags are updated).
     """
     images = raw.get("images")
     if not images or not isinstance(images, list):
         return
 
     rules = tag_rules or DEFAULT_IMAGE_TAG_RULES
-    default_tag = "Față"
+    default_tag = "Interior"
     for rule in rules:
         if "default" in rule:
             default_tag = rule["default"]

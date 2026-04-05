@@ -315,7 +315,9 @@ class FeedGenerator:
 
         Safety nets applied during merge:
         - HTML stripped from description fields (stale data from before strip fix)
-        - Images array flattened into image_N_url/tag fields (stale data)
+        - Images array flattened into image_N_url/tag fields (stale data
+          or data synced before flatten feature; always re-applies current
+          tag rules so updated defaults take effect immediately)
         """
         from app.services.feed_management.connectors.base import flatten_images, strip_html
 
@@ -331,8 +333,8 @@ class FeedGenerator:
             if key not in merged:
                 merged[key] = value
         merged.pop("raw_data", None)
-        # Flatten images if not already done (safety net for stale data)
-        if "images" in merged and "image_0_url" not in merged:
+        # Flatten images — always re-apply to ensure current tag rules are used
+        if "images" in merged:
             flatten_images(merged)
         return merged
 
