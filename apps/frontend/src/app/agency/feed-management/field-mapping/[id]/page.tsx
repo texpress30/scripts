@@ -82,8 +82,9 @@ export default function MasterFieldsPage() {
         setAiError("AI suggestions not available. Check AI configuration in settings.");
         return;
       }
-      // Filter out suggestions for fields with SAVED mappings (from DB),
-      // not fuzzy/AI pre-filled suggestions in local state
+      // Filter out suggestions for fields with SAVED mappings (from DB)
+      // or manually-edited fields (user explicitly set/cleared them).
+      // Backend already excludes these, but double-check in case of race conditions.
       const savedTargets = new Set(
         (data?.mappings ?? []).filter((m) => m.source_field).map((m) => m.target_field),
       );
@@ -104,6 +105,19 @@ export default function MasterFieldsPage() {
   }
 
   function applyAiSuggestions() {
+    // Check if any selected suggestions would overwrite manually-edited mappings
+    const manualOverrides = aiSuggestions.filter(
+      (s) => aiSelected.has(s.target_field) && localMappings[s.target_field]?.manually_edited,
+    );
+    if (manualOverrides.length > 0) {
+      const confirmed = window.confirm(
+        `${manualOverrides.length} field(s) were manually edited and will be overwritten:\n\n` +
+        manualOverrides.map((s) => `  - ${s.target_field}`).join("\n") +
+        "\n\nContinue?",
+      );
+      if (!confirmed) return;
+    }
+
     setLocalMappings((prev) => {
       const next = { ...prev };
       for (const s of aiSuggestions) {
@@ -116,6 +130,7 @@ export default function MasterFieldsPage() {
           template_value: null,
           is_required: next[s.target_field]?.is_required ?? false,
           sort_order: next[s.target_field]?.sort_order ?? 0,
+          manually_edited: false,
         };
       }
       return next;
@@ -130,7 +145,7 @@ export default function MasterFieldsPage() {
     if (!data) return;
     const map: Record<string, MasterFieldRowValue> = {};
 
-    // Existing mappings
+    // Existing mappings (from DB) — always respect these, including manually_edited
     for (const m of data.mappings) {
       map[m.target_field] = {
         target_field: m.target_field,
@@ -140,10 +155,13 @@ export default function MasterFieldsPage() {
         template_value: m.template_value,
         is_required: m.is_required,
         sort_order: m.sort_order,
+        manually_edited: m.manually_edited ?? false,
       };
     }
 
-    // Suggestions for unmapped fields (pre-fill with suggested source field)
+    // Suggestions for unmapped fields (pre-fill with suggested source field).
+    // Backend already excludes manually_edited fields from suggestions,
+    // but we double-check here: never overwrite a saved mapping.
     for (const s of data.suggestions) {
       if (!map[s.target_field]) {
         map[s.target_field] = {
@@ -154,6 +172,7 @@ export default function MasterFieldsPage() {
           template_value: null,
           is_required: s.required,
           sort_order: 0,
+          manually_edited: false,
         };
       }
     }
@@ -167,8 +186,10 @@ export default function MasterFieldsPage() {
   }, []);
 
   async function handleSave() {
+    // Save mappings that have a value OR were manually edited (including cleared fields).
+    // This ensures "user cleared this field" is persisted and not re-suggested on reload.
     const items: BulkMappingItem[] = Object.values(localMappings)
-      .filter((m) => m.source_field || m.static_value || m.template_value)
+      .filter((m) => m.source_field || m.static_value || m.template_value || m.manually_edited)
       .map((m, i) => ({
         target_field: m.target_field,
         source_field: m.source_field,
@@ -177,6 +198,7 @@ export default function MasterFieldsPage() {
         template_value: m.template_value,
         is_required: m.is_required,
         sort_order: i,
+        manually_edited: m.manually_edited,
       }));
     await save(items);
     setSaveStatus("saved");
@@ -485,6 +507,7 @@ export default function MasterFieldsPage() {
                     template_value: null,
                     is_required: true,
                     sort_order: 0,
+                    manually_edited: false,
                   }}
                   onChange={(v) => handleChange(field.target_field, v)}
                 />
@@ -531,6 +554,7 @@ export default function MasterFieldsPage() {
                     template_value: null,
                     is_required: false,
                     sort_order: 0,
+                    manually_edited: false,
                   }}
                   onChange={(v) => handleChange(field.target_field, v)}
                 />

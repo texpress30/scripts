@@ -132,9 +132,12 @@ def ai_suggest_mappings(
     target_fields = _get_target_fields(catalog_type)
 
     # Exclude target fields that already have saved mappings in DB
+    # OR were manually edited (user explicitly set/cleared them)
     saved = _repo.get_by_source(source_id)
     saved_targets = {m.target_field for m in saved if m.source_field}
-    unmapped_targets = [tf for tf in target_fields if tf["field_key"] not in saved_targets]
+    manually_edited_targets = {m.target_field for m in saved if m.manually_edited}
+    skip_targets = saved_targets | manually_edited_targets
+    unmapped_targets = [tf for tf in target_fields if tf["field_key"] not in skip_targets]
 
     model_override = payload.model if payload else None
 
