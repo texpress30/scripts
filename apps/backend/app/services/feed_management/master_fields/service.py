@@ -235,6 +235,8 @@ def get_mappings_with_suggestions(
     # Existing mappings
     existing = master_field_mapping_repository.get_by_source(source_id)
     mapped_targets = {m.target_field for m in existing}
+    # Fields the user explicitly edited (including cleared ones) — never auto-suggest
+    manually_edited_targets = {m.target_field for m in existing if m.manually_edited}
 
     # Catalog schema fields — from DB (schema registry) with hardcoded fallback
     target_fields = _get_target_fields(catalog_type)
@@ -243,7 +245,8 @@ def get_mappings_with_suggestions(
     source_fields, _scanned = get_source_fields(source_id)
     source_field_names = [f["field"] for f in source_fields]
 
-    # Build suggestions for unmapped required/optional fields
+    # Build suggestions for unmapped required/optional fields.
+    # Skip fields that have saved mappings OR were manually edited (even if cleared).
     # AI suggestions are NOT called here (expensive Claude API call on every page load).
     # Use the explicit POST /master-fields/ai-suggest endpoint instead.
     suggestions: list[dict[str, Any]] = []
@@ -251,7 +254,8 @@ def get_mappings_with_suggestions(
         field_key = tf["field_key"]
         if field_key in mapped_targets:
             continue
-        suggested = _suggest_source_field(tf, source_field_names)
+        # Don't suggest for fields the user explicitly cleared/edited
+        suggested = None if field_key in manually_edited_targets else _suggest_source_field(tf, source_field_names)
         suggestions.append({
             "target_field": field_key,
             "display_name": tf["display_name"],

@@ -17,6 +17,7 @@ export type MasterFieldMapping = {
   template_value: string | null;
   is_required: boolean;
   sort_order: number;
+  manually_edited: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -76,6 +77,7 @@ export type BulkMappingItem = {
   template_value?: string | null;
   is_required?: boolean;
   sort_order?: number;
+  manually_edited?: boolean;
 };
 
 // Channel types
