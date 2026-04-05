@@ -24,6 +24,7 @@ class MasterFieldMappingCreate(BaseModel):
     template_value: str | None = None
     is_required: bool = False
     sort_order: int = 0
+    manually_edited: bool = False
 
 
 class MasterFieldMappingUpdate(BaseModel):
@@ -33,6 +34,7 @@ class MasterFieldMappingUpdate(BaseModel):
     template_value: str | None = None
     is_required: bool | None = None
     sort_order: int | None = None
+    manually_edited: bool | None = None
 
 
 class MasterFieldMappingBulkItem(BaseModel):
@@ -43,6 +45,7 @@ class MasterFieldMappingBulkItem(BaseModel):
     template_value: str | None = None
     is_required: bool = False
     sort_order: int = 0
+    manually_edited: bool = False
 
 
 class MasterFieldMappingBulkRequest(BaseModel):
@@ -63,5 +66,6 @@ class MasterFieldMappingResponse(BaseModel):
     template_value: str | None = None
     is_required: bool
     sort_order: int
+    manually_edited: bool = False
     created_at: datetime
     updated_at: datetime
