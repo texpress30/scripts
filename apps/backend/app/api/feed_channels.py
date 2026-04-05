@@ -223,14 +223,14 @@ def get_channel_products(
         {"key": m.target_field, "label": m.target_field.replace("_", " ").title(), "type": "string"}
         for m in master_mappings
     ]
-    # Mark image/url/price types
+    # Mark image/url/price types based on field name patterns
     for col in columns:
         key = col["key"]
-        if "image" in key:
+        if "image" in key and "tag" not in key:
             col["type"] = "image"
-        elif key in ("link", "url"):
+        elif key in ("link", "url") or key.endswith("_url") or key.endswith("_link"):
             col["type"] = "url"
-        elif key == "price" or key == "sale_price":
+        elif "price" in key:
             col["type"] = "price"
 
     # Count + fetch products
@@ -260,6 +260,8 @@ def get_channel_products(
             raw = data.get("raw_data")
             if isinstance(raw, dict) and _dk in raw and isinstance(raw[_dk], str) and "<" in raw[_dk]:
                 raw[_dk] = strip_html(raw[_dk])
+        # Merge raw_data + flatten images into top-level for transformer access
+        data = feed_generator._merge_raw_data(data)
         row = feed_generator._transform_product(data, master_mappings, override_map)
         transformed.append(row)
 
