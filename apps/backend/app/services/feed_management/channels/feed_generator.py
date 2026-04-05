@@ -313,9 +313,11 @@ class FeedGenerator:
         standardized key, so mappings can reference both standardized names
         (``title``) and raw source names (``body_html``, ``vendor``, …).
 
-        Description fields are stripped of HTML as a safety net for stale data.
+        Safety nets applied during merge:
+        - HTML stripped from description fields (stale data from before strip fix)
+        - Images array flattened into image_N_url/tag fields (stale data)
         """
-        from app.services.feed_management.connectors.base import strip_html
+        from app.services.feed_management.connectors.base import flatten_images, strip_html
 
         raw = data.get("raw_data")
         if not isinstance(raw, dict):
@@ -329,6 +331,9 @@ class FeedGenerator:
             if key not in merged:
                 merged[key] = value
         merged.pop("raw_data", None)
+        # Flatten images if not already done (safety net for stale data)
+        if "images" in merged and "image_0_url" not in merged:
+            flatten_images(merged)
         return merged
 
     @staticmethod

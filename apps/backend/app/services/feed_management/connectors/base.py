@@ -37,6 +37,53 @@ def strip_html(text: str | None) -> str:
     return s.strip()
 
 
+# ---------------------------------------------------------------------------
+# Image flattening
+# ---------------------------------------------------------------------------
+
+MAX_FEED_IMAGES = 20
+
+DEFAULT_IMAGE_TAG_RULES: list[dict[str, Any]] = [
+    {"range": [0, 0], "tag": "Față"},
+    {"range": [1, 1], "tag": "Spate"},
+    {"range": [2, 3], "tag": "Lateral"},
+    {"default": "Interior"},
+]
+
+
+def flatten_images(raw: dict[str, Any], tag_rules: list[dict[str, Any]] | None = None) -> None:
+    """Flatten ``images`` array into indexed ``image_N_url`` + ``image_N_tag`` fields.
+
+    Modifies *raw* in place.  The original ``images`` array is kept intact.
+    """
+    images = raw.get("images")
+    if not images or not isinstance(images, list):
+        return
+
+    rules = tag_rules or DEFAULT_IMAGE_TAG_RULES
+    default_tag = "Față"
+    for rule in rules:
+        if "default" in rule:
+            default_tag = rule["default"]
+
+    count = 0
+    for i, img_url in enumerate(images[:MAX_FEED_IMAGES]):
+        if not img_url or not isinstance(img_url, str):
+            continue
+        raw[f"image_{i}_url"] = img_url
+        tag = default_tag
+        for rule in rules:
+            if "range" in rule:
+                start, end = rule["range"]
+                if start <= i <= end:
+                    tag = rule["tag"]
+                    break
+        raw[f"image_{i}_tag"] = tag
+        count += 1
+
+    raw["image_count"] = count
+
+
 class ProductVariant(BaseModel):
     sku: str = ""
     title: str = ""
