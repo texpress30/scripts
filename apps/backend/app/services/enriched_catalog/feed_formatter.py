@@ -23,6 +23,7 @@ register_namespace("g", GOOGLE_NS)
 _XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 _MAX_XML_TEXT_LENGTH = 5000
+_IMAGE_FIELD_PREFIX = "image_"
 
 
 def _sanitize_xml_tag(name: str) -> str:
@@ -145,7 +146,48 @@ class FeedFormatter:
         return buf.getvalue()
 
     # ------------------------------------------------------------------
-    # RSS 2.0 XML with g: namespace (Google/Meta/TikTok compatible)
+    # Meta Vehicle Offers: <listings><listing> — no namespace
+    # ------------------------------------------------------------------
+
+    def format_meta_listings_xml(
+        self,
+        products: list[dict[str, Any]],
+        title: str = "Vehicle Offers Feed",
+    ) -> str:
+        """Generate Meta Vehicle Offers XML: <listings><listing>."""
+        root = Element("listings")
+        SubElement(root, "title").text = title
+
+        for product in products:
+            listing = SubElement(root, "listing")
+            for i in range(20):
+                img_url = product.get(f"image_{i}_url")
+                if not img_url:
+                    break
+                img_tag = product.get(f"image_{i}_tag", "")
+                image_el = SubElement(listing, "image")
+                SubElement(image_el, "url").text = _sanitize_text(str(img_url))
+                if img_tag:
+                    SubElement(image_el, "tag").text = _sanitize_text(str(img_tag))
+
+            for field_name, value in product.items():
+                if value is None:
+                    continue
+                if field_name.startswith(_IMAGE_FIELD_PREFIX) and (
+                    "_url" in field_name or "_tag" in field_name
+                ):
+                    continue
+                val_str = _sanitize_text(str(value))
+                if not val_str.strip():
+                    continue
+                SubElement(listing, _sanitize_xml_tag(field_name)).text = val_str
+
+        xml_str = '<?xml version="1.0" encoding="utf-8"?>\n' + tostring(root, encoding="unicode")
+        fromstring(xml_str)
+        return xml_str
+
+    # ------------------------------------------------------------------
+    # Google RSS 2.0: <rss><channel><item> with g: namespace
     # ------------------------------------------------------------------
 
     def format_rss_xml(
@@ -153,10 +195,7 @@ class FeedFormatter:
         products: list[dict[str, Any]],
         title: str = "Product Feed",
     ) -> str:
-        """Generate RSS 2.0 XML feed with g: namespace.
-
-        No XML declaration, no atom namespace — matches the format Meta accepts.
-        """
+        """Generate RSS 2.0 XML feed with g: namespace (Google/TikTok)."""
         rss = Element("rss", {"version": "2.0"})
         ch_el = SubElement(rss, "channel")
         SubElement(ch_el, "title").text = title
@@ -171,11 +210,10 @@ class FeedFormatter:
                 val_str = _sanitize_text(str(value))
                 if not val_str.strip():
                     continue
-                tag = _sanitize_xml_tag(field_name)
-                SubElement(item, f"{{{GOOGLE_NS}}}{tag}").text = val_str
+                SubElement(item, f"{{{GOOGLE_NS}}}{_sanitize_xml_tag(field_name)}").text = val_str
 
         xml_str = tostring(rss, encoding="unicode")
-        fromstring(xml_str)  # validate
+        fromstring(xml_str)
         return xml_str
 
     def format_google_shopping_xml(self, products: list[dict[str, Any]]) -> str:
