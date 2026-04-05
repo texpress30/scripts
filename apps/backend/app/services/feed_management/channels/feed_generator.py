@@ -10,7 +10,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
-from xml.etree.ElementTree import Element, SubElement, tostring, register_namespace
+from xml.etree.ElementTree import Element, SubElement, tostring, fromstring, register_namespace
 from xml.sax.saxutils import escape as xml_escape
 
 # Regex to strip XML-invalid control characters (keeps \t, \n, \r)
@@ -90,23 +90,36 @@ register_namespace("atom", ATOM_NS)
 
 # Regex to strip XML-invalid control characters (keeps \t, \n, \r)
 _XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
+# Only allow letters, digits, underscore, hyphen in XML tag names (no dots)
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_\-]")
+
+# Max length for text fields in XML (prevents giant descriptions)
+_MAX_XML_TEXT_LENGTH = 5000
 
 
 def _sanitize_xml_value(value: Any) -> str:
     """Strip control chars from value for XML text content."""
     if value is None:
         return ""
-    return _XML_CONTROL_CHARS_RE.sub("", str(value))
+    text = _XML_CONTROL_CHARS_RE.sub("", str(value))
+    if len(text) > _MAX_XML_TEXT_LENGTH:
+        text = text[:_MAX_XML_TEXT_LENGTH].rsplit(" ", 1)[0] + "..."
+    return text
 
 
 def _sanitize_xml_tag(name: str) -> str:
-    """Convert a field name to a valid XML element name."""
+    """Convert a field name to a valid XML element name.
+
+    Strips brackets, dots, and other invalid chars. Collapses consecutive
+    underscores and trims trailing ones.
+    """
     tag = name.replace(" ", "_")
     tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    tag = re.sub(r"_+", "_", tag)  # collapse consecutive underscores
+    tag = tag.strip("_")
     if tag and tag[0].isdigit():
-        tag = f"_{tag}"
-    return tag or "_unknown"
+        tag = f"n{tag}"
+    return tag or "unknown"
 
 
 def _utcnow() -> datetime:
@@ -193,7 +206,6 @@ class FeedGenerator:
             # 6. Upload to S3
             ext = channel.feed_format.value
             s3_key = f"channel-feeds/{channel.feed_source_id}/{channel_id}/feed.{ext}"
-            # Use RSS content type for non-custom XML channels
             if channel.feed_format == FeedFormat.xml and channel.channel_type != ChannelType.custom:
                 content_type = "application/rss+xml; charset=utf-8"
             else:
@@ -476,8 +488,7 @@ class FeedGenerator:
         if feed_format == FeedFormat.json:
             return json.dumps({"items": products}, ensure_ascii=False, indent=2)
 
-        # XML — RSS 2.0 with g: namespace for ALL channels (Google, Meta,
-        # TikTok, Bing, etc.) — this is the format every platform expects.
+        # XML — RSS 2.0 with g: namespace for ALL platform channels.
         # Only custom channels use the generic <feed><entry> format.
         if channel_type == ChannelType.custom:
             return self._format_xml(products)
@@ -519,10 +530,19 @@ class FeedGenerator:
                 el.text = val_str
 
         xml_decl = '<?xml version="1.0" encoding="utf-8"?>\n'
-        return xml_decl + tostring(rss, encoding="unicode")
+        xml_str = xml_decl + tostring(rss, encoding="unicode")
+
+        # Validate before returning — never produce invalid XML
+        try:
+            fromstring(xml_str)
+        except Exception as exc:
+            logger.error("Generated RSS XML is invalid: %s", exc)
+            raise ValueError(f"Generated RSS XML is invalid: {exc}") from exc
+
+        return xml_str
 
     def _format_xml(self, products: list[dict[str, Any]]) -> str:
-        """Generic XML feed format — only used for custom channels."""
+        """Generic XML feed — only used for custom channels."""
         lines: list[str] = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             f'<feed count="{len(products)}">',
