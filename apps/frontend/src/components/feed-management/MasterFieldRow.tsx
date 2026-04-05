@@ -14,6 +14,7 @@ export type MasterFieldRowValue = {
   template_value: string | null;
   is_required: boolean;
   sort_order: number;
+  manually_edited: boolean;
 };
 
 type Props = {
@@ -72,12 +73,12 @@ export function MasterFieldRow({
 
   function handleSourceChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const sf = e.target.value || null;
-    onChange({ ...value, source_field: sf, mapping_type: "direct", static_value: null, template_value: null });
+    onChange({ ...value, source_field: sf, mapping_type: "direct", static_value: null, template_value: null, manually_edited: true });
   }
 
   function handleMappingTypeChange(mt: MappingType) {
     setShowAdvanced(mt !== "direct");
-    onChange({ ...value, mapping_type: mt, source_field: mt === "direct" ? value.source_field : null });
+    onChange({ ...value, mapping_type: mt, source_field: mt === "direct" ? value.source_field : null, manually_edited: true });
   }
 
   return (
@@ -186,7 +187,7 @@ export function MasterFieldRow({
           <input
             type="text"
             value={value.static_value ?? ""}
-            onChange={(e) => onChange({ ...value, static_value: e.target.value })}
+            onChange={(e) => onChange({ ...value, static_value: e.target.value, manually_edited: true })}
             placeholder="Enter static value..."
             className="wm-input w-full"
           />
@@ -196,7 +197,7 @@ export function MasterFieldRow({
           <input
             type="text"
             value={value.template_value ?? ""}
-            onChange={(e) => onChange({ ...value, template_value: e.target.value })}
+            onChange={(e) => onChange({ ...value, template_value: e.target.value, manually_edited: true })}
             placeholder="e.g. {{make}} {{model}} {{year}}"
             className="wm-input w-full font-mono text-xs"
           />
