@@ -18,10 +18,7 @@ from xml.sax.saxutils import escape as xml_escape
 logger = logging.getLogger(__name__)
 
 GOOGLE_NS = "http://base.google.com/ns/1.0"
-ATOM_NS = "http://www.w3.org/2005/Atom"
-
 register_namespace("g", GOOGLE_NS)
-register_namespace("atom", ATOM_NS)
 
 _XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_\-]")
@@ -31,8 +28,7 @@ _MAX_XML_TEXT_LENGTH = 5000
 def _sanitize_xml_tag(name: str) -> str:
     tag = name.replace(" ", "_")
     tag = _XML_TAG_INVALID_RE.sub("_", tag)
-    tag = re.sub(r"_+", "_", tag)
-    tag = tag.strip("_")
+    tag = re.sub(r"_+", "_", tag).strip("_")
     if tag and tag[0].isdigit():
         tag = f"n{tag}"
     return tag or "unknown"
@@ -156,19 +152,16 @@ class FeedFormatter:
         self,
         products: list[dict[str, Any]],
         title: str = "Product Feed",
-        feed_url: str | None = None,
     ) -> str:
-        """Generate RSS 2.0 XML feed with g: namespace."""
+        """Generate RSS 2.0 XML feed with g: namespace.
+
+        No XML declaration, no atom namespace — matches the format Meta accepts.
+        """
         rss = Element("rss", {"version": "2.0"})
         ch_el = SubElement(rss, "channel")
         SubElement(ch_el, "title").text = title
         SubElement(ch_el, "link").text = "https://api.omarosa.ro"
         SubElement(ch_el, "description").text = "Automotive inventory feed"
-
-        if feed_url:
-            SubElement(ch_el, f"{{{ATOM_NS}}}link", {
-                "href": feed_url, "rel": "self", "type": "application/rss+xml",
-            })
 
         for product in products:
             item = SubElement(ch_el, "item")
@@ -181,9 +174,8 @@ class FeedFormatter:
                 tag = _sanitize_xml_tag(field_name)
                 SubElement(item, f"{{{GOOGLE_NS}}}{tag}").text = val_str
 
-        xml_decl = '<?xml version="1.0" encoding="utf-8"?>\n'
-        xml_str = xml_decl + tostring(rss, encoding="unicode")
-        fromstring(xml_str)  # validate — raises on invalid XML
+        xml_str = tostring(rss, encoding="unicode")
+        fromstring(xml_str)  # validate
         return xml_str
 
     def format_google_shopping_xml(self, products: list[dict[str, Any]]) -> str:

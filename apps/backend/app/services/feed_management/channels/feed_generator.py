@@ -81,24 +81,18 @@ from app.services.feed_management.channels.models import (
 
 logger = logging.getLogger(__name__)
 
-# XML namespace constants
+# Google namespace for RSS product feeds (used by Google, Meta, TikTok)
 GOOGLE_NS = "http://base.google.com/ns/1.0"
-ATOM_NS = "http://www.w3.org/2005/Atom"
-
 register_namespace("g", GOOGLE_NS)
-register_namespace("atom", ATOM_NS)
 
 # Regex to strip XML-invalid control characters (keeps \t, \n, \r)
 _XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-# Only allow letters, digits, underscore, hyphen in XML tag names (no dots)
 _XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_\-]")
-
-# Max length for text fields in XML (prevents giant descriptions)
 _MAX_XML_TEXT_LENGTH = 5000
 
 
 def _sanitize_xml_value(value: Any) -> str:
-    """Strip control chars from value for XML text content."""
+    """Strip control chars and truncate for XML text content."""
     if value is None:
         return ""
     text = _XML_CONTROL_CHARS_RE.sub("", str(value))
@@ -108,14 +102,10 @@ def _sanitize_xml_value(value: Any) -> str:
 
 
 def _sanitize_xml_tag(name: str) -> str:
-    """Convert a field name to a valid XML element name.
-
-    Strips brackets, dots, and other invalid chars. Collapses consecutive
-    underscores and trims trailing ones.
-    """
+    """Convert a field name to a valid XML element name."""
     tag = name.replace(" ", "_")
     tag = _XML_TAG_INVALID_RE.sub("_", tag)
-    tag = re.sub(r"_+", "_", tag)  # collapse consecutive underscores
+    tag = re.sub(r"_+", "_", tag)
     tag = tag.strip("_")
     if tag and tag[0].isdigit():
         tag = f"n{tag}"
@@ -346,9 +336,7 @@ class FeedGenerator:
 
         # Also include any extra mapped fields not in spec (from master_mappings)
         # so we don't lose data that the user explicitly mapped.
-        # Skip keys already in result — spec-renamed fields take precedence
-        # (e.g., spec renames "description" → "offer_description"; a master
-        # mapping with target "offer_description" must not overwrite it).
+        # Skip keys already in result — spec-renamed fields take precedence.
         for key, value in row.items():
             if key not in spec_map and key not in result and value is not None:
                 result[key] = value
@@ -502,23 +490,17 @@ class FeedGenerator:
         products: list[dict[str, Any]],
         channel: Any = None,
     ) -> str:
-        """Generate RSS 2.0 XML with g: namespace (Google/Meta/TikTok compatible)."""
+        """Generate RSS 2.0 XML with g: namespace (Google/Meta/TikTok compatible).
+
+        No XML declaration, no atom namespace — matches the format Meta accepts
+        (validated against working DataFeedWatch feeds).
+        """
         rss = Element("rss", {"version": "2.0"})
         ch_el = SubElement(rss, "channel")
 
-        title_el = SubElement(ch_el, "title")
-        title_el.text = (channel.name if channel else None) or "Product Feed"
-        link_el = SubElement(ch_el, "link")
-        link_el.text = "https://api.omarosa.ro"
-        desc_el = SubElement(ch_el, "description")
-        desc_el.text = "Automotive inventory feed"
-
-        if channel and hasattr(channel, "feed_url") and channel.feed_url:
-            SubElement(ch_el, f"{{{ATOM_NS}}}link", {
-                "href": f"https://admin.omarosa.ro/api{channel.feed_url}",
-                "rel": "self",
-                "type": "application/rss+xml",
-            })
+        SubElement(ch_el, "title").text = (channel.name if channel else None) or "Product Feed"
+        SubElement(ch_el, "link").text = "https://api.omarosa.ro"
+        SubElement(ch_el, "description").text = "Automotive inventory feed"
 
         for product in products:
             item = SubElement(ch_el, "item")
@@ -529,13 +511,12 @@ class FeedGenerator:
                 if not val_str.strip():
                     continue
                 tag = _sanitize_xml_tag(str(field_name))
-                el = SubElement(item, f"{{{GOOGLE_NS}}}{tag}")
-                el.text = val_str
+                SubElement(item, f"{{{GOOGLE_NS}}}{tag}").text = val_str
 
-        xml_decl = '<?xml version="1.0" encoding="utf-8"?>\n'
-        xml_str = xml_decl + tostring(rss, encoding="unicode")
+        # No xml_declaration — Meta rejects it
+        xml_str = tostring(rss, encoding="unicode")
 
-        # Validate before returning — never produce invalid XML
+        # Validate before returning
         try:
             fromstring(xml_str)
         except Exception as exc:
