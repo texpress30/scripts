@@ -123,11 +123,13 @@ class FeedSyncService:
         total_count = 0
         errors: list[dict[str, Any]] = []
         batch: list[ProductData] = []
+        synced_product_ids: set[str] = set()
 
         try:
             async for product in connector.fetch_products():
                 total_count += 1
                 batch.append(product)
+                synced_product_ids.add(str(product.id))
 
                 if len(batch) >= SYNC_BATCH_SIZE:
                     try:
@@ -155,6 +157,11 @@ class FeedSyncService:
                     logger.warning("Final batch upsert failed for source %s: %s", feed_source_id, exc)
                     errors.append({"batch_size": len(batch), "error": str(exc)})
 
+            # Reconcile: remove products no longer present in source
+            removed_count = self._reconcile_stale_products(
+                feed_source_id, synced_product_ids, errors,
+            )
+
             feed_import = self._import_repo.update_status(
                 feed_import.id,
                 status=FeedImportStatus.completed,
@@ -176,6 +183,68 @@ class FeedSyncService:
         # Always update source metadata after sync
         self._update_source_after_sync(feed_source_id, imported_count)
         return feed_import
+
+    def _reconcile_stale_products(
+        self,
+        feed_source_id: str,
+        synced_ids: set[str],
+        errors: list[dict[str, Any]],
+    ) -> int:
+        """Remove products from MongoDB that are no longer in the source.
+
+        Safety nets:
+        - If the source returned 0 products, skip reconciliation (API may be down)
+        - Logs a warning when >50% of products would be removed
+        """
+        if not synced_ids:
+            logger.warning(
+                "sync.skip_reconciliation: source returned 0 products, "
+                "not deleting anything (feed_source_id=%s)",
+                feed_source_id,
+            )
+            return 0
+
+        try:
+            existing_ids = feed_products_repository.get_product_ids(feed_source_id)
+        except Exception as exc:
+            logger.warning("Failed to get existing product IDs for reconciliation: %s", exc)
+            errors.append({"reconciliation_error": str(exc)})
+            return 0
+
+        stale_ids = existing_ids - synced_ids
+
+        if not stale_ids:
+            return 0
+
+        # Safety: warn on large deletions
+        if existing_ids:
+            delete_ratio = len(stale_ids) / len(existing_ids)
+            if delete_ratio > 0.5 and len(stale_ids) > 5:
+                logger.warning(
+                    "sync.large_deletion_detected: feed_source_id=%s "
+                    "delete_count=%d existing_count=%d ratio=%.0f%%",
+                    feed_source_id, len(stale_ids), len(existing_ids),
+                    delete_ratio * 100,
+                )
+
+        try:
+            removed = feed_products_repository.remove_stale_products(
+                feed_source_id, stale_ids,
+            )
+            logger.info(
+                "sync.reconciliation: feed_source_id=%s added=%d removed=%d "
+                "synced=%d existing_before=%d",
+                feed_source_id,
+                len(synced_ids - existing_ids),
+                removed,
+                len(synced_ids),
+                len(existing_ids),
+            )
+            return removed
+        except Exception as exc:
+            logger.warning("Failed to remove stale products: %s", exc)
+            errors.append({"reconciliation_error": str(exc)})
+            return 0
 
     def _update_source_after_sync(self, feed_source_id: str, imported_count: int) -> None:
         """Update the feed_source record after sync and recalculate next scheduled sync."""
