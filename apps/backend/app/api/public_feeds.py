@@ -45,7 +45,7 @@ def _check_rate_limit(token: str) -> bool:
 # ---------------------------------------------------------------------------
 
 _CONTENT_TYPES = {
-    "xml": "application/xml; charset=utf-8",
+    "xml": "application/rss+xml; charset=utf-8",
     "json": "application/json; charset=utf-8",
     "csv": "text/csv; charset=utf-8",
 }
