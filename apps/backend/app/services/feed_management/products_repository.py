@@ -114,6 +114,26 @@ class FeedProductsRepository:
         result = self._collection().delete_many({"feed_source_id": str(feed_source_id)})
         return result.deleted_count
 
+    def get_product_ids(self, feed_source_id: str) -> set[str]:
+        """Return all product_id values for a feed source."""
+        cursor = self._collection().find(
+            {"feed_source_id": str(feed_source_id)},
+            {"product_id": 1, "_id": 0},
+        )
+        return {doc["product_id"] for doc in cursor}
+
+    def remove_stale_products(
+        self, feed_source_id: str, stale_ids: set[str],
+    ) -> int:
+        """Delete products that are no longer present in the source."""
+        if not stale_ids:
+            return 0
+        result = self._collection().delete_many({
+            "feed_source_id": str(feed_source_id),
+            "product_id": {"$in": list(stale_ids)},
+        })
+        return result.deleted_count
+
     def get_all_unique_fields(
         self,
         feed_source_id: str,

@@ -20,6 +20,7 @@ from app.services.feed_management.connectors.base import (
     ProductData,
     ProductVariant,
     ValidationResult,
+    flatten_images,
     strip_html,
 )
 
@@ -288,6 +289,7 @@ def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -
         raw["image_src"] = images[0].get("src", "")
         raw["image_alt"] = images[0].get("alt", "")
         raw["images"] = [img.get("src", "") for img in images]
+        flatten_images(raw)
     dims = woo.get("dimensions") or {}
     for dim_key in ("length", "width", "height"):
         if dims.get(dim_key):

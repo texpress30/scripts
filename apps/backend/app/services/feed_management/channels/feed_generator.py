@@ -13,7 +13,66 @@ from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring, register_namespace
 from xml.sax.saxutils import escape as xml_escape
 
+# Regex to strip XML-invalid control characters (keeps \t, \n, \r)
+_XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Regex for characters invalid in XML element names
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Convert a value to an XML-safe escaped string."""
+    if value is None:
+        return ""
+    text = str(value)
+    text = _XML_CONTROL_CHARS_RE.sub("", text)
+    return xml_escape(text)
+
+
+def _sanitize_xml_tag(name: str) -> str:
+    """Convert a field name to a valid XML element name."""
+    tag = name.replace(" ", "_")
+    tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    if tag and tag[0].isdigit():
+        tag = f"_{tag}"
+    return tag or "_unknown"
+
 from pydantic import BaseModel
+
+
+# Regex to strip XML-invalid control characters (keeps \t, \n, \r)
+_XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Regex for valid XML element name: starts with letter or _, then letters/digits/_/-/.
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Convert a value to an XML-safe escaped string.
+
+    - Converts to string
+    - Strips control characters invalid in XML
+    - Escapes &, <, >
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    text = _XML_CONTROL_CHARS_RE.sub("", text)
+    return xml_escape(text)
+
+
+def _sanitize_xml_tag(name: str) -> str:
+    """Convert a field name to a valid XML element name.
+
+    - Replaces spaces with underscores
+    - Strips characters invalid in XML element names
+    - Prepends underscore if name starts with a digit
+    """
+    tag = name.replace(" ", "_")
+    tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    if tag and tag[0].isdigit():
+        tag = f"_{tag}"
+    return tag or "_unknown"
 
 from app.services.feed_management.channels.models import (
     ChannelType,
@@ -346,9 +405,13 @@ class FeedGenerator:
         standardized key, so mappings can reference both standardized names
         (``title``) and raw source names (``body_html``, ``vendor``, …).
 
-        Description fields are stripped of HTML as a safety net for stale data.
+        Safety nets applied during merge:
+        - HTML stripped from description fields (stale data from before strip fix)
+        - Images array flattened into image_N_url/tag fields (stale data
+          or data synced before flatten feature; always re-applies current
+          tag rules so updated defaults take effect immediately)
         """
-        from app.services.feed_management.connectors.base import strip_html
+        from app.services.feed_management.connectors.base import flatten_images, strip_html
 
         raw = data.get("raw_data")
         if not isinstance(raw, dict):
@@ -362,6 +425,9 @@ class FeedGenerator:
             if key not in merged:
                 merged[key] = value
         merged.pop("raw_data", None)
+        # Flatten images — always re-apply to ensure current tag rules are used
+        if "images" in merged:
+            flatten_images(merged)
         return merged
 
     @staticmethod
