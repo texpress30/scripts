@@ -12,25 +12,21 @@ import json
 import logging
 import re
 from typing import Any
-from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring, register_namespace
 from xml.sax.saxutils import escape as xml_escape
 
 logger = logging.getLogger(__name__)
 
+# XML namespace constants
+GOOGLE_NS = "http://base.google.com/ns/1.0"
+ATOM_NS = "http://www.w3.org/2005/Atom"
+
+register_namespace("g", GOOGLE_NS)
+register_namespace("atom", ATOM_NS)
+
 # Regex to strip XML-invalid control characters (keeps \t, \n, \r)
 _XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-
-# Regex for characters invalid in XML element names
 _XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
-
-
-def _sanitize_xml_value(value: Any) -> str:
-    """Convert a value to an XML-safe escaped string."""
-    if value is None:
-        return ""
-    text = str(value)
-    text = _XML_CONTROL_CHARS_RE.sub("", text)
-    return xml_escape(text)
 
 
 def _sanitize_xml_tag(name: str) -> str:
@@ -42,9 +38,16 @@ def _sanitize_xml_tag(name: str) -> str:
     return tag or "_unknown"
 
 
-def _sanitize_text_for_element(text: str) -> str:
-    """Strip control chars from text destined for ElementTree .text assignment."""
+def _sanitize_text(text: str) -> str:
+    """Strip control chars from text for XML."""
     return _XML_CONTROL_CHARS_RE.sub("", text)
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Convert a value to XML-safe escaped string."""
+    if value is None:
+        return ""
+    return xml_escape(_sanitize_text(str(value)))
 
 # ---------------------------------------------------------------------------
 # Google Shopping required/optional fields
@@ -151,31 +154,54 @@ class FeedFormatter:
         return buf.getvalue()
 
     # ------------------------------------------------------------------
-    # Google Shopping XML (RSS 2.0 + g: namespace)
+    # RSS 2.0 XML with g: namespace (Google Shopping / Meta compatible)
     # ------------------------------------------------------------------
+
+    def format_rss_xml(
+        self,
+        products: list[dict[str, Any]],
+        title: str = "Product Feed",
+        feed_url: str | None = None,
+    ) -> str:
+        """Generate RSS 2.0 XML feed with g: namespace (Google/Meta compatible).
+
+        All product fields are emitted with the g: prefix.
+        """
+        rss = Element("rss", {"version": "2.0"})
+        ch_el = SubElement(rss, "channel")
+
+        title_el = SubElement(ch_el, "title")
+        title_el.text = title
+        link_el = SubElement(ch_el, "link")
+        link_el.text = "https://api.omarosa.ro"
+        desc_el = SubElement(ch_el, "description")
+        desc_el.text = "Automotive inventory feed"
+
+        if feed_url:
+            SubElement(ch_el, f"{{{ATOM_NS}}}link", {
+                "href": feed_url,
+                "rel": "self",
+                "type": "application/rss+xml",
+            })
+
+        for product in products:
+            item = SubElement(ch_el, "item")
+            for field_name, value in product.items():
+                if value is None:
+                    continue
+                val_str = _sanitize_text(str(value))
+                if not val_str.strip():
+                    continue
+                tag = _sanitize_xml_tag(field_name)
+                el = SubElement(item, f"{{{GOOGLE_NS}}}{tag}")
+                el.text = val_str
+
+        xml_decl = '<?xml version="1.0" encoding="utf-8"?>\n'
+        return xml_decl + tostring(rss, encoding="unicode")
 
     def format_google_shopping_xml(self, products: list[dict[str, Any]]) -> str:
         """Generate Google Shopping compliant RSS 2.0 XML feed."""
-        lines: list[str] = [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">',
-            "<channel>",
-            "<title>Product Feed</title>",
-            "<link>https://api.omarosa.ro</link>",
-            "<description>Google Shopping Feed</description>",
-        ]
-        for product in products:
-            lines.append("  <item>")
-            for field in _GOOGLE_SHOPPING_FIELDS:
-                value = product.get(field)
-                if value is None:
-                    continue
-                tag = f"g:{_sanitize_xml_tag(field)}"
-                lines.append(f"    <{tag}>{_sanitize_xml_value(value)}</{tag}>")
-            lines.append("  </item>")
-        lines.append("</channel>")
-        lines.append("</rss>")
-        return "\n".join(lines)
+        return self.format_rss_xml(products, title="Google Shopping Feed")
 
     # ------------------------------------------------------------------
     # Meta Catalog CSV
@@ -213,10 +239,10 @@ class FeedFormatter:
                     if isinstance(item, dict):
                         self._dict_to_xml(child, item)
                     else:
-                        child.text = _sanitize_text_for_element(str(item))
+                        child.text = _sanitize_text(str(item))
             else:
                 child = SubElement(parent, safe_key)
-                child.text = _sanitize_text_for_element(str(value)) if value is not None else ""
+                child.text = _sanitize_text(str(value)) if value is not None else ""
 
     @staticmethod
     def _xml_to_string(root: Element) -> str:
