@@ -37,6 +37,60 @@ def strip_html(text: str | None) -> str:
     return s.strip()
 
 
+# ---------------------------------------------------------------------------
+# Image flattening
+# ---------------------------------------------------------------------------
+
+MAX_FEED_IMAGES = 20
+
+VALID_IMAGE_TAGS = ["Față", "Spate", "Interior", "Bord", "Lateral", "Portbagaj", "None"]
+
+DEFAULT_IMAGE_TAG_RULES: list[dict[str, Any]] = [
+    {"range": [0, 1], "tag": "Față"},
+    {"range": [2, 2], "tag": "Spate"},
+    {"range": [3, 4], "tag": "Lateral"},
+    {"range": [5, 6], "tag": "Interior"},
+    {"range": [7, 7], "tag": "Bord"},
+    {"range": [8, 8], "tag": "Interior"},
+    {"range": [9, 9], "tag": "Portbagaj"},
+    {"default": "Interior"},
+]
+
+
+def flatten_images(raw: dict[str, Any], tag_rules: list[dict[str, Any]] | None = None) -> None:
+    """Flatten ``images`` array into indexed ``image_N_url`` + ``image_N_tag`` fields.
+
+    Modifies *raw* in place.  The original ``images`` array is kept intact.
+    Always re-generates tags from rules (ensures stale tags are updated).
+    """
+    images = raw.get("images")
+    if not images or not isinstance(images, list):
+        return
+
+    rules = tag_rules or DEFAULT_IMAGE_TAG_RULES
+    default_tag = "Interior"
+    for rule in rules:
+        if "default" in rule:
+            default_tag = rule["default"]
+
+    count = 0
+    for i, img_url in enumerate(images[:MAX_FEED_IMAGES]):
+        if not img_url or not isinstance(img_url, str):
+            continue
+        raw[f"image_{i}_url"] = img_url
+        tag = default_tag
+        for rule in rules:
+            if "range" in rule:
+                start, end = rule["range"]
+                if start <= i <= end:
+                    tag = rule["tag"]
+                    break
+        raw[f"image_{i}_tag"] = tag
+        count += 1
+
+    raw["image_count"] = count
+
+
 class ProductVariant(BaseModel):
     sku: str = ""
     title: str = ""
