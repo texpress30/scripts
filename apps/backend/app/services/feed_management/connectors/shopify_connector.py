@@ -20,6 +20,7 @@ from app.services.feed_management.connectors.base import (
     ProductData,
     ProductVariant,
     ValidationResult,
+    flatten_images,
     strip_html as _strip_html,
 )
 
@@ -285,6 +286,8 @@ def _flatten_shopify_raw(product: dict[str, Any]) -> dict[str, Any]:
     if images:
         raw["image_src"] = images[0].get("src", "")
         raw["image_alt"] = images[0].get("alt", "")
+        raw["images"] = [img.get("src", "") for img in images if img.get("src")]
+        flatten_images(raw)
 
     options = product.get("options") or []
     for opt in options:

@@ -246,14 +246,14 @@ def get_channel_products(
     )
 
     # Transform
-    from app.services.feed_management.connectors.base import strip_html
+    from app.services.feed_management.connectors.base import flatten_images, strip_html
 
     transformed: list[dict[str, Any]] = []
     for product in raw_products:
         data = product.get("data", {})
         if not isinstance(data, dict):
             continue
-        # Strip HTML from description fields before transform (safety net for stale data)
+        # Safety nets for stale data: strip HTML + flatten images
         for _dk in ("description", "short_description"):
             if _dk in data and isinstance(data[_dk], str) and "<" in data[_dk]:
                 data[_dk] = strip_html(data[_dk])
