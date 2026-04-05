@@ -10,6 +10,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
+from xml.etree.ElementTree import Element, SubElement, tostring, fromstring, register_namespace
 from xml.sax.saxutils import escape as xml_escape
 
 from pydantic import BaseModel
@@ -20,6 +21,66 @@ from app.services.feed_management.channels.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Google namespace for RSS feeds (Google Shopping, TikTok, etc.)
+GOOGLE_NS = "http://base.google.com/ns/1.0"
+register_namespace("g", GOOGLE_NS)
+
+_XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_\-]")
+_MAX_XML_TEXT_LENGTH = 5000
+
+# Channel types that use Meta's <listings><listing> format
+_META_LISTINGS_TYPES = frozenset({
+    ChannelType.facebook_product_ads,
+    ChannelType.facebook_automotive,
+    ChannelType.facebook_country,
+    ChannelType.facebook_language,
+    ChannelType.facebook_marketplace,
+    ChannelType.facebook_hotel,
+    ChannelType.facebook_streaming_ads,
+    ChannelType.facebook_destination_ads,
+    ChannelType.facebook_professional_services,
+    ChannelType.meta_catalog,
+})
+
+# Channel types that use Google's RSS 2.0 with g: namespace
+_GOOGLE_RSS_TYPES = frozenset({
+    ChannelType.google_shopping,
+    ChannelType.google_vehicle_ads_v3,
+    ChannelType.google_vehicle_listings,
+    ChannelType.google_local_inventory,
+    ChannelType.google_product_reviews,
+    ChannelType.google_regional_inventory,
+    ChannelType.google_manufacturers,
+    ChannelType.google_hotel_ads,
+    ChannelType.google_real_estate,
+    ChannelType.google_jobs,
+    ChannelType.google_things_to_do,
+})
+
+# Fields that are rendered as nested <image><url>...<tag>...</image> in Meta format
+_IMAGE_FIELD_PREFIX = "image_"
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Strip control chars and truncate for XML text content."""
+    if value is None:
+        return ""
+    text = _XML_CONTROL_CHARS_RE.sub("", str(value))
+    if len(text) > _MAX_XML_TEXT_LENGTH:
+        text = text[:_MAX_XML_TEXT_LENGTH].rsplit(" ", 1)[0] + "..."
+    return text
+
+
+def _sanitize_xml_tag(name: str) -> str:
+    """Convert a field name to a valid XML element name."""
+    tag = name.replace(" ", "_")
+    tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    tag = re.sub(r"_+", "_", tag).strip("_")
+    if tag and tag[0].isdigit():
+        tag = f"n{tag}"
+    return tag or "unknown"
 
 
 def _utcnow() -> datetime:
@@ -100,6 +161,7 @@ class FeedGenerator:
             # 5. Format feed
             content = self._format_feed(
                 transformed, channel.channel_type, channel.feed_format,
+                channel=channel,
             )
 
             # 6. Upload to S3
@@ -241,9 +303,10 @@ class FeedGenerator:
                 result[out_name] = value
 
         # Also include any extra mapped fields not in spec (from master_mappings)
-        # so we don't lose data that the user explicitly mapped
+        # so we don't lose data that the user explicitly mapped.
+        # Skip keys already in result — spec-renamed fields take precedence.
         for key, value in row.items():
-            if key not in spec_map and value is not None:
+            if key not in spec_map and key not in result and value is not None:
                 result[key] = value
 
         return result
@@ -368,6 +431,7 @@ class FeedGenerator:
         products: list[dict[str, Any]],
         channel_type: ChannelType,
         feed_format: FeedFormat,
+        channel: Any = None,
     ) -> str:
         if feed_format == FeedFormat.csv:
             return self._format_csv(products)
@@ -376,33 +440,100 @@ class FeedGenerator:
         if feed_format == FeedFormat.json:
             return json.dumps({"items": products}, ensure_ascii=False, indent=2)
 
-        # XML — use Google Shopping RSS 2.0 for google_shopping, generic otherwise
-        if channel_type == ChannelType.google_shopping:
-            return self._format_google_shopping_xml(products)
-        return self._format_xml(products)
+        # XML routing by channel type:
+        # - Meta channels → <listings><listing> (no namespace)
+        # - Google channels → RSS 2.0 <rss><channel><item> with g: namespace
+        # - Everything else → RSS 2.0 (safe default for TikTok, Bing, etc.)
+        # - Custom → generic <feed><entry>
+        if channel_type in _META_LISTINGS_TYPES:
+            return self._format_meta_listings_xml(products, channel)
+        if channel_type == ChannelType.custom:
+            return self._format_xml(products)
+        return self._format_rss_xml(products, channel)
 
-    def _format_google_shopping_xml(self, products: list[dict[str, Any]]) -> str:
-        lines: list[str] = [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">',
-            "<channel>",
-            "<title>Product Feed</title>",
-            "<link>https://api.omarosa.ro</link>",
-            "<description>Google Shopping Feed</description>",
-        ]
+    # ------------------------------------------------------------------
+    # Meta Vehicle Offers: <listings><listing> — no namespace
+    # ------------------------------------------------------------------
+
+    def _format_meta_listings_xml(
+        self,
+        products: list[dict[str, Any]],
+        channel: Any = None,
+    ) -> str:
+        """Generate Meta Vehicle Offers XML: <listings><listing>."""
+        root = Element("listings")
+        SubElement(root, "title").text = (channel.name if channel else None) or "Vehicle Offers Feed"
+
         for product in products:
-            lines.append("  <item>")
-            for field, value in product.items():
+            listing = SubElement(root, "listing")
+
+            # Nested <image> elements for image_N_url / image_N_tag
+            for i in range(20):
+                img_url = product.get(f"image_{i}_url")
+                if not img_url:
+                    break
+                img_tag = product.get(f"image_{i}_tag", "")
+                image_el = SubElement(listing, "image")
+                SubElement(image_el, "url").text = _sanitize_xml_value(img_url)
+                if img_tag:
+                    SubElement(image_el, "tag").text = _sanitize_xml_value(img_tag)
+
+            # All other fields — plain, NO namespace prefix
+            for field_name, value in product.items():
                 if value is None:
                     continue
-                tag = f"g:{field}"
-                lines.append(f"    <{tag}>{xml_escape(str(value))}</{tag}>")
-            lines.append("  </item>")
-        lines.append("</channel>")
-        lines.append("</rss>")
-        return "\n".join(lines)
+                # Skip image_N_url/tag — already handled as nested <image>
+                if field_name.startswith(_IMAGE_FIELD_PREFIX) and (
+                    "_url" in field_name or "_tag" in field_name
+                ):
+                    continue
+                val_str = _sanitize_xml_value(value)
+                if not val_str.strip():
+                    continue
+                tag = _sanitize_xml_tag(str(field_name))
+                SubElement(listing, tag).text = val_str
+
+        xml_str = '<?xml version="1.0" encoding="utf-8"?>\n' + tostring(root, encoding="unicode")
+        self._validate_xml(xml_str)
+        return xml_str
+
+    # ------------------------------------------------------------------
+    # Google RSS 2.0: <rss><channel><item> with g: namespace
+    # ------------------------------------------------------------------
+
+    def _format_rss_xml(
+        self,
+        products: list[dict[str, Any]],
+        channel: Any = None,
+    ) -> str:
+        """Generate RSS 2.0 XML with g: namespace (Google/TikTok/Bing)."""
+        rss = Element("rss", {"version": "2.0"})
+        ch_el = SubElement(rss, "channel")
+        SubElement(ch_el, "title").text = (channel.name if channel else None) or "Product Feed"
+        SubElement(ch_el, "link").text = "https://api.omarosa.ro"
+        SubElement(ch_el, "description").text = "Automotive inventory feed"
+
+        for product in products:
+            item = SubElement(ch_el, "item")
+            for field_name, value in product.items():
+                if value is None:
+                    continue
+                val_str = _sanitize_xml_value(value)
+                if not val_str.strip():
+                    continue
+                tag = _sanitize_xml_tag(str(field_name))
+                SubElement(item, f"{{{GOOGLE_NS}}}{tag}").text = val_str
+
+        xml_str = tostring(rss, encoding="unicode")
+        self._validate_xml(xml_str)
+        return xml_str
+
+    # ------------------------------------------------------------------
+    # Generic XML: <feed><entry> — only for custom channels
+    # ------------------------------------------------------------------
 
     def _format_xml(self, products: list[dict[str, Any]]) -> str:
+        """Generic XML feed — only used for custom channels."""
         lines: list[str] = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             f'<feed count="{len(products)}">',
@@ -412,13 +543,20 @@ class FeedGenerator:
             for field, value in product.items():
                 if value is None:
                     continue
-                safe_key = str(field).replace(" ", "_")
-                lines.append(
-                    f"    <{safe_key}>{xml_escape(str(value))}</{safe_key}>"
-                )
+                tag = _sanitize_xml_tag(str(field))
+                lines.append(f"    <{tag}>{xml_escape(_sanitize_xml_value(value))}</{tag}>")
             lines.append("  </entry>")
         lines.append("</feed>")
         return "\n".join(lines)
+
+    @staticmethod
+    def _validate_xml(xml_str: str) -> None:
+        """Validate XML with fromstring — raises on invalid."""
+        try:
+            fromstring(xml_str)
+        except Exception as exc:
+            logger.error("Generated XML is invalid: %s", exc)
+            raise ValueError(f"Generated XML is invalid: {exc}") from exc
 
     def _format_csv(
         self, products: list[dict[str, Any]], delimiter: str = ","

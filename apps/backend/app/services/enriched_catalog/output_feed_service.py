@@ -464,15 +464,17 @@ class OutputFeedService:
 
         if feed_format == "google_shopping_xml":
             return feed_formatter.format_google_shopping_xml(products)
+        if feed_format == "meta_listings_xml":
+            return feed_formatter.format_meta_listings_xml(products, title=feed.get("name", "Vehicle Offers Feed"))
         if feed_format == "meta_csv":
-            catalog_type = "product"  # Could be derived from feed_source catalog_type
+            catalog_type = "product"
             return feed_formatter.format_meta_catalog_csv(products, catalog_type)
         if feed_format == "json":
             return feed_formatter.format_as_json(products)
         if feed_format == "csv":
             return feed_formatter.format_as_csv(products)
-        # Default: XML
-        return feed_formatter.format_as_xml(products)
+        # Default: Meta listings XML (the most common use case)
+        return feed_formatter.format_meta_listings_xml(products, title=feed.get("name", "Product Feed"))
 
     def _upload_to_s3(self, s3_key: str, content: str, content_type: str) -> None:
         from app.services.s3_provider import get_s3_client, get_s3_bucket_name
