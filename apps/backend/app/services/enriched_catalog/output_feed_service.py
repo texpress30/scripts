@@ -464,6 +464,9 @@ class OutputFeedService:
 
         if feed_format == "google_shopping_xml":
             return feed_formatter.format_google_shopping_xml(products)
+        if feed_format == "rss_xml":
+            title = feed.get("name", "Product Feed")
+            return feed_formatter.format_rss_xml(products, title=title)
         if feed_format == "meta_csv":
             catalog_type = "product"
             return feed_formatter.format_meta_catalog_csv(products, catalog_type)

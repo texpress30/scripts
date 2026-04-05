@@ -31,14 +31,16 @@ def _parse_row(row: tuple) -> MasterFieldMappingResponse:
         template_value=str(row[6]) if row[6] else None,
         is_required=bool(row[7]),
         sort_order=int(row[8]),
-        created_at=row[9],
-        updated_at=row[10],
+        manually_edited=bool(row[9]),
+        created_at=row[10],
+        updated_at=row[11],
     )
 
 
 _COLUMNS = (
     "id, feed_source_id, target_field, source_field, mapping_type, "
-    "static_value, template_value, is_required, sort_order, created_at, updated_at"
+    "static_value, template_value, is_required, sort_order, "
+    "manually_edited, created_at, updated_at"
 )
 
 
@@ -69,17 +71,18 @@ class MasterFieldMappingRepository:
                     INSERT INTO master_field_mappings
                         (id, feed_source_id, target_field, source_field,
                          mapping_type, static_value, template_value,
-                         is_required, sort_order)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         is_required, sort_order, manually_edited)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (feed_source_id, target_field)
                     DO UPDATE SET
-                        source_field   = EXCLUDED.source_field,
-                        mapping_type   = EXCLUDED.mapping_type,
-                        static_value   = EXCLUDED.static_value,
-                        template_value = EXCLUDED.template_value,
-                        is_required    = EXCLUDED.is_required,
-                        sort_order     = EXCLUDED.sort_order,
-                        updated_at     = NOW()
+                        source_field    = EXCLUDED.source_field,
+                        mapping_type    = EXCLUDED.mapping_type,
+                        static_value    = EXCLUDED.static_value,
+                        template_value  = EXCLUDED.template_value,
+                        is_required     = EXCLUDED.is_required,
+                        sort_order      = EXCLUDED.sort_order,
+                        manually_edited = EXCLUDED.manually_edited,
+                        updated_at      = NOW()
                     RETURNING {_COLUMNS}
                     """,
                     (
@@ -92,6 +95,7 @@ class MasterFieldMappingRepository:
                         data.template_value,
                         data.is_required,
                         data.sort_order,
+                        data.manually_edited,
                     ),
                 )
                 row = cur.fetchone()
@@ -129,17 +133,18 @@ class MasterFieldMappingRepository:
                         INSERT INTO master_field_mappings
                             (id, feed_source_id, target_field, source_field,
                              mapping_type, static_value, template_value,
-                             is_required, sort_order)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             is_required, sort_order, manually_edited)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (feed_source_id, target_field)
                         DO UPDATE SET
-                            source_field   = EXCLUDED.source_field,
-                            mapping_type   = EXCLUDED.mapping_type,
-                            static_value   = EXCLUDED.static_value,
-                            template_value = EXCLUDED.template_value,
-                            is_required    = EXCLUDED.is_required,
-                            sort_order     = EXCLUDED.sort_order,
-                            updated_at     = NOW()
+                            source_field    = EXCLUDED.source_field,
+                            mapping_type    = EXCLUDED.mapping_type,
+                            static_value    = EXCLUDED.static_value,
+                            template_value  = EXCLUDED.template_value,
+                            is_required     = EXCLUDED.is_required,
+                            sort_order      = EXCLUDED.sort_order,
+                            manually_edited = EXCLUDED.manually_edited,
+                            updated_at      = NOW()
                         RETURNING {_COLUMNS}
                         """,
                         (
@@ -152,6 +157,7 @@ class MasterFieldMappingRepository:
                             item.template_value,
                             item.is_required,
                             item.sort_order,
+                            item.manually_edited,
                         ),
                     )
                     row = cur.fetchone()
