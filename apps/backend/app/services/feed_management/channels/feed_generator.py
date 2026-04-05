@@ -14,6 +14,41 @@ from xml.sax.saxutils import escape as xml_escape
 
 from pydantic import BaseModel
 
+
+# Regex to strip XML-invalid control characters (keeps \t, \n, \r)
+_XML_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Regex for valid XML element name: starts with letter or _, then letters/digits/_/-/.
+_XML_TAG_INVALID_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
+
+
+def _sanitize_xml_value(value: Any) -> str:
+    """Convert a value to an XML-safe escaped string.
+
+    - Converts to string
+    - Strips control characters invalid in XML
+    - Escapes &, <, >
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    text = _XML_CONTROL_CHARS_RE.sub("", text)
+    return xml_escape(text)
+
+
+def _sanitize_xml_tag(name: str) -> str:
+    """Convert a field name to a valid XML element name.
+
+    - Replaces spaces with underscores
+    - Strips characters invalid in XML element names
+    - Prepends underscore if name starts with a digit
+    """
+    tag = name.replace(" ", "_")
+    tag = _XML_TAG_INVALID_RE.sub("_", tag)
+    if tag and tag[0].isdigit():
+        tag = f"_{tag}"
+    return tag or "_unknown"
+
 from app.services.feed_management.channels.models import (
     ChannelType,
     FeedFormat,
@@ -402,8 +437,8 @@ class FeedGenerator:
             for field, value in product.items():
                 if value is None:
                     continue
-                tag = f"g:{field}"
-                lines.append(f"    <{tag}>{xml_escape(str(value))}</{tag}>")
+                tag = f"g:{_sanitize_xml_tag(str(field))}"
+                lines.append(f"    <{tag}>{_sanitize_xml_value(value)}</{tag}>")
             lines.append("  </item>")
         lines.append("</channel>")
         lines.append("</rss>")
@@ -419,10 +454,8 @@ class FeedGenerator:
             for field, value in product.items():
                 if value is None:
                     continue
-                safe_key = str(field).replace(" ", "_")
-                lines.append(
-                    f"    <{safe_key}>{xml_escape(str(value))}</{safe_key}>"
-                )
+                tag = _sanitize_xml_tag(str(field))
+                lines.append(f"    <{tag}>{_sanitize_xml_value(value)}</{tag}>")
             lines.append("  </entry>")
         lines.append("</feed>")
         return "\n".join(lines)
