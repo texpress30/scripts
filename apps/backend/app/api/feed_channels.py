@@ -260,7 +260,7 @@ def get_channel_products(
             raw = data.get("raw_data")
             if isinstance(raw, dict) and _dk in raw and isinstance(raw[_dk], str) and "<" in raw[_dk]:
                 raw[_dk] = strip_html(raw[_dk])
-        # Merge raw_data fields into top-level so mappings can reference them
+        # Merge raw_data + flatten images into top-level for transformer access
         # (consistent with generate() and preview() pipelines)
         data = feed_generator._merge_raw_data(data)
         row = feed_generator._transform_product(data, master_mappings, override_map)

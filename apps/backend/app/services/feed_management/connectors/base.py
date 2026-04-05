@@ -37,13 +37,17 @@ def strip_html(text: str | None) -> str:
     return s.strip()
 
 
+# ---------------------------------------------------------------------------
+# Image flattening
+# ---------------------------------------------------------------------------
+
 MAX_FEED_IMAGES = 20
 
 DEFAULT_IMAGE_TAG_RULES: list[dict[str, Any]] = [
-    {"range": [0, 3], "tag": "Față"},
-    {"range": [4, 5], "tag": "Spate"},
-    {"range": [6, 8], "tag": "Lateral"},
-    {"default": "Spate"},
+    {"range": [0, 0], "tag": "Față"},
+    {"range": [1, 1], "tag": "Spate"},
+    {"range": [2, 3], "tag": "Lateral"},
+    {"default": "Interior"},
 ]
 
 

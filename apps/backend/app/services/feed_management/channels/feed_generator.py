@@ -313,7 +313,9 @@ class FeedGenerator:
         standardized key, so mappings can reference both standardized names
         (``title``) and raw source names (``body_html``, ``vendor``, …).
 
-        Description fields are stripped of HTML as a safety net for stale data.
+        Safety nets applied during merge:
+        - HTML stripped from description fields (stale data from before strip fix)
+        - Images array flattened into image_N_url/tag fields (stale data)
         """
         from app.services.feed_management.connectors.base import flatten_images, strip_html
 
