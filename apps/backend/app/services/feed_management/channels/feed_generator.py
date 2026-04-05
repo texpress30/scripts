@@ -514,6 +514,13 @@ class FeedGenerator:
         # - Google channels → RSS 2.0 <rss><channel><item> with g: namespace
         # - Everything else → RSS 2.0 (safe default for TikTok, Bing, etc.)
         # - Custom → generic <feed><entry>
+        logger.info(
+            "feed.format_xml: channel_type=%s (%s) → %s",
+            channel_type, type(channel_type).__name__,
+            "meta_listings" if channel_type in _META_LISTINGS_TYPES
+            else "rss" if channel_type != ChannelType.custom
+            else "generic",
+        )
         if channel_type in _META_LISTINGS_TYPES:
             return self._format_meta_listings_xml(products, channel)
         if channel_type == ChannelType.custom:
