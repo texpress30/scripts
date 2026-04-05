@@ -531,6 +531,9 @@ class FeedGenerator:
     # Meta Vehicle Offers: <listings><listing> — no namespace
     # ------------------------------------------------------------------
 
+    # Fields consumed by nested <image> logic — excluded from flat output
+    _META_IMAGE_SKIP = {"image_link", "image_count"}
+
     def _format_meta_listings_xml(
         self,
         products: list[dict[str, Any]],
@@ -543,7 +546,8 @@ class FeedGenerator:
         for product in products:
             listing = SubElement(root, "listing")
 
-            # Nested <image> elements for image_N_url / image_N_tag
+            # 1. Nested <image> elements FIRST (Meta template order)
+            has_images = False
             for i in range(20):
                 img_url = product.get(f"image_{i}_url")
                 if not img_url:
@@ -553,15 +557,24 @@ class FeedGenerator:
                 SubElement(image_el, "url").text = _sanitize_xml_value(img_url)
                 if img_tag:
                     SubElement(image_el, "tag").text = _sanitize_xml_value(img_tag)
+                has_images = True
 
-            # All other fields — plain, NO namespace prefix
+            # Fallback: use image_link if no image_N_url fields exist
+            if not has_images:
+                img_link = product.get("image_link")
+                if img_link:
+                    image_el = SubElement(listing, "image")
+                    SubElement(image_el, "url").text = _sanitize_xml_value(img_link)
+
+            # 2. All other fields — plain, NO namespace prefix
             for field_name, value in product.items():
                 if value is None:
                     continue
-                # Skip image_N_url/tag — already handled as nested <image>
-                if field_name.startswith(_IMAGE_FIELD_PREFIX) and (
-                    "_url" in field_name or "_tag" in field_name
-                ):
+                # Skip image_N_url/tag — already rendered as nested <image>
+                if field_name.startswith(_IMAGE_FIELD_PREFIX):
+                    continue
+                # Skip fields consumed by image logic
+                if field_name in self._META_IMAGE_SKIP:
                     continue
                 val_str = _sanitize_xml_value(value)
                 if not val_str.strip():

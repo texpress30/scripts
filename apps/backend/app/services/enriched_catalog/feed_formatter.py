@@ -158,8 +158,12 @@ class FeedFormatter:
         root = Element("listings")
         SubElement(root, "title").text = title
 
+        _skip = {"image_link", "image_count"}
         for product in products:
             listing = SubElement(root, "listing")
+
+            # 1. Nested <image> elements FIRST
+            has_images = False
             for i in range(20):
                 img_url = product.get(f"image_{i}_url")
                 if not img_url:
@@ -169,13 +173,21 @@ class FeedFormatter:
                 SubElement(image_el, "url").text = _sanitize_text(str(img_url))
                 if img_tag:
                     SubElement(image_el, "tag").text = _sanitize_text(str(img_tag))
+                has_images = True
 
+            if not has_images:
+                img_link = product.get("image_link")
+                if img_link:
+                    image_el = SubElement(listing, "image")
+                    SubElement(image_el, "url").text = _sanitize_text(str(img_link))
+
+            # 2. Other fields — skip image flat fields
             for field_name, value in product.items():
                 if value is None:
                     continue
-                if field_name.startswith(_IMAGE_FIELD_PREFIX) and (
-                    "_url" in field_name or "_tag" in field_name
-                ):
+                if field_name.startswith(_IMAGE_FIELD_PREFIX):
+                    continue
+                if field_name in _skip:
                     continue
                 val_str = _sanitize_text(str(value))
                 if not val_str.strip():
