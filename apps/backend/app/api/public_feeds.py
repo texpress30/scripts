@@ -88,7 +88,7 @@ def _lookup_feed_by_token(token: str) -> dict | None:
     return None
 
 
-def _serve_feed(token: str, requested_ext: str) -> Response:
+def _serve_feed(token: str, requested_ext: str, request: Request) -> Response:
     """Core handler: look up feed by token, stream content from S3."""
     if not _check_rate_limit(token):
         raise HTTPException(
@@ -107,6 +107,18 @@ def _serve_feed(token: str, requested_ext: str) -> Response:
             detail="Feed has not been generated yet",
         )
 
+    last_generated = feed.get("last_generated_at", "")
+    etag = f'"{token[:16]}-{last_generated}"' if last_generated else None
+
+    # Return 304 if client already has the latest version
+    if etag:
+        if_none_match = request.headers.get("if-none-match")
+        if if_none_match and if_none_match == etag:
+            return Response(
+                status_code=status.HTTP_304_NOT_MODIFIED,
+                headers={"ETag": etag, "Cache-Control": "no-cache"},
+            )
+
     # Stream the feed content from S3
     from app.services.s3_provider import get_s3_client, get_s3_bucket_name
 
@@ -123,15 +135,15 @@ def _serve_feed(token: str, requested_ext: str) -> Response:
         )
 
     content_type = _CONTENT_TYPES.get(requested_ext, "application/octet-stream")
-    last_generated = feed.get("last_generated_at", "")
 
-    headers = {
-        "Cache-Control": "public, max-age=3600",
+    headers: dict[str, str] = {
+        "Cache-Control": "no-cache",
         "X-Products-Count": str(feed.get("products_count", 0)),
     }
     if last_generated:
         headers["Last-Modified"] = str(last_generated)
-        headers["ETag"] = f'"{token[:16]}-{last_generated}"'
+    if etag:
+        headers["ETag"] = etag
 
     return Response(
         content=body,
@@ -145,11 +157,11 @@ def _serve_feed(token: str, requested_ext: str) -> Response:
 # ---------------------------------------------------------------------------
 
 @router.get("/{filename}")
-def get_public_feed(filename: str) -> Response:
+def get_public_feed(filename: str, request: Request) -> Response:
     """Serve a feed file by token.
 
     URL format: /feeds/{token}.{xml|json|csv}
     No authentication required — designed for crawler access.
     """
     token, ext = _parse_token_and_ext(filename)
-    return _serve_feed(token, ext)
+    return _serve_feed(token, ext, request)
