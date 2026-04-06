@@ -25,6 +25,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["feed-schema-registry"])
 
+
+def _channel_slug_to_platform(slug: str) -> str:
+    """Map a channel_slug to a short platform name for alias platform_hints."""
+    slug_lower = slug.lower()
+    if slug_lower.startswith(("facebook_", "meta_")):
+        return "meta"
+    if slug_lower.startswith("tiktok"):
+        return "tiktok"
+    if slug_lower.startswith("google"):
+        return "google"
+    return slug_lower
+
 _ALLOWED_CONTENT_TYPES = {
     "text/csv",
     "application/vnd.ms-excel",
@@ -143,7 +155,7 @@ async def import_schema_csv(
                                 catalog_type=catalog_type,
                                 canonical_key=a["canonical_key"],
                                 alias_key=a["new_field_key"],
-                                platform_hint=f"ai_{channel_slug}",
+                                platform_hint=_channel_slug_to_platform(channel_slug),
                             )
                         except (ValueError, Exception):
                             pass  # alias may already exist

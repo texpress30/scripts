@@ -82,6 +82,7 @@ type FieldAlias = {
   canonical_key: string;
   alias_key: string;
   platform_hint: string | null;
+  platform_hints?: string[];
   created_at: string;
 };
 
@@ -332,7 +333,10 @@ export default function FeedSchemasPage() {
   const aliasLookup = new Map<string, string[]>();
   for (const a of aliases) {
     const list = aliasLookup.get(a.canonical_key) ?? [];
-    list.push(a.alias_key + (a.platform_hint ? ` (${a.platform_hint})` : ""));
+    const platformLabel = a.platform_hints && a.platform_hints.length > 0
+      ? a.platform_hints.join(", ")
+      : a.platform_hint ?? "";
+    list.push(a.alias_key + (platformLabel ? ` (${platformLabel})` : ""));
     aliasLookup.set(a.canonical_key, list);
   }
 
@@ -739,7 +743,7 @@ export default function FeedSchemasPage() {
                         <td className="px-4 py-2">
                           <code className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{a.alias_key}</code>
                         </td>
-                        <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{a.platform_hint ?? "—"}</td>
+                        <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{a.platform_hints && a.platform_hints.length > 0 ? a.platform_hints.join(", ") : a.platform_hint ?? "—"}</td>
                         <td className="px-4 py-2">
                           <button
                             type="button"

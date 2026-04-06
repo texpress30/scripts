@@ -650,7 +650,8 @@ class SchemaRegistryRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, catalog_type, canonical_key, alias_key, platform_hint, created_at
+                    SELECT id, catalog_type, canonical_key, alias_key,
+                           platform_hint, platform_hints, created_at
                     FROM feed_field_aliases
                     WHERE catalog_type = %s
                     ORDER BY canonical_key, alias_key
@@ -659,7 +660,14 @@ class SchemaRegistryRepository:
                 )
                 cols = [desc[0] for desc in cur.description]
                 rows = cur.fetchall()
-        return [dict(zip(cols, r)) | {"id": str(r[0])} for r in rows]
+        results = []
+        for r in rows:
+            d = dict(zip(cols, r))
+            d["id"] = str(d["id"])
+            hints = d.get("platform_hints")
+            d["platform_hints"] = list(hints) if hints else []
+            results.append(d)
+        return results
 
     def create_alias(
         self,
@@ -696,17 +704,37 @@ class SchemaRegistryRepository:
 
                 cur.execute(
                     """
-                    INSERT INTO feed_field_aliases (catalog_type, canonical_key, alias_key, platform_hint)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id, catalog_type, canonical_key, alias_key, platform_hint, created_at
+                    INSERT INTO feed_field_aliases
+                        (catalog_type, canonical_key, alias_key, platform_hint, platform_hints)
+                    VALUES (%s, %s, %s, %s,
+                            CASE WHEN %s IS NOT NULL AND %s != '' THEN jsonb_build_array(%s) ELSE '[]'::jsonb END)
+                    ON CONFLICT (catalog_type, alias_key) DO UPDATE SET
+                        platform_hint = COALESCE(EXCLUDED.platform_hint, feed_field_aliases.platform_hint),
+                        platform_hints = CASE
+                            WHEN EXCLUDED.platform_hint IS NOT NULL
+                                 AND EXCLUDED.platform_hint != ''
+                                 AND NOT feed_field_aliases.platform_hints @> jsonb_build_array(EXCLUDED.platform_hint)
+                            THEN feed_field_aliases.platform_hints || jsonb_build_array(EXCLUDED.platform_hint)
+                            ELSE feed_field_aliases.platform_hints
+                        END
+                    RETURNING id, catalog_type, canonical_key, alias_key,
+                              platform_hint, platform_hints, created_at
                     """,
-                    (catalog_type, canonical_key, alias_key, platform_hint),
+                    (catalog_type, canonical_key, alias_key, platform_hint,
+                     platform_hint, platform_hint, platform_hint),
                 )
                 cols = [desc[0] for desc in cur.description]
                 row = cur.fetchone()
             conn.commit()
         d = dict(zip(cols, row))
         d["id"] = str(d["id"])
+        # Ensure platform_hints is a plain list for JSON serialization
+        if isinstance(d.get("platform_hints"), list):
+            pass
+        elif d.get("platform_hints"):
+            d["platform_hints"] = list(d["platform_hints"])
+        else:
+            d["platform_hints"] = []
         return d
 
     def delete_alias(self, alias_id: str) -> None:
@@ -721,13 +749,13 @@ class SchemaRegistryRepository:
                     raise ValueError(f"Alias {alias_id} not found")
             conn.commit()
 
-    def get_aliases_for_fields(self, catalog_type: str) -> dict[str, list[dict[str, str]]]:
-        """Return {canonical_key: [{alias_key, platform_hint}, ...]} for display."""
+    def get_aliases_for_fields(self, catalog_type: str) -> dict[str, list[dict[str, Any]]]:
+        """Return {canonical_key: [{alias_key, platform_hint, platform_hints}, ...]} for display."""
         with _connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT canonical_key, alias_key, platform_hint
+                    SELECT canonical_key, alias_key, platform_hint, platform_hints
                     FROM feed_field_aliases
                     WHERE catalog_type = %s
                     ORDER BY canonical_key, alias_key
@@ -735,11 +763,13 @@ class SchemaRegistryRepository:
                     (catalog_type,),
                 )
                 rows = cur.fetchall()
-        result: dict[str, list[dict[str, str]]] = {}
-        for canonical, alias, hint in rows:
+        result: dict[str, list[dict[str, Any]]] = {}
+        for canonical, alias, hint, hints in rows:
+            platform_hints = list(hints) if hints else []
             result.setdefault(str(canonical), []).append({
                 "alias_key": str(alias),
                 "platform_hint": str(hint) if hint else "",
+                "platform_hints": platform_hints,
             })
         return result
 
@@ -808,14 +838,25 @@ class SchemaRegistryRepository:
                     return False
                 alias_id = row[0]
 
-                # Create alias
+                # Create alias (append platform_hint on conflict)
                 cur.execute(
                     """
-                    INSERT INTO feed_field_aliases (catalog_type, canonical_key, alias_key, platform_hint)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (catalog_type, alias_key) DO NOTHING
+                    INSERT INTO feed_field_aliases
+                        (catalog_type, canonical_key, alias_key, platform_hint, platform_hints)
+                    VALUES (%s, %s, %s, %s,
+                            CASE WHEN %s IS NOT NULL AND %s != '' THEN jsonb_build_array(%s) ELSE '[]'::jsonb END)
+                    ON CONFLICT (catalog_type, alias_key) DO UPDATE SET
+                        platform_hint = COALESCE(EXCLUDED.platform_hint, feed_field_aliases.platform_hint),
+                        platform_hints = CASE
+                            WHEN EXCLUDED.platform_hint IS NOT NULL
+                                 AND EXCLUDED.platform_hint != ''
+                                 AND NOT feed_field_aliases.platform_hints @> jsonb_build_array(EXCLUDED.platform_hint)
+                            THEN feed_field_aliases.platform_hints || jsonb_build_array(EXCLUDED.platform_hint)
+                            ELSE feed_field_aliases.platform_hints
+                        END
                     """,
-                    (catalog_type, canonical_key, alias_key, platform_hint),
+                    (catalog_type, canonical_key, alias_key, platform_hint,
+                     platform_hint, platform_hint, platform_hint),
                 )
 
                 # Move channel links: set channel_field_name to preserve original name
