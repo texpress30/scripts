@@ -42,11 +42,12 @@ export const CHANNEL_PLATFORMS: Platform[] = [
     displayName: "Meta",
     sortOrder: 2,
     channels: [
-      { slug: "facebook_product_ads", displayName: "Meta Automotive Catalog", compatibleSubtypes: ["vehicle_offers", "vehicle_listings"] },
+      { slug: "facebook_catalog_vehicles", displayName: "Facebook Catalog Vehicles", compatibleSubtypes: ["vehicle_listings"] },
+      { slug: "facebook_catalog_vehicle_offer", displayName: "Facebook Catalog Vehicle Offer", compatibleSubtypes: ["vehicle_offers"] },
+      { slug: "facebook_product_ads", displayName: "Facebook Product Ads", compatibleSubtypes: ["product_physical", "product_local", "product_other"] },
       { slug: "facebook_country", displayName: "Meta Country Feed", compatibleSubtypes: ["product_physical", "product_local", "product_other"] },
       { slug: "facebook_language", displayName: "Meta Language Feed", compatibleSubtypes: ["product_physical", "product_local", "product_other"] },
       { slug: "facebook_marketplace", displayName: "Facebook Marketplace", compatibleSubtypes: ["product_physical", "product_local", "product_other"] },
-      { slug: "facebook_automotive", displayName: "Meta Automotive Ads", compatibleSubtypes: ["vehicle_offers", "vehicle_listings"] },
       { slug: "facebook_hotel", displayName: "Meta Hotel Ads", compatibleSubtypes: ["hotel_standard"] },
       { slug: "facebook_streaming_ads", displayName: "Facebook Streaming Ads", compatibleSubtypes: ["media_multishow", "media_card"] },
       { slug: "facebook_destination_ads", displayName: "Facebook Destination Ads", compatibleSubtypes: ["destination_standard"] },
@@ -132,6 +133,7 @@ for (const p of CHANNEL_PLATFORMS) {
 CHANNEL_DISPLAY_NAMES["google_shopping"] ??= "Google Shopping";
 CHANNEL_DISPLAY_NAMES["meta_catalog"] ??= "Meta Catalog";
 CHANNEL_DISPLAY_NAMES["tiktok_catalog"] ??= "TikTok Catalog";
+CHANNEL_DISPLAY_NAMES["facebook_automotive"] ??= "Facebook Automotive (legacy)";
 CHANNEL_DISPLAY_NAMES["custom"] = "Custom";
 
 const PLATFORM_BADGE_COLORS: Record<string, string> = {

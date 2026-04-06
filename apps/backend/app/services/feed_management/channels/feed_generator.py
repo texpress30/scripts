@@ -92,7 +92,9 @@ _MAX_XML_TEXT_LENGTH = 5000
 # Channel types that use Meta's <listings><listing> format
 _META_LISTINGS_TYPES = frozenset({
     ChannelType.facebook_product_ads,
-    ChannelType.facebook_automotive,
+    ChannelType.facebook_catalog_vehicles,
+    ChannelType.facebook_catalog_vehicle_offer,
+    ChannelType.facebook_automotive,  # legacy
     ChannelType.facebook_country,
     ChannelType.facebook_language,
     ChannelType.facebook_marketplace,
@@ -123,8 +125,12 @@ _GOOGLE_RSS_TYPES = frozenset({
 # (e.g. templates imported as "facebook_catalog_vehicles" but enum is "facebook_automotive").
 # _load_field_specs tries each slug in order and returns the first match.
 _CHANNEL_TYPE_SLUG_MAP: dict[str, list[str]] = {
+    # Meta Vehicles catalog (new + legacy)
+    "facebook_catalog_vehicles": ["facebook_catalog_vehicles"],
     "facebook_automotive": ["facebook_catalog_vehicles", "facebook_automotive"],
-    "facebook_product_ads": ["facebook_catalog_vehicle_offer", "facebook_product_ads"],
+    # Meta Vehicle Offers catalog
+    "facebook_catalog_vehicle_offer": ["facebook_catalog_vehicle_offer"],
+    # facebook_product_ads NOT in map — stays e-commerce only, direct slug lookup
 }
 
 # Pattern matching image URL/tag fields: image_0_url, image[0].url, image_0_tag, etc.

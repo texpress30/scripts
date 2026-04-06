@@ -22,10 +22,12 @@ class ChannelType(str, enum.Enum):
     google_things_to_do = "google_things_to_do"
     # Meta
     facebook_product_ads = "facebook_product_ads"
+    facebook_catalog_vehicles = "facebook_catalog_vehicles"
+    facebook_catalog_vehicle_offer = "facebook_catalog_vehicle_offer"
     facebook_country = "facebook_country"
     facebook_language = "facebook_language"
     facebook_marketplace = "facebook_marketplace"
-    facebook_automotive = "facebook_automotive"
+    facebook_automotive = "facebook_automotive"  # legacy — maps to facebook_catalog_vehicles
     facebook_hotel = "facebook_hotel"
     facebook_streaming_ads = "facebook_streaming_ads"
     facebook_destination_ads = "facebook_destination_ads"
