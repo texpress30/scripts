@@ -59,7 +59,8 @@ export const CHANNEL_PLATFORMS: Platform[] = [
     displayName: "TikTok",
     sortOrder: 3,
     channels: [
-      { slug: "tiktok_automotive_inventory", displayName: "TikTok Auto-Inventory", compatibleSubtypes: ["vehicle_listings"] },
+      { slug: "tiktok_automotive_inventory", displayName: "TikTok Automotive Inventory", compatibleSubtypes: ["vehicle_listings"] },
+      { slug: "tiktok_automotive_model", displayName: "TikTok Automotive Model", compatibleSubtypes: ["vehicle_models"] },
       { slug: "tiktok", displayName: "TikTok Catalog", compatibleSubtypes: ["product_physical", "product_local", "product_other"] },
       { slug: "tiktok_destination", displayName: "TikTok Destination", compatibleSubtypes: ["destination_standard"] },
     ],
