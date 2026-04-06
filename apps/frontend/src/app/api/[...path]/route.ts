@@ -9,6 +9,7 @@ function getBackendBaseUrl(): string {
 function resolveRevalidateSeconds(joined: string): number | false {
   const p = joined.toLowerCase();
   if (p.startsWith("auth/")) return false;
+  if (p.startsWith("feeds/")) return false;  // public feeds — always fresh
   if (p.includes("sync-runs/") || p.includes("sync-run")) return false;
   if (p.match(/^integrations\/[^/]+\/status/)) return 15;
   if (p.startsWith("dashboard/")) return false;
