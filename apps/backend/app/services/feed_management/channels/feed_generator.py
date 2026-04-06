@@ -641,6 +641,15 @@ class FeedGenerator:
             for parent, children in nested_groups.items():
                 parent_el = SubElement(listing, _sanitize_xml_tag(parent))
                 for child_key, child_val in children.items():
+                    # A3: mileage.value → round to integer
+                    if parent == "mileage" and child_key == "value":
+                        try:
+                            child_val = str(int(float(child_val)))
+                        except (ValueError, TypeError):
+                            pass
+                    # A4: mileage.unit → uppercase (Meta requires KM not km)
+                    if parent == "mileage" and child_key == "unit":
+                        child_val = child_val.upper()
                     val_str = _sanitize_xml_value(child_val)
                     if val_str.strip():
                         SubElement(parent_el, _sanitize_xml_tag(child_key)).text = val_str
@@ -654,16 +663,30 @@ class FeedGenerator:
                         if val_str.strip():
                             SubElement(parent_el, _sanitize_xml_tag(child_key)).text = val_str
 
-            # 4. Flat fields — skip image, nested, and indexed keys.
+            # Collect nested parent tag names to avoid flat duplicates (A1)
+            nested_parents = {_sanitize_xml_tag(p) for p in nested_groups}
+            nested_parents |= {_sanitize_xml_tag(p) for p in indexed_groups}
+
+            # 4. Flat fields — skip image, nested, indexed keys, and
+            #    flat keys whose tag collides with a nested parent.
             for field_name, value in product.items():
                 if value is None:
                     continue
                 if field_name in image_keys or field_name in nested_keys or field_name in indexed_keys:
                     continue
+                tag = _sanitize_xml_tag(str(field_name))
+                # A1: skip flat field if a nested parent with same tag exists
+                if tag in nested_parents:
+                    continue
+                # A2: price/sale_price — append currency if missing
+                if field_name in ("price", "sale_price"):
+                    val_str = str(value)
+                    if re.match(r"^\d+\.?\d*$", val_str):
+                        currency = product.get("currency", "EUR")
+                        value = f"{val_str} {currency}"
                 val_str = _sanitize_xml_value(value)
                 if not val_str.strip():
                     continue
-                tag = _sanitize_xml_tag(str(field_name))
                 SubElement(listing, tag).text = val_str
 
         xml_str = '<?xml version="1.0" encoding="utf-8"?>\n' + tostring(root, encoding="unicode")
