@@ -678,8 +678,8 @@ class FeedGenerator:
                 # A1: skip flat field if a nested parent with same tag exists
                 if tag in nested_parents:
                     continue
-                # A2: price/sale_price — append currency if missing
-                if field_name in ("price", "sale_price"):
+                # A2: price fields — append currency if missing
+                if field_name in ("price", "sale_price", "previous_price", "msrp"):
                     val_str = str(value)
                     if re.match(r"^\d+\.?\d*$", val_str):
                         currency = product.get("currency", "EUR")
