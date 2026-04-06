@@ -207,7 +207,7 @@ export default function ChannelDetailPage() {
         </div>
       )}
 
-      {/* Feed URL */}
+      {/* Feed URL & Format */}
       <div className="wm-card mb-6 p-4">
         <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Feed URL</h2>
         <div className="flex items-center gap-2">
@@ -231,6 +231,25 @@ export default function ChannelDetailPage() {
               </>
             )}
           </button>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Format</label>
+          <select
+            value={channel.feed_format}
+            onChange={async (e) => {
+              await updateChannel({ feed_format: e.target.value } as never);
+            }}
+            disabled={isUpdating}
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+          >
+            <option value="xml">XML</option>
+            <option value="csv">CSV</option>
+            <option value="tsv">TSV</option>
+            <option value="json">JSON</option>
+          </select>
+          <span className="text-[10px] text-slate-400">
+            Changing format requires re-generating the feed.
+          </span>
         </div>
         {channel.last_generated_at && (
           <p className="mt-2 text-xs text-slate-400">
