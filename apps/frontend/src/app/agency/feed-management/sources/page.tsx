@@ -63,40 +63,42 @@ export default function FeedSourcesPage() {
           </Link>
         </div>
       ) : (
-        {syncingIds.size > 0 && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Syncing in progress... Products are being imported from source.
-          </div>
-        )}
-        <section className="wm-card">
-          <div className="overflow-x-auto overflow-y-visible">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Platform</th>
-                  <th className="px-4 py-3">Catalog</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Last Sync</th>
-                  <th className="px-4 py-3">Products</th>
-                  <th className="px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sources.map((source) => (
-                  <FeedSourceCard
-                    key={source.id}
-                    source={source}
-                    onSync={handleSync}
-                    onDelete={handleDelete}
-                    isSyncing={syncingIds.has(source.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <>
+          {syncingIds.size > 0 && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Syncing in progress... Products are being imported from source.
+            </div>
+          )}
+          <section className="wm-card">
+            <div className="overflow-x-auto overflow-y-visible">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Platform</th>
+                    <th className="px-4 py-3">Catalog</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Last Sync</th>
+                    <th className="px-4 py-3">Products</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sources.map((source) => (
+                    <FeedSourceCard
+                      key={source.id}
+                      source={source}
+                      onSync={handleSync}
+                      onDelete={handleDelete}
+                      isSyncing={syncingIds.has(source.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
       )}
     </>
   );
