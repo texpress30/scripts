@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   FeedSource,
@@ -145,12 +146,39 @@ export function useFeedSources(subaccountId: number | null) {
   const queryClient = useQueryClient();
   const subId = subaccountId ?? 0;
 
+  // Track which sources are currently syncing + their last_sync at trigger time
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
+  const syncSnapshotsRef = useRef<Map<string, string | null>>(new Map());
+
   const { data, isLoading, error } = useQuery<FeedSourcesResponse>({
     queryKey: SOURCES_KEY(subId),
     queryFn: () => fetchSources(subId),
     enabled: subId > 0,
     retry: 1,
+    refetchInterval: syncingIds.size > 0 ? 3000 : false,
   });
+
+  // Detect sync completion: when a syncing source's last_sync changes
+  useEffect(() => {
+    if (!data?.items || syncingIds.size === 0) return;
+    const completed = new Set<string>();
+    for (const source of data.items) {
+      if (syncingIds.has(source.id)) {
+        const snapshotSync = syncSnapshotsRef.current.get(source.id) ?? null;
+        if (source.last_sync && source.last_sync !== snapshotSync) {
+          completed.add(source.id);
+        }
+      }
+    }
+    if (completed.size > 0) {
+      setSyncingIds((prev) => {
+        const next = new Set(prev);
+        completed.forEach((id) => next.delete(id));
+        return next;
+      });
+      completed.forEach((id) => syncSnapshotsRef.current.delete(id));
+    }
+  }, [data, syncingIds]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteSourceApi(subId, id),
@@ -160,6 +188,10 @@ export function useFeedSources(subaccountId: number | null) {
   const syncMutation = useMutation({
     mutationFn: (id: string) => syncSourceApi(subId, id),
     onSuccess: (_data, id) => {
+      // Snapshot last_sync at trigger time so we can detect when it changes
+      const current = data?.items?.find((s) => s.id === id);
+      syncSnapshotsRef.current.set(id, current?.last_sync ?? null);
+      setSyncingIds((prev) => new Set(prev).add(id));
       void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) });
       void queryClient.invalidateQueries({ queryKey: ["source-fields", id] });
       void queryClient.invalidateQueries({ queryKey: ["master-fields", id] });
@@ -191,6 +223,7 @@ export function useFeedSources(subaccountId: number | null) {
     isDeleting: deleteMutation.isPending,
     isSyncing: syncMutation.isPending,
     isCreating: createMutation.isPending,
+    syncingIds,
   };
 }
 

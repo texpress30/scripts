@@ -8,7 +8,7 @@ import { FeedSourceCard } from "@/components/feed-management/FeedSourceCard";
 
 export default function FeedSourcesPage() {
   const { selectedId, isLoading: clientsLoading } = useFeedManagement();
-  const { sources, isLoading, error, deleteSource, syncSource } = useFeedSources(selectedId);
+  const { sources, isLoading, error, deleteSource, syncSource, syncingIds } = useFeedSources(selectedId);
 
   function handleDelete(id: string) {
     if (!window.confirm("Sigur vrei să ștergi această sursă?")) return;
@@ -63,6 +63,12 @@ export default function FeedSourcesPage() {
           </Link>
         </div>
       ) : (
+        {syncingIds.size > 0 && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Syncing in progress... Products are being imported from source.
+          </div>
+        )}
         <section className="wm-card">
           <div className="overflow-x-auto overflow-y-visible">
             <table className="min-w-full text-sm">
@@ -84,6 +90,7 @@ export default function FeedSourcesPage() {
                     source={source}
                     onSync={handleSync}
                     onDelete={handleDelete}
+                    isSyncing={syncingIds.has(source.id)}
                   />
                 ))}
               </tbody>

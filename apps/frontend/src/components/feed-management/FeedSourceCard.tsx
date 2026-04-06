@@ -41,10 +41,12 @@ export function FeedSourceCard({
   source,
   onSync,
   onDelete,
+  isSyncing = false,
 }: {
   source: FeedSource;
   onSync: (id: string) => void;
   onDelete: (id: string) => void;
+  isSyncing?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -87,10 +89,11 @@ export function FeedSourceCard({
         <button
           type="button"
           onClick={() => onSync(source.id)}
-          className="rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
-          title="Sync Now"
+          disabled={isSyncing}
+          className={`rounded p-1.5 ${isSyncing ? "text-indigo-500" : "text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"}`}
+          title={isSyncing ? "Syncing..." : "Sync Now"}
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
         </button>
         <button
           ref={btnRef}
