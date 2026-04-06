@@ -198,12 +198,22 @@ export function useChannels(sourceId: string | null) {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (channelId: string) =>
+      apiRequest<{ status: string }>(`/channels/${channelId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      if (sourceId) void queryClient.invalidateQueries({ queryKey: CHANNELS_KEY(sourceId) });
+    },
+  });
+
   return {
     channels: data?.items ?? [],
     isLoading: sourceId ? isLoading : false,
     error: error instanceof Error ? error.message : null,
     createChannel: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+    deleteChannel: deleteMutation.mutateAsync,
+    isDeleting: deleteMutation.isPending,
   };
 }
 
