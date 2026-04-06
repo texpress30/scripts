@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Loader2, Plus, Rss, CheckCircle2, AlertCircle, Clock, Pause, Copy, ExternalLink } from "lucide-react";
+import { Loader2, Plus, Rss, CheckCircle2, AlertCircle, Clock, Pause, Copy, ExternalLink, Trash2 } from "lucide-react";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { useChannels, type FeedChannel } from "@/lib/hooks/useMasterFields";
@@ -17,9 +17,10 @@ const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; color: string; 
 };
 
 function SourceChannelsSection({ sourceId, sourceName }: { sourceId: string; sourceName: string }) {
-  const { channels, isLoading, createChannel, isCreating } = useChannels(sourceId);
+  const { channels, isLoading, createChannel, isCreating, deleteChannel, isDeleting } = useChannels(sourceId);
   const [showModal, setShowModal] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   function copyFeedUrl(ch: FeedChannel) {
     const url = ch.feed_url ?? `/feeds/${ch.public_token}.${ch.feed_format}`;
@@ -96,6 +97,14 @@ function SourceChannelsSection({ sourceId, sourceName }: { sourceId: string; sou
                       <button type="button" onClick={() => copyFeedUrl(ch)} className="rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" title="Copy feed URL">
                         {copiedId === ch.id ? <span className="text-emerald-600 dark:text-emerald-400">Copied!</span> : <Copy className="h-3.5 w-3.5" />}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteId(ch.id)}
+                        className="rounded px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                        title="Delete channel"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -106,6 +115,36 @@ function SourceChannelsSection({ sourceId, sourceName }: { sourceId: string; sou
       )}
 
       <AddChannelModal open={showModal} onClose={() => setShowModal(false)} onCreate={createChannel} isCreating={isCreating} />
+
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="rounded-lg bg-white p-6 shadow-xl dark:bg-slate-800 max-w-sm">
+            <p className="text-sm text-slate-700 dark:text-slate-300">
+              Are you sure you want to delete this channel? This action cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteId(null)}
+                className="rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={async () => {
+                  await deleteChannel(deleteId);
+                  setDeleteId(null);
+                }}
+                className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
