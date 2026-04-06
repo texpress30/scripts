@@ -239,6 +239,11 @@ class FeedGenerator:
                 else:
                     excluded += 1
 
+            # 4b. Apply Meta-specific value transforms (mileage, price, etc.)
+            #     so both XML and CSV outputs get correct formatting.
+            if channel.channel_type in _META_LISTINGS_TYPES:
+                transformed = [self._format_meta_values(row) for row in transformed]
+
             # 5. Format feed
             content = self._format_feed(
                 transformed, channel.channel_type, channel.feed_format,
@@ -402,6 +407,32 @@ class FeedGenerator:
             if key not in spec_map and key not in result and value is not None:
                 result[key] = value
 
+        return result
+
+    @staticmethod
+    def _format_meta_values(row: dict[str, Any]) -> dict[str, Any]:
+        """Apply Meta-specific value transforms so both XML and CSV are correct.
+
+        - mileage.value → integer (no decimals)
+        - mileage.unit → uppercase (KM not km)
+        - price/sale_price/etc. → append currency if numeric-only
+        """
+        result = dict(row)
+        # Mileage transforms
+        if "mileage.value" in result and result["mileage.value"] is not None:
+            try:
+                result["mileage.value"] = str(int(float(result["mileage.value"])))
+            except (ValueError, TypeError):
+                pass
+        if "mileage.unit" in result and result["mileage.unit"] is not None:
+            result["mileage.unit"] = str(result["mileage.unit"]).upper()
+        # Price transforms — append currency if missing
+        currency = str(result.get("currency", "EUR"))
+        for price_key in ("price", "sale_price", "previous_price", "msrp"):
+            if price_key in result and result[price_key] is not None:
+                val = str(result[price_key])
+                if re.match(r"^\d+\.?\d*$", val):
+                    result[price_key] = f"{val} {currency}"
         return result
 
     # ------------------------------------------------------------------
@@ -641,15 +672,6 @@ class FeedGenerator:
             for parent, children in nested_groups.items():
                 parent_el = SubElement(listing, _sanitize_xml_tag(parent))
                 for child_key, child_val in children.items():
-                    # A3: mileage.value → round to integer
-                    if parent == "mileage" and child_key == "value":
-                        try:
-                            child_val = str(int(float(child_val)))
-                        except (ValueError, TypeError):
-                            pass
-                    # A4: mileage.unit → uppercase (Meta requires KM not km)
-                    if parent == "mileage" and child_key == "unit":
-                        child_val = child_val.upper()
                     val_str = _sanitize_xml_value(child_val)
                     if val_str.strip():
                         SubElement(parent_el, _sanitize_xml_tag(child_key)).text = val_str
@@ -675,15 +697,9 @@ class FeedGenerator:
                 if field_name in image_keys or field_name in nested_keys or field_name in indexed_keys:
                     continue
                 tag = _sanitize_xml_tag(str(field_name))
-                # A1: skip flat field if a nested parent with same tag exists
+                # Skip flat field if a nested parent with same tag exists
                 if tag in nested_parents:
                     continue
-                # A2: price fields — append currency if missing
-                if field_name in ("price", "sale_price", "previous_price", "msrp"):
-                    val_str = str(value)
-                    if re.match(r"^\d+\.?\d*$", val_str):
-                        currency = product.get("currency", "EUR")
-                        value = f"{val_str} {currency}"
                 val_str = _sanitize_xml_value(value)
                 if not val_str.strip():
                     continue

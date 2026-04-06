@@ -262,6 +262,12 @@ export function AddChannelModal({ open, onClose, onCreate, isCreating, channelsW
             <div className="border-t border-slate-200 px-6 py-4 dark:border-slate-700">
               {error && <p className="mb-3 rounded-lg bg-red-50 p-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
               <div className="flex items-center justify-end gap-3">
+                <div className="mr-auto flex items-center gap-2">
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Format</label>
+                  <select value={feedFormat} onChange={(e) => setFeedFormat(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    {FEED_FORMATS.map((ff) => <option key={ff.value} value={ff.value}>{ff.label}</option>)}
+                  </select>
+                </div>
                 <button type="button" onClick={onClose} className="wm-btn-secondary">Anuleaza</button>
                 <button
                   type="button"
