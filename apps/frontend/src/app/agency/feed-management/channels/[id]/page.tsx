@@ -18,6 +18,7 @@ import {
 import { useChannel, useChannelPreview, useSourceFields } from "@/lib/hooks/useMasterFields";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
+import { apiRequest } from "@/lib/api";
 import { ChannelFieldsSection } from "@/components/feed-management/ChannelFieldsSection";
 import { CHANNEL_DISPLAY_NAMES, CHANNEL_PLATFORM_MAP, getPlatformBadgeColor } from "@/lib/data/channel-platforms";
 
@@ -111,12 +112,32 @@ export default function ChannelDetailPage() {
     setShowSuccess(false);
     try {
       // 1. Sync products from source (WooCommerce, etc.) first
-      if (channel?.feed_source_id) {
+      if (channel?.feed_source_id && selectedId) {
+        // Record current last_sync before triggering
+        const before = await apiRequest<{ last_sync_at?: string | null }>(
+          `/subaccount/${selectedId}/feed-sources/${channel.feed_source_id}`,
+          { cache: "no-store" },
+        );
+        const previousSync = before.last_sync_at ?? null;
+
         await syncSource(channel.feed_source_id);
-        // Wait for sync to propagate to MongoDB
-        await new Promise((r) => setTimeout(r, 5000));
+
+        // Poll until last_sync changes (max 60s)
+        const maxWait = 60_000;
+        const pollInterval = 2_000;
+        const start = Date.now();
+        while (Date.now() - start < maxWait) {
+          await new Promise((r) => setTimeout(r, pollInterval));
+          const current = await apiRequest<{ last_sync_at?: string | null }>(
+            `/subaccount/${selectedId}/feed-sources/${channel.feed_source_id}`,
+            { cache: "no-store" },
+          );
+          if (current.last_sync_at && current.last_sync_at !== previousSync) {
+            break;
+          }
+        }
       }
-      // 2. Then generate the feed
+      // 2. Generate feed with fresh data
       await generateFeed();
     } catch (err) {
       setGenerateMsg(err instanceof Error ? err.message : "Failed to generate feed");
