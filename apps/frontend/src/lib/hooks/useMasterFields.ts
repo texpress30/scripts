@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
 
@@ -219,13 +220,24 @@ export function useChannels(sourceId: string | null) {
 
 export function useChannel(channelId: string | null) {
   const queryClient = useQueryClient();
+  const [generatingSnapshot, setGeneratingSnapshot] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<FeedChannel>({
     queryKey: CHANNEL_KEY(channelId ?? ""),
     queryFn: () => apiRequest(`/channels/${channelId}`, { cache: "no-store" }),
     enabled: !!channelId,
     retry: 1,
+    refetchInterval: generatingSnapshot !== null ? 2000 : false,
   });
+
+  // Detect generation complete: last_generated_at changed from snapshot
+  useEffect(() => {
+    if (generatingSnapshot === null || !data) return;
+    const current = data.last_generated_at ?? "";
+    if (current && current !== generatingSnapshot) {
+      setGeneratingSnapshot(null);
+    }
+  }, [data, generatingSnapshot]);
 
   const updateMutation = useMutation({
     mutationFn: (payload: Partial<FeedChannel>) =>
@@ -250,9 +262,13 @@ export function useChannel(channelId: string | null) {
     mutationFn: () =>
       apiRequest<{ status: string }>(`/channels/${channelId}/generate`, { method: "POST" }),
     onSuccess: () => {
+      // Snapshot current last_generated_at to detect when it changes
+      setGeneratingSnapshot(data?.last_generated_at ?? "");
       if (channelId) void queryClient.invalidateQueries({ queryKey: CHANNEL_KEY(channelId) });
     },
   });
+
+  const isAwaitingGeneration = generatingSnapshot !== null;
 
   return {
     channel: data ?? null,
@@ -263,7 +279,8 @@ export function useChannel(channelId: string | null) {
     deleteChannel: deleteMutation.mutateAsync,
     isDeleting: deleteMutation.isPending,
     generateFeed: generateMutation.mutateAsync,
-    isGenerating: generateMutation.isPending,
+    isGenerating: generateMutation.isPending || isAwaitingGeneration,
+    generationComplete: generatingSnapshot === null && generateMutation.isSuccess,
   };
 }
 
