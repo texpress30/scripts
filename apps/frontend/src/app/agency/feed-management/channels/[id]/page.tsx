@@ -97,9 +97,10 @@ export default function ChannelDetailPage() {
 
   const statusCfg = STATUS_CONFIG[channel.status] ?? STATUS_CONFIG.draft;
   const StatusIcon = statusCfg.icon;
+  const cacheBust = channel.last_generated_at ? `?t=${encodeURIComponent(channel.last_generated_at)}` : "";
   const feedUrl = channel.feed_url
-    ? `${window.location.origin}/api${channel.feed_url}`
-    : `${window.location.origin}/api/feeds/${channel.public_token}.${channel.feed_format}`;
+    ? `${window.location.origin}/api${channel.feed_url}${cacheBust}`
+    : `${window.location.origin}/api/feeds/${channel.public_token}.${channel.feed_format}${cacheBust}`;
 
   function handleCopy() {
     void navigator.clipboard.writeText(feedUrl);

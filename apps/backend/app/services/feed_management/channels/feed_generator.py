@@ -807,7 +807,7 @@ class FeedGenerator:
             Key=s3_key,
             Body=content.encode("utf-8"),
             ContentType=content_type,
-            CacheControl="public, max-age=3600",
+            CacheControl="no-cache, must-revalidate",
         )
 
     @staticmethod
