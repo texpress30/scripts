@@ -131,6 +131,8 @@ _CHANNEL_TYPE_SLUG_MAP: dict[str, list[str]] = {
     # Meta Vehicle Offers catalog
     "facebook_catalog_vehicle_offer": ["facebook_catalog_vehicle_offer"],
     # facebook_product_ads NOT in map — stays e-commerce only, direct slug lookup
+    # TikTok slugs match directly — no mapping needed
+    # tiktok_automotive_inventory, tiktok_automotive_model use direct slug lookup
 }
 
 # Pattern matching image URL/tag fields: image_0_url, image[0].url, image_0_tag, etc.

@@ -35,6 +35,7 @@ class ChannelType(str, enum.Enum):
     meta_catalog = "meta_catalog"
     # TikTok
     tiktok_automotive_inventory = "tiktok_automotive_inventory"
+    tiktok_automotive_model = "tiktok_automotive_model"
     tiktok = "tiktok"
     tiktok_catalog = "tiktok_catalog"
     tiktok_destination = "tiktok_destination"
