@@ -140,6 +140,9 @@ _IMAGE_URL_RE = re.compile(r"^image[^a-zA-Z0-9]*(\d+)[^a-zA-Z0-9]*(?:url|link)",
 _IMAGE_TAG_RE = re.compile(r"^image[^a-zA-Z0-9]*(\d+)[^a-zA-Z0-9]*tag", re.IGNORECASE)
 _IMAGE_FIELD_RE = re.compile(r"^image", re.IGNORECASE)
 
+# Matches indexed nested fields like video[0].url, features[1].value
+_INDEXED_NESTED_RE = re.compile(r"^(\w+)\[(\d+)\]\.(.+)$")
+
 
 def _sanitize_xml_value(value: Any) -> str:
     """Strip control chars and truncate for XML text content."""
@@ -607,12 +610,55 @@ class FeedGenerator:
                     image_el = SubElement(listing, "image")
                     SubElement(image_el, "url").text = _sanitize_xml_value(img_link)
 
-            # 2. All other fields — plain, NO namespace prefix.
-            #    Skip all image-related keys (consumed above).
+            # 2. Group dot-notation keys into nested structures.
+            #    e.g. {"address.addr1": "X", "address.city": "Y"}
+            #      → <address><addr1>X</addr1><city>Y</city></address>
+            nested_groups: dict[str, dict[str, str]] = {}
+            nested_keys: set[str] = set()
+
+            # 3. Group indexed nested fields (e.g. video[0].url, features[1].value)
+            indexed_groups: dict[str, dict[int, dict[str, str]]] = {}
+            indexed_keys: set[str] = set()
+
+            for field_name, value in product.items():
+                if value is None or field_name in image_keys:
+                    continue
+                # Check indexed nested first (e.g. video[0].url)
+                m = _INDEXED_NESTED_RE.match(field_name)
+                if m:
+                    parent, idx, child = m.group(1), int(m.group(2)), m.group(3)
+                    if parent.lower() != "image":  # images handled above
+                        indexed_groups.setdefault(parent, {}).setdefault(idx, {})[child] = str(value)
+                        indexed_keys.add(field_name)
+                    continue
+                # Check dot-notation nested (e.g. address.city)
+                if "." in field_name:
+                    parts = field_name.split(".", 1)
+                    nested_groups.setdefault(parts[0], {})[parts[1]] = str(value)
+                    nested_keys.add(field_name)
+
+            # Render dot-notation nested elements
+            for parent, children in nested_groups.items():
+                parent_el = SubElement(listing, _sanitize_xml_tag(parent))
+                for child_key, child_val in children.items():
+                    val_str = _sanitize_xml_value(child_val)
+                    if val_str.strip():
+                        SubElement(parent_el, _sanitize_xml_tag(child_key)).text = val_str
+
+            # Render indexed nested elements
+            for parent, indices in indexed_groups.items():
+                for idx in sorted(indices.keys()):
+                    parent_el = SubElement(listing, _sanitize_xml_tag(parent))
+                    for child_key, child_val in indices[idx].items():
+                        val_str = _sanitize_xml_value(child_val)
+                        if val_str.strip():
+                            SubElement(parent_el, _sanitize_xml_tag(child_key)).text = val_str
+
+            # 4. Flat fields — skip image, nested, and indexed keys.
             for field_name, value in product.items():
                 if value is None:
                     continue
-                if field_name in image_keys:
+                if field_name in image_keys or field_name in nested_keys or field_name in indexed_keys:
                     continue
                 val_str = _sanitize_xml_value(value)
                 if not val_str.strip():
