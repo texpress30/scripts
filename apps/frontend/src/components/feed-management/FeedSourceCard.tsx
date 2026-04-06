@@ -83,6 +83,15 @@ export function FeedSourceCard({
         {(source.product_count ?? 0).toLocaleString()}
       </td>
       <td className="px-4 py-3">
+        <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onSync(source.id)}
+          className="rounded p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
+          title="Sync Now"
+        >
+          <RefreshCw className="h-4 w-4" />
+        </button>
         <button
           ref={btnRef}
           type="button"
@@ -137,6 +146,7 @@ export function FeedSourceCard({
             </div>
           </>
         ) : null}
+        </div>
       </td>
     </tr>
   );
