@@ -16,6 +16,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { useChannel, useChannelPreview, useSourceFields } from "@/lib/hooks/useMasterFields";
+import { useFeedSources } from "@/lib/hooks/useFeedSources";
+import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { ChannelFieldsSection } from "@/components/feed-management/ChannelFieldsSection";
 import { CHANNEL_DISPLAY_NAMES, CHANNEL_PLATFORM_MAP, getPlatformBadgeColor } from "@/lib/data/channel-platforms";
 
@@ -37,6 +39,8 @@ export default function ChannelDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const channelId = params.id;
+  const { selectedId } = useFeedManagement();
+  const { syncSource } = useFeedSources(selectedId);
 
   const {
     channel,
@@ -106,9 +110,16 @@ export default function ChannelDetailPage() {
     setGenerateMsg(null);
     setShowSuccess(false);
     try {
+      // 1. Sync products from source (WooCommerce, etc.) first
+      if (channel?.feed_source_id) {
+        await syncSource(channel.feed_source_id);
+        // Wait for sync to propagate to MongoDB
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+      // 2. Then generate the feed
       await generateFeed();
     } catch (err) {
-      setGenerateMsg(err instanceof Error ? err.message : "Failed to start generation");
+      setGenerateMsg(err instanceof Error ? err.message : "Failed to generate feed");
     }
   }
 
@@ -219,7 +230,7 @@ export default function ChannelDetailPage() {
       {isGenerating && (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Generating feed...
+          Syncing products and generating feed...
         </div>
       )}
 
