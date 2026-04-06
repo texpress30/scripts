@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -48,12 +48,24 @@ export default function ChannelDetailPage() {
     isDeleting,
     generateFeed,
     isGenerating,
+    generationComplete,
   } = useChannel(channelId);
 
   const { preview, isLoading: previewLoading, refresh: refreshPreview } = useChannelPreview(channelId);
   const { fields: sourceFieldsList } = useSourceFields(channel?.feed_source_id ?? null);
   const [copied, setCopied] = useState(false);
   const [generateMsg, setGenerateMsg] = useState<string | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  // Show success notification when generation completes
+  useEffect(() => {
+    if (generationComplete && !isGenerating) {
+      setGenerateMsg(null);
+      setShowSuccess(true);
+      const timer = setTimeout(() => setShowSuccess(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [generationComplete, isGenerating]);
 
   if (isLoading) {
     return (
@@ -92,9 +104,9 @@ export default function ChannelDetailPage() {
 
   async function handleGenerate() {
     setGenerateMsg(null);
+    setShowSuccess(false);
     try {
       await generateFeed();
-      setGenerateMsg("Feed generation started. Refresh the page in a few seconds.");
     } catch (err) {
       setGenerateMsg(err instanceof Error ? err.message : "Failed to start generation");
     }
@@ -161,8 +173,17 @@ export default function ChannelDetailPage() {
               disabled={isGenerating}
               className="wm-btn-primary inline-flex items-center gap-2"
             >
-              {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Generate Feed
+              {isGenerating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  Generate Feed
+                </>
+              )}
             </button>
             <button
               type="button"
@@ -195,8 +216,22 @@ export default function ChannelDetailPage() {
         </Link>
       </div>
 
+      {isGenerating && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Generating feed...
+        </div>
+      )}
+
+      {showSuccess && !isGenerating && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
+          <CheckCircle2 className="h-4 w-4" />
+          Feed generated successfully. {channel.included_products} products included.
+        </div>
+      )}
+
       {generateMsg && (
-        <div className="mb-4 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400">
+        <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
           {generateMsg}
         </div>
       )}
