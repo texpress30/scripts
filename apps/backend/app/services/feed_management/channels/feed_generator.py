@@ -118,6 +118,15 @@ _GOOGLE_RSS_TYPES = frozenset({
     ChannelType.google_things_to_do,
 })
 
+# Mapping between ChannelType enum values and schema registry channel_slugs.
+# The schema registry may store fields under a different slug than the enum value
+# (e.g. templates imported as "facebook_catalog_vehicles" but enum is "facebook_automotive").
+# _load_field_specs tries each slug in order and returns the first match.
+_CHANNEL_TYPE_SLUG_MAP: dict[str, list[str]] = {
+    "facebook_automotive": ["facebook_catalog_vehicles", "facebook_automotive"],
+    "facebook_product_ads": ["facebook_catalog_vehicle_offer", "facebook_product_ads"],
+}
+
 # Pattern matching image URL/tag fields: image_0_url, image[0].url, image_0_tag, etc.
 # After _apply_field_specs, keys may be raw channel_field_names like "image[0].url"
 # or sanitized canonical names like "image_0_url". Match both.
@@ -297,17 +306,26 @@ class FeedGenerator:
             source = FeedSourceRepository().get_by_id(feed_source_id)
             catalog_type = source.catalog_type if hasattr(source, "catalog_type") else "product"
 
-            specs = schema_registry_repository.get_channel_field_specs(
-                channel_slug, catalog_type,
-            )
-            if not specs:
-                logger.warning(
-                    "No schema registry data for channel=%s, catalog_type=%s. "
-                    "Using hardcoded fields.",
-                    channel_slug, catalog_type,
+            # Try mapped slugs first (e.g. facebook_automotive → facebook_catalog_vehicles),
+            # then fall back to the direct channel_slug.
+            slugs_to_try = _CHANNEL_TYPE_SLUG_MAP.get(channel_slug, [channel_slug])
+            for slug in slugs_to_try:
+                specs = schema_registry_repository.get_channel_field_specs(
+                    slug, catalog_type,
                 )
-                return None
-            return specs
+                if specs:
+                    logger.info(
+                        "Loaded %d field specs for channel=%s (resolved slug=%s, catalog=%s)",
+                        len(specs), channel_slug, slug, catalog_type,
+                    )
+                    return specs
+
+            logger.warning(
+                "No schema registry data for channel=%s (tried slugs=%s, catalog_type=%s). "
+                "Using hardcoded fields.",
+                channel_slug, slugs_to_try, catalog_type,
+            )
+            return None
         except Exception:
             logger.debug("Schema registry lookup failed, using fallback", exc_info=True)
             return None
