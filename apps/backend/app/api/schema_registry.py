@@ -15,6 +15,7 @@ from app.services.feed_management.schema_registry.repository import (
     schema_registry_repository,
 )
 from app.services.feed_management.schema_registry.service import (
+    channel_slug_to_platform,
     normalize_slug,
     parse_and_import,
     upload_file_to_s3,
@@ -25,17 +26,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["feed-schema-registry"])
 
-
-def _channel_slug_to_platform(slug: str) -> str:
-    """Map a channel_slug to a short platform name for alias platform_hints."""
-    slug_lower = slug.lower()
-    if slug_lower.startswith(("facebook_", "meta_")):
-        return "meta"
-    if slug_lower.startswith("tiktok"):
-        return "tiktok"
-    if slug_lower.startswith("google"):
-        return "google"
-    return slug_lower
+# Re-export for backward compat
+_channel_slug_to_platform = channel_slug_to_platform
 
 _ALLOWED_CONTENT_TYPES = {
     "text/csv",

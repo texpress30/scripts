@@ -29,6 +29,18 @@ _VALID_DATA_TYPES = frozenset({
 })
 
 
+def channel_slug_to_platform(slug: str) -> str:
+    """Map a channel_slug to a short platform name for alias platform_hints."""
+    slug_lower = slug.lower()
+    if slug_lower.startswith(("facebook_", "meta_")):
+        return "meta"
+    if slug_lower.startswith("tiktok"):
+        return "tiktok"
+    if slug_lower.startswith("google"):
+        return "google"
+    return slug_lower
+
+
 def normalize_slug(value: str) -> str:
     """Normalize a channel slug: lowercase, underscores, no special chars."""
     slug = value.lower().strip()
@@ -70,7 +82,7 @@ def parse_and_import(
         raise ValueError("Template parsed successfully but contained no fields.")
 
     # 2. Resolve aliases: map platform-specific names to canonical keys
-    fields, alias_count = _resolve_aliases(fields, catalog_type)
+    fields, alias_count = _resolve_aliases(fields, catalog_type, channel_slug=channel_slug)
     if alias_count:
         warnings.append(f"{alias_count} field(s) resolved via aliases to canonical keys.")
 
@@ -111,8 +123,13 @@ def parse_and_import_csv(
 def _resolve_aliases(
     fields: list[dict[str, Any]],
     catalog_type: str,
+    channel_slug: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Resolve alias field_keys to their canonical equivalents.
+
+    When *channel_slug* is provided, each resolved alias is touched via
+    ``create_alias()`` so that ``platform_hints`` is updated with the
+    current platform (ON CONFLICT DO UPDATE appends without duplicates).
 
     Returns (resolved_fields, alias_count).
     """
@@ -124,6 +141,8 @@ def _resolve_aliases(
 
     if not aliases:
         return fields, 0
+
+    platform = channel_slug_to_platform(channel_slug) if channel_slug else None
 
     resolved: list[dict[str, Any]] = []
     count = 0
@@ -137,6 +156,18 @@ def _resolve_aliases(
                 field["channel_field_name"] = original_key
             logger.info("Resolved alias: %s → %s for %s", original_key, canonical, catalog_type)
             count += 1
+
+            # Touch alias to update platform_hints for this channel
+            if platform:
+                try:
+                    schema_registry_repository.create_alias(
+                        catalog_type=catalog_type,
+                        canonical_key=canonical,
+                        alias_key=original_key,
+                        platform_hint=platform,
+                    )
+                except Exception:
+                    pass  # alias already exists, platform append may have worked
         else:
             if not field.get("channel_field_name"):
                 field["channel_field_name"] = original_key
