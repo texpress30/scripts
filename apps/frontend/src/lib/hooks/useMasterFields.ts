@@ -31,6 +31,7 @@ export type ChannelBadge = {
 export type FieldAlias = {
   alias_key: string;
   platform_hint: string;
+  platform_hints?: string[];
 };
 
 export type FieldSuggestion = {

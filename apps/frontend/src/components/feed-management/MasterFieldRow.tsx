@@ -106,7 +106,9 @@ export function MasterFieldRow({
             {aliases.map((a, i) => (
               <span key={a.alias_key}>
                 {a.alias_key}
-                {a.platform_hint ? ` (${a.platform_hint})` : ""}
+                {a.platform_hints && a.platform_hints.length > 0
+                  ? ` (${a.platform_hints.join(", ")})`
+                  : a.platform_hint ? ` (${a.platform_hint})` : ""}
                 {i < aliases.length - 1 ? ", " : ""}
               </span>
             ))}
