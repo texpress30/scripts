@@ -52,6 +52,8 @@ class CreateFeedSourceRequest(BaseModel):
     config: FeedSourceConfig = Field(default_factory=FeedSourceConfig)
     credentials_secret_id: str | None = None
     catalog_type: str = "product"
+    catalog_variant: str = "physical_products"
+    shop_domain: str | None = Field(default=None, description="Required for source_type=shopify")
 
 
 class UpdateFeedSourceRequest(BaseModel):
@@ -59,6 +61,26 @@ class UpdateFeedSourceRequest(BaseModel):
     config: FeedSourceConfig | None = None
     credentials_secret_id: str | None = None
     is_active: bool | None = None
+    catalog_type: str | None = None
+    catalog_variant: str | None = None
+
+
+class CreateFeedSourceResponse(BaseModel):
+    source: FeedSourceResponse
+    authorize_url: str | None = None
+    state: str | None = None
+
+
+class CompleteOAuthRequest(BaseModel):
+    code: str = Field(min_length=1)
+    state: str = Field(min_length=1)
+    shop: str | None = Field(default=None, description="Optional override; defaults to source.shop_domain")
+
+
+class ConnectionTestResponse(BaseModel):
+    success: bool
+    message: str
+    source: FeedSourceResponse
 
 
 class FeedSourceListResponse(BaseModel):
@@ -107,14 +129,39 @@ def get_feed_source(
     return source
 
 
-@router.post("", response_model=FeedSourceResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CreateFeedSourceResponse, status_code=status.HTTP_201_CREATED)
 def create_feed_source(
     subaccount_id: int,
     payload: CreateFeedSourceRequest,
     user: AuthUser = Depends(get_current_user),
-) -> FeedSourceResponse:
+) -> CreateFeedSourceResponse:
     _enforce_feature_flag()
     enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+
+    shop_domain: str | None = None
+    authorize_payload: dict[str, str] | None = None
+
+    if payload.source_type == FeedSourceType.shopify:
+        if not payload.shop_domain:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="shop_domain is required for source_type=shopify",
+            )
+        from app.integrations.shopify import config as shopify_config
+        from app.integrations.shopify import service as shopify_oauth_service
+        from app.integrations.shopify.service import ShopifyIntegrationError
+
+        try:
+            shop_domain = shopify_config.validate_shop_domain(payload.shop_domain)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        if shopify_config.oauth_configured():
+            try:
+                authorize_payload = shopify_oauth_service.generate_connect_url(shop=shop_domain)
+            except (ValueError, ShopifyIntegrationError) as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     try:
         source = _source_repo.create(FeedSourceCreate(
             subaccount_id=subaccount_id,
@@ -123,17 +170,29 @@ def create_feed_source(
             config=payload.config,
             credentials_secret_id=payload.credentials_secret_id,
             catalog_type=payload.catalog_type,
+            catalog_variant=payload.catalog_variant,
+            shop_domain=shop_domain,
         ))
     except FeedSourceAlreadyExistsError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
         action="feed_source.created",
         resource=f"feed_source:{source.id}",
-        details={"subaccount_id": subaccount_id, "source_type": payload.source_type.value, "name": payload.name},
+        details={
+            "subaccount_id": subaccount_id,
+            "source_type": payload.source_type.value,
+            "name": payload.name,
+            "shop_domain": shop_domain,
+        },
     )
-    return source
+    return CreateFeedSourceResponse(
+        source=source,
+        authorize_url=authorize_payload.get("authorize_url") if authorize_payload else None,
+        state=authorize_payload.get("state") if authorize_payload else None,
+    )
 
 
 @router.put("/{source_id}", response_model=FeedSourceResponse)
@@ -157,6 +216,8 @@ def update_feed_source(
             config=payload.config,
             credentials_secret_id=payload.credentials_secret_id,
             is_active=payload.is_active,
+            catalog_type=payload.catalog_type,
+            catalog_variant=payload.catalog_variant,
         ))
     except FeedSourceNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -188,6 +249,25 @@ def delete_feed_source(
         deleted_products = feed_products_repository.delete_products_by_source(source_id)
     except Exception:
         deleted_products = 0
+
+    # Best-effort: drop the encrypted Shopify token tied to this shop domain.
+    if existing.source_type == FeedSourceType.shopify and existing.shop_domain:
+        try:
+            from app.services.integration_secrets_store import integration_secrets_store
+
+            integration_secrets_store.delete_secret(
+                provider="shopify",
+                secret_key="access_token",
+                scope=existing.shop_domain,
+            )
+            integration_secrets_store.delete_secret(
+                provider="shopify",
+                secret_key="scope",
+                scope=existing.shop_domain,
+            )
+        except Exception:
+            logger.warning("shopify_token_delete_failed source_id=%s", source_id, exc_info=True)
+
     _source_repo.delete(source_id)
     audit_log_service.log(
         actor_email=user.email,
@@ -394,3 +474,199 @@ def get_product(
     if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Product not found: {product_id}")
     return doc.get("data", doc)
+
+
+# ---------------------------------------------------------------------------
+# Shopify OAuth lifecycle endpoints (per-source)
+# ---------------------------------------------------------------------------
+
+
+def _require_shopify_source(subaccount_id: int, source_id: str) -> FeedSourceResponse:
+    source = _resolve_source_or_404(subaccount_id, source_id)
+    if source.source_type != FeedSourceType.shopify:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only valid for Shopify feed sources",
+        )
+    if not source.shop_domain:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Shopify feed source has no shop_domain configured",
+        )
+    return source
+
+
+@router.post("/{source_id}/complete-oauth", response_model=FeedSourceResponse)
+def complete_shopify_oauth(
+    subaccount_id: int,
+    source_id: str,
+    payload: CompleteOAuthRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> FeedSourceResponse:
+    """Finalise a Shopify OAuth flow started via ``POST /``: exchange the code,
+    persist the encrypted token, and flip the source to ``connected``."""
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+
+    source = _require_shopify_source(subaccount_id, source_id)
+    shop = (payload.shop or source.shop_domain or "").strip()
+    if not shop:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="shop is required")
+
+    from app.integrations.shopify import service as shopify_oauth_service
+    from app.integrations.shopify.service import ShopifyIntegrationError
+
+    state_valid, state_reason = shopify_oauth_service.verify_shopify_oauth_state(payload.state)
+    if not state_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid OAuth state for Shopify connect callback: {state_reason}",
+        )
+
+    try:
+        exchange = shopify_oauth_service.exchange_code_for_token(code=payload.code, shop=shop)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ShopifyIntegrationError as exc:
+        code = exc.http_status if exc.http_status in (400, 403, 502) else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    if exchange["shop"] != source.shop_domain:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"OAuth callback shop '{exchange['shop']}' does not match source shop '{source.shop_domain}'",
+        )
+
+    try:
+        shopify_oauth_service.store_shopify_token(
+            shop=exchange["shop"],
+            access_token=exchange["access_token"],
+            scope=exchange.get("scope", ""),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("shopify_token_store_failed source_id=%s", source_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist Shopify access token",
+        ) from exc
+
+    updated = _source_repo.mark_oauth_connected(source_id, scopes=exchange.get("scope") or None)
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="feed_source.shopify.connected",
+        resource=f"feed_source:{source_id}",
+        details={"subaccount_id": subaccount_id, "shop_domain": exchange["shop"]},
+    )
+    return updated
+
+
+@router.post("/{source_id}/reconnect")
+def reconnect_shopify_source(
+    subaccount_id: int,
+    source_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Generate a fresh authorize URL for an existing Shopify source whose token
+    is missing, expired, or revoked."""
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+
+    source = _require_shopify_source(subaccount_id, source_id)
+    if source.connection_status not in {"error", "disconnected", "pending"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Source is already in status '{source.connection_status}'; nothing to reconnect",
+        )
+
+    from app.integrations.shopify import config as shopify_config
+    from app.integrations.shopify import service as shopify_oauth_service
+    from app.integrations.shopify.service import ShopifyIntegrationError
+
+    if not shopify_config.oauth_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Shopify OAuth is not configured",
+        )
+
+    try:
+        payload = shopify_oauth_service.generate_connect_url(shop=source.shop_domain or "")
+    except (ValueError, ShopifyIntegrationError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="feed_source.shopify.reconnect_started",
+        resource=f"feed_source:{source_id}",
+        details={"subaccount_id": subaccount_id, "shop_domain": source.shop_domain},
+    )
+    return {
+        "authorize_url": payload["authorize_url"],
+        "state": payload["state"],
+        "source_id": source_id,
+    }
+
+
+@router.post("/{source_id}/test-connection", response_model=ConnectionTestResponse)
+def test_shopify_source_connection(
+    subaccount_id: int,
+    source_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> ConnectionTestResponse:
+    """Probe Shopify ``/admin/api/{version}/shop.json`` with the stored token."""
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+
+    source = _require_shopify_source(subaccount_id, source_id)
+    if source.connection_status != "connected":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Source is not connected (status='{source.connection_status}')",
+        )
+
+    from app.integrations.shopify import config as shopify_config
+    from app.integrations.shopify import service as shopify_oauth_service
+
+    token = shopify_oauth_service.get_access_token_for_shop(source.shop_domain or "")
+    if not token:
+        updated = _source_repo.record_connection_check(source_id, success=False, error="No stored token")
+        return ConnectionTestResponse(success=False, message="No stored token", source=updated)
+
+    from urllib import error as _err
+    from urllib import request as _req
+    import json as _json
+
+    url = f"{shopify_config.get_shopify_api_base_url(source.shop_domain or '')}/shop.json"
+    req = _req.Request(
+        url=url,
+        method="GET",
+        headers={"X-Shopify-Access-Token": token, "Accept": "application/json"},
+    )
+    try:
+        with _req.urlopen(req, timeout=15) as resp:
+            data = resp.read().decode("utf-8")
+        payload = _json.loads(data) if data else {}
+        shop_payload = payload.get("shop") if isinstance(payload, dict) else None
+        message = (
+            f"Connected to {shop_payload.get('name')}" if isinstance(shop_payload, dict) and shop_payload.get("name")
+            else "Connection OK"
+        )
+        updated = _source_repo.record_connection_check(source_id, success=True)
+        return ConnectionTestResponse(success=True, message=message, source=updated)
+    except _err.HTTPError as exc:
+        if exc.code in (401, 403):
+            updated = _source_repo.record_connection_check(
+                source_id, success=False, error="Token invalid or revoked"
+            )
+            return ConnectionTestResponse(success=False, message="Token invalid or revoked", source=updated)
+        updated = _source_repo.record_connection_check(
+            source_id, success=False, error=f"Shopify HTTP {exc.code}"
+        )
+        return ConnectionTestResponse(success=False, message=f"Shopify HTTP {exc.code}", source=updated)
+    except (_err.URLError, TimeoutError) as exc:
+        updated = _source_repo.record_connection_check(
+            source_id, success=False, error=f"Network error: {exc}"
+        )
+        return ConnectionTestResponse(success=False, message="Could not reach Shopify", source=updated)
