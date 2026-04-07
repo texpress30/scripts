@@ -97,6 +97,16 @@ class SyncTriggerResponse(BaseModel):
     message: str
 
 
+class ImportRunResponse(BaseModel):
+    import_id: str
+    status: str
+    total: int
+    imported: int
+    deactivated: int
+    errors: list[dict] = Field(default_factory=list)
+    message: str
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -670,3 +680,96 @@ def test_shopify_source_connection(
             source_id, success=False, error=f"Network error: {exc}"
         )
         return ConnectionTestResponse(success=False, message="Could not reach Shopify", source=updated)
+
+
+@router.post("/{source_id}/import", response_model=ImportRunResponse)
+async def import_shopify_products(
+    subaccount_id: int,
+    source_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> ImportRunResponse:
+    """Run a synchronous Shopify products import for a connected source.
+
+    This is a thin wrapper around :func:`feed_sync_service.run_sync` that
+    surfaces the per-run counts (imported / deactivated / total) directly in
+    the HTTP response, instead of fire-and-forget like ``POST /sync``.
+    Long-running stores should still prefer ``/sync`` (BackgroundTasks);
+    ``/import`` is intended for UI flows that want immediate feedback.
+    """
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+
+    source = _require_shopify_source(subaccount_id, source_id)
+    if source.connection_status != "connected":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Source not connected (status='{source.connection_status}')",
+        )
+
+    from app.integrations.shopify.service import get_access_token_for_shop
+
+    if not get_access_token_for_shop(source.shop_domain or ""):
+        # Token was revoked or never persisted — surface a clean 400 instead of
+        # letting the connector hit a 401 inside the sync.
+        try:
+            _source_repo.record_connection_check(
+                source_id, success=False, error="Token revoked — reconnect required"
+            )
+        except Exception:
+            logger.warning("Failed to mark source after missing token", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Source not connected (no stored token)",
+        )
+
+    from app.services.feed_management.sync_service import feed_sync_service
+
+    try:
+        feed_import = await feed_sync_service.run_sync(source_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Synchronous Shopify import failed for source %s", source_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Import failed: {exc}",
+        ) from exc
+
+    # Pull post-sync product count to derive a deactivation delta. This is
+    # informational only — the authoritative numbers come from the FeedImport
+    # row that the sync service already persists.
+    try:
+        from app.services.feed_management.products_repository import feed_products_repository
+
+        total_after = feed_products_repository.count_products(source_id)
+    except Exception:
+        total_after = feed_import.imported_products
+
+    deactivated = max(0, feed_import.total_products - feed_import.imported_products)
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="feed_source.shopify.import_run",
+        resource=f"feed_source:{source_id}",
+        details={
+            "subaccount_id": subaccount_id,
+            "import_id": feed_import.id,
+            "status": feed_import.status.value,
+            "imported": feed_import.imported_products,
+            "total": feed_import.total_products,
+            "after_count": total_after,
+        },
+    )
+
+    return ImportRunResponse(
+        import_id=feed_import.id,
+        status=feed_import.status.value,
+        total=feed_import.total_products,
+        imported=feed_import.imported_products,
+        deactivated=deactivated,
+        errors=feed_import.errors or [],
+        message=(
+            f"Imported {feed_import.imported_products} products"
+            if feed_import.status.value == "completed"
+            else f"Import finished with status {feed_import.status.value}"
+        ),
+    )
