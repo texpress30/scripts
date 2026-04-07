@@ -115,6 +115,42 @@ Variabile minime necesare:
   - `POST /integrations/meta-ads/{client_id}/backfill` → enqueue backfill istoric chunked (implicit `2024-01-09` → ieri) pentru grains `account_daily|campaign_daily|ad_group_daily|ad_daily`; body opțional `{ "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "grains": ["..."] }`.
 - Status-ul `GET /integrations/meta-ads/status` expune `token_source`, `token_updated_at`, `token_expires_at` (dacă există) și `oauth_configured`.
 
+### Shopify Feed Integration (VOXEL app - OAuth)
+Integrare completă OAuth pentru import de produse din magazine Shopify, folosind un Public App VOXEL înregistrat în Shopify Partners. Flow-ul end-to-end: Add New Source → OAuth redirect → callback → token encrypted → import produse.
+
+- Variabile env (backend):
+  - `SHOPIFY_APP_CLIENT_ID`
+  - `SHOPIFY_APP_CLIENT_SECRET`
+  - `SHOPIFY_REDIRECT_URI` (default `https://admin.omarosa.ro/agency/integrations/shopify/callback`)
+  - `SHOPIFY_API_VERSION` (default `2026-04`)
+  - `SHOPIFY_SCOPES` (default `read_products,read_product_listings,read_inventory,read_locations`)
+  - opțional: `SHOPIFY_WEBHOOK_BASE_URL` (default `https://admin.omarosa.ro`; prefix pentru URL-ul public al endpoint-ului webhook înregistrat la OAuth exchange)
+- OAuth endpoints:
+  - `GET /integrations/shopify/status` → `{ oauth_configured, connected_shops, token_count }`
+  - `GET /integrations/shopify/connect?shop={shop}.myshopify.com` → `{ authorize_url, state }` (state HMAC-signed)
+  - `POST /integrations/shopify/oauth/exchange` cu `{ code, state, shop, client_id? }` → exchange code → offline token; token + scope persistate criptat în `integration_secrets` (`provider=shopify`, `scope=shop_domain`); înregistrează best-effort webhook `app/uninstalled` pe magazin.
+- Feed source lifecycle (per subaccount, scope `/subaccount/{subaccount_id}/feed-sources`):
+  - `POST /feed-management/sources` cu `source_type=shopify` + `shop_domain` → creează rândul `feed_sources` (status `pending`) și returnează `{ source, authorize_url, state }` pentru redirect imediat.
+  - `POST /feed-management/sources/{source_id}/complete-oauth` cu `{ code, state, shop? }` → finalizează OAuth pe sursă, stochează token-ul și marchează `connection_status='connected'`.
+  - `POST /feed-management/sources/{source_id}/reconnect` → regenerează `authorize_url` pentru o sursă aflată în `error`/`disconnected`/`pending`.
+  - `POST /feed-management/sources/{source_id}/test-connection` → probe `GET /admin/api/{version}/shop.json` cu token-ul stocat și actualizează `last_connection_check`.
+  - `POST /feed-management/sources/{source_id}/import` → import sincron produse Shopify (paginare cursor-based, mapping variante) cu counts imported/deactivated/total întoarse direct în răspuns.
+- Webhook public (HMAC-verified, fără JWT): `POST /integrations/shopify/webhooks/app-uninstalled`
+  - Verifică header-ul `X-Shopify-Hmac-Sha256` cu `SHOPIFY_APP_CLIENT_SECRET` (timing-safe via `hmac.compare_digest`); HMAC invalid → 401; secret neconfigurat → 503 (fail closed).
+  - Pe HMAC valid întoarce mereu `200 OK` (Shopify reîncearcă la non-2xx în 5s); cleanup: marchează toate feed-sources legate de shop ca `disconnected` cu `last_error="App uninstalled by merchant"`, șterge `access_token` + `scope` din `integration_secrets`, scrie `audit_log` (`shopify.app.uninstalled`). Idempotent la re-delivery.
+  - Înregistrat automat la OAuth exchange via `register_uninstall_webhook()` (POST `/admin/api/{version}/webhooks.json` cu topic `app/uninstalled`); eșecul e logat dar nu blochează flow-ul OAuth.
+- Frontend:
+  - Callback page: `/agency/integrations/shopify/callback` — pattern identic cu Meta/TikTok, recuperează `shopify_oauth_context` din `sessionStorage` și apelează `complete-oauth` pe sursă.
+  - Add New Source Step 3 colectează doar `Source Name` + shop URL (normalizare automată `my-store` → `my-store.myshopify.com`, strip `https://`) și pornește OAuth la click pe „Conectează la Shopify". NU mai colectează API Key/Secret manual.
+  - Lista de surse afișează `connection_status` badge (`Conectat` / `În așteptare` / `Eroare` / `Deconectat`), buton `Importă` pentru sursele conectate și `Reconectează` pentru cele în eroare/deconectate.
+- Note operaționale:
+  - Token-ul Shopify offline **NU expiră** (nu are refresh token). Se revocă doar la dezinstalarea app-ului (webhook `app/uninstalled`).
+  - Rate limit Shopify Admin API: 2 req/sec (bucket 40); conectorul throttle-ază la ≥ 35/40 și retry pe 429.
+  - Paginare cursor-based via `Link` header, max 250 produse/pagină.
+  - Token-urile sunt mascate (`shpua_XXXXXX***`) în orice log output (`_mask_token`).
+  - Callback URL frontend (Shopify Partners): `https://admin.omarosa.ro/agency/integrations/shopify/callback`.
+  - Webhook URL backend: `https://admin.omarosa.ro/api/integrations/shopify/webhooks/app-uninstalled`.
+
 ## Endpoint-uri cheie
 ### Core
 - `POST /auth/login`
@@ -147,6 +183,14 @@ Variabile minime necesare:
 - `POST /integrations/pinterest-ads/{client_id}/sync`
 - `GET /integrations/snapchat-ads/status`
 - `POST /integrations/snapchat-ads/{client_id}/sync`
+- `GET /integrations/shopify/status`
+- `GET /integrations/shopify/connect?shop={shop}.myshopify.com`
+- `POST /integrations/shopify/oauth/exchange`
+- `POST /integrations/shopify/webhooks/app-uninstalled` (public, HMAC-verified)
+- `POST /subaccount/{subaccount_id}/feed-sources` (creare sursă Shopify cu `shop_domain` → `{ source, authorize_url, state }`)
+- `POST /subaccount/{subaccount_id}/feed-sources/{source_id}/complete-oauth`
+- `POST /subaccount/{subaccount_id}/feed-sources/{source_id}/reconnect`
+- `POST /subaccount/{subaccount_id}/feed-sources/{source_id}/import`
 
 `GET /dashboard/agency/summary` include în `integration_health` status real pentru `google_ads`, `meta_ads` și `tiktok_ads`; `pinterest_ads` și `snapchat_ads` rămân placeholder `disabled` până la integrare completă.
 
@@ -154,9 +198,11 @@ Variabile minime necesare:
 ## Redirect URI alignment (production)
 - TikTok Developers (Advertiser redirect URL) + Railway `TIKTOK_REDIRECT_URI` trebuie setate la: `https://scripts-chi-nine.vercel.app/agency/integrations/tiktok/callback`.
 - Meta Developers (OAuth Valid Redirect URI) + Railway `META_REDIRECT_URI` trebuie setate la: `https://scripts-chi-nine.vercel.app/agency/integrations/meta/callback`.
+- Shopify Partners (VOXEL App Allowed redirection URL) + Railway `SHOPIFY_REDIRECT_URI` trebuie setate la: `https://admin.omarosa.ro/agency/integrations/shopify/callback`.
 - Callback pages frontend folosite în aplicație:
   - TikTok: `/agency/integrations/tiktok/callback`
   - Meta: `/agency/integrations/meta/callback`
+  - Shopify: `/agency/integrations/shopify/callback`
 
 ## Verificare locală
 ```bash

@@ -181,16 +181,12 @@ async function updateScheduleApi(subId: number, id: string, schedule: string): P
 async function testConnectionApi(data: TestConnectionPayload): Promise<TestConnectionResponse> {
   const { source_type, url, config } = data;
 
+  // Shopify no longer exposes a "test connection" button: the new OAuth-based
+  // flow defers connectivity checks to the per-source endpoint
+  // POST /subaccount/{id}/feed-sources/{source_id}/test-connection, which uses
+  // the stored access token instead of collecting API key/secret up-front.
   if (source_type === "shopify") {
-    return apiRequest<TestConnectionResponse>("/integrations/shopify/test-connection", {
-      method: "POST",
-      body: JSON.stringify({
-        store_url: config?.shop_url ?? config?.store_url ?? url,
-        access_token: config?.access_token ?? "",
-        api_key: config?.api_key ?? "",
-        api_secret_key: config?.api_secret_key ?? "",
-      }),
-    });
+    return { success: true, message: "Shopify conectarea se verifică după OAuth exchange." };
   }
 
   if (source_type === "woocommerce") {
