@@ -336,3 +336,100 @@ async def shopify_webhook_app_uninstalled(request: Request) -> dict[str, str]:
         "shop": shop_domain,
         "sources_disconnected": str(sources_affected),
     }
+
+
+# GDPR mandatory compliance webhooks (Shopify Public App requirement).
+# VOXEL never stores customer PII — these endpoints only acknowledge receipt
+# after verifying the HMAC. Shopify requires all three topics to be wired
+# before an app can be reviewed/published.
+_GDPR_COMPLIANCE_TOPICS = frozenset(
+    {"customers/data_request", "customers/redact", "shop/redact"}
+)
+
+
+@router.post("/webhooks/compliance")
+async def shopify_webhook_compliance(request: Request) -> dict[str, str]:
+    """Handle Shopify GDPR compliance webhooks (no-op acknowledge).
+
+    Accepts the three mandatory topics:
+
+    * ``customers/data_request`` — merchant-initiated request for a customer's
+      stored personal data.
+    * ``customers/redact`` — Shopify-initiated request to delete a customer's
+      personal data 48h after they request erasure.
+    * ``shop/redact`` — Shopify-initiated request to delete shop data 48h
+      after the merchant uninstalls the app.
+
+    VOXEL does not store any customer PII (we only persist Shopify product
+    catalog data + an encrypted offline token, both keyed on the shop
+    domain). The token + per-shop sources are already wiped by the
+    ``app/uninstalled`` webhook handler. There is therefore no further
+    deletion to perform — we just verify the HMAC and acknowledge.
+
+    Auth: same ``X-Shopify-Hmac-Sha256`` HMAC verification as the other
+    webhook endpoints. No JWT/session.
+    """
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256", "")
+    topic = request.headers.get("X-Shopify-Topic", "")
+    shop_header = request.headers.get("X-Shopify-Shop-Domain", "")
+
+    secret = shopify_config.SHOPIFY_APP_CLIENT_SECRET
+    if not secret:
+        logger.error("shopify_webhook_compliance_secret_missing topic=%s shop=%s", topic, shop_header)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Shopify webhook secret is not configured",
+        )
+
+    if not shopify_oauth_service.verify_shopify_webhook_hmac(body, hmac_header, secret):
+        logger.warning(
+            "shopify_webhook_compliance_hmac_invalid topic=%s shop=%s body_bytes=%d",
+            topic,
+            shop_header,
+            len(body),
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook HMAC")
+
+    # Resolve shop domain (best-effort, only used for log lines).
+    parsed: dict = {}
+    try:
+        parsed = json.loads(body.decode("utf-8")) if body else {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        parsed = {}
+
+    raw_shop = (
+        shop_header
+        or str(parsed.get("shop_domain") or "")
+        or str(parsed.get("myshopify_domain") or "")
+        or str(parsed.get("domain") or "")
+    ).strip().lower()
+
+    if topic not in _GDPR_COMPLIANCE_TOPICS:
+        logger.warning(
+            "shopify_webhook_compliance_unknown_topic topic=%s shop=%s",
+            topic,
+            raw_shop,
+        )
+    else:
+        logger.info(
+            "shopify_webhook_compliance_received topic=%s shop=%s action=acknowledge_no_pii_stored",
+            topic,
+            raw_shop,
+        )
+
+    # Best-effort audit trail — never blocks the 200 response Shopify expects.
+    try:
+        audit_log_service.log(
+            actor_email="shopify-webhook",
+            actor_role="system",
+            action="shopify.compliance.received",
+            resource="integration:shopify",
+            details={"topic": topic, "shop": raw_shop},
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("shopify_webhook_compliance_audit_log_failed topic=%s shop=%s", topic, raw_shop)
+
+    return {"status": "ok", "topic": topic, "shop": raw_shop}

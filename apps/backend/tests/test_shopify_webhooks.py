@@ -356,5 +356,139 @@ class WebhookEndpointTests(unittest.TestCase):
             self.assertNotEqual(getattr(call, "__name__", ""), "get_current_user")
 
 
+class ComplianceWebhookEndpointTests(unittest.TestCase):
+    """GDPR compliance webhooks (customers/data_request, customers/redact, shop/redact).
+
+    VOXEL stores no customer PII, so the handler is a no-op acknowledge — but it
+    still must verify the HMAC and reject invalid signatures.
+    """
+
+    def setUp(self) -> None:
+        self._env = os.environ.copy()
+        _set_env()
+        _reload_shopify_modules()
+        from app.api.integrations import shopify as shopify_api
+
+        importlib.reload(shopify_api)
+        self.shopify_api = shopify_api
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._env)
+        _reload_shopify_modules()
+        from app.api.integrations import shopify as shopify_api
+
+        importlib.reload(shopify_api)
+
+    def _build_request(
+        self,
+        body: dict[str, Any],
+        *,
+        topic: str,
+        shop: str = "my-store.myshopify.com",
+        override_signature: str | None = None,
+    ) -> _FakeRequest:
+        raw = json.dumps(body).encode("utf-8")
+        signature = override_signature if override_signature is not None else _shopify_hmac(raw, "voxel-client-secret")
+        return _FakeRequest(
+            body=raw,
+            headers={
+                "X-Shopify-Hmac-Sha256": signature,
+                "X-Shopify-Topic": topic,
+                "X-Shopify-Shop-Domain": shop,
+            },
+        )
+
+    def _run(self, request: _FakeRequest):
+        return asyncio.get_event_loop().run_until_complete(
+            self.shopify_api.shopify_webhook_compliance(request)  # type: ignore[arg-type]
+        )
+
+    def test_customers_data_request_returns_200(self) -> None:
+        request = self._build_request(
+            {"shop_domain": "my-store.myshopify.com", "customer": {"id": 1}},
+            topic="customers/data_request",
+        )
+        result = self._run(request)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["topic"], "customers/data_request")
+        self.assertEqual(result["shop"], "my-store.myshopify.com")
+
+    def test_customers_redact_returns_200(self) -> None:
+        request = self._build_request(
+            {"shop_domain": "my-store.myshopify.com", "customer": {"id": 1}},
+            topic="customers/redact",
+        )
+        result = self._run(request)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["topic"], "customers/redact")
+
+    def test_shop_redact_returns_200(self) -> None:
+        request = self._build_request(
+            {"shop_domain": "my-store.myshopify.com", "shop_id": 1},
+            topic="shop/redact",
+        )
+        result = self._run(request)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["topic"], "shop/redact")
+
+    def test_invalid_hmac_returns_401(self) -> None:
+        request = self._build_request(
+            {"shop_domain": "my-store.myshopify.com"},
+            topic="customers/data_request",
+            override_signature="not-a-valid-signature",
+        )
+        with self.assertRaises(self.shopify_api.HTTPException) as ctx:
+            self._run(request)
+        self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_missing_secret_returns_503(self) -> None:
+        os.environ["SHOPIFY_APP_CLIENT_SECRET"] = ""
+        _reload_shopify_modules()
+        from app.api.integrations import shopify as shopify_api_reloaded
+
+        importlib.reload(shopify_api_reloaded)
+        try:
+            request = _FakeRequest(
+                body=b'{}',
+                headers={
+                    "X-Shopify-Hmac-Sha256": "x",
+                    "X-Shopify-Topic": "customers/redact",
+                    "X-Shopify-Shop-Domain": "store.myshopify.com",
+                },
+            )
+            with self.assertRaises(shopify_api_reloaded.HTTPException) as ctx:
+                asyncio.get_event_loop().run_until_complete(
+                    shopify_api_reloaded.shopify_webhook_compliance(request)  # type: ignore[arg-type]
+                )
+            self.assertEqual(ctx.exception.status_code, 503)
+        finally:
+            _set_env()
+            _reload_shopify_modules()
+            importlib.reload(shopify_api_reloaded)
+
+    def test_unknown_topic_still_returns_200(self) -> None:
+        # Shopify only sends one of the three GDPR topics here, but if anything
+        # else slips through with a valid HMAC we still ack with 200 (and log).
+        request = self._build_request(
+            {"shop_domain": "my-store.myshopify.com"},
+            topic="customers/unknown_topic",
+        )
+        result = self._run(request)
+        self.assertEqual(result["status"], "ok")
+
+    def test_endpoint_does_not_require_authentication_dependency(self) -> None:
+        from fastapi.dependencies.utils import get_dependant
+
+        route = next(
+            r for r in self.shopify_api.router.routes if getattr(r, "path", "").endswith("/webhooks/compliance")
+        )
+        self.assertIn("POST", route.methods)
+        dependant = get_dependant(path=route.path, call=route.endpoint)
+        for sub in dependant.dependencies:
+            call = getattr(sub, "call", None)
+            self.assertNotEqual(getattr(call, "__name__", ""), "get_current_user")
+
+
 if __name__ == "__main__":
     unittest.main()
