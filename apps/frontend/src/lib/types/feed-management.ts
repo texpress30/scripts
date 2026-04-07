@@ -10,6 +10,8 @@ export type FeedSourceType =
 
 export type FeedSourceStatus = "active" | "syncing" | "error" | "inactive";
 
+export type FeedConnectionStatus = "connected" | "pending" | "error" | "disconnected";
+
 export type SyncSchedule = "manual" | "hourly" | "every_6h" | "every_12h" | "daily" | "weekly";
 
 export type FeedSource = {
@@ -25,10 +27,38 @@ export type FeedSource = {
   credentials_secret_id?: string | null;
   is_active?: boolean;
   subaccount_id?: number;
+  shop_domain?: string | null;
+  connection_status?: FeedConnectionStatus;
+  last_connection_check?: string | null;
+  last_error?: string | null;
+  has_token?: boolean;
+  last_import_at?: string | null;
   sync_schedule?: SyncSchedule;
   next_scheduled_sync?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type CreateShopifySourceResponse = {
+  source: FeedSource;
+  authorize_url: string | null;
+  state: string | null;
+};
+
+export type ShopifyImportResult = {
+  import_id: string;
+  status: string;
+  total: number;
+  imported: number;
+  deactivated: number;
+  errors: unknown[];
+  message: string;
+};
+
+export type ShopifyReconnectResult = {
+  authorize_url: string;
+  state: string;
+  source_id: string;
 };
 
 export type FeedSourcesResponse = {
@@ -65,7 +95,9 @@ export type CreateFeedSourcePayload = {
   name: string;
   source_type: FeedSourceType;
   catalog_type: CatalogType;
+  catalog_variant?: string;
   url?: string;
+  shop_domain?: string;
   config?: Record<string, string>;
 };
 

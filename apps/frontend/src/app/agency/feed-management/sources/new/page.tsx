@@ -21,7 +21,7 @@ type Step = "source_type" | "catalog_type" | "configure";
 export default function NewSourcePage() {
   const router = useRouter();
   const { selectedId, selectedClient, isLoading: clientsLoading } = useFeedManagement();
-  const { createSource, testConnection } = useFeedSources(selectedId);
+  const { createSource, createShopifySource, testConnection } = useFeedSources(selectedId);
   const [step, setStep] = useState<Step>("source_type");
   const [selectedType, setSelectedType] = useState<FeedSourceType | null>(null);
   const [selectedCatalog, setSelectedCatalog] = useState<CatalogType>("product");
@@ -54,6 +54,42 @@ export default function NewSourcePage() {
       setError("");
     } else {
       router.push("/agency/feed-management/sources");
+    }
+  }
+
+  async function handleConnectShopify(data: { name: string; shop_domain: string }) {
+    if (!selectedId) {
+      setError("Selectează un client înainte de a crea sursa.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const result = await createShopifySource({
+        name: data.name,
+        shop_domain: data.shop_domain,
+        catalog_type: selectedCatalog,
+        catalog_variant: selectedSubtype ?? "physical_products",
+      });
+      if (!result.authorize_url) {
+        setError("Shopify OAuth nu este configurat pe server. Contactează administratorul.");
+        return;
+      }
+      // Persist context across the OAuth round-trip so the callback page can recover it.
+      sessionStorage.setItem(
+        "shopify_oauth_context",
+        JSON.stringify({
+          source_id: result.source.id,
+          client_id: selectedId,
+          shop_domain: data.shop_domain,
+          state: result.state,
+          return_path: "/agency/feed-management/sources",
+        }),
+      );
+      window.location.href = result.authorize_url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Eroare la inițierea conexiunii Shopify.");
+      setBusy(false);
     }
   }
 
@@ -167,8 +203,7 @@ export default function NewSourcePage() {
             <div className="wm-card max-w-2xl p-6">
               {selectedType === "shopify" ? (
                 <ShopifySourceForm
-                  onSubmit={(data) => void handleCreate({ ...data, source_type: "shopify" })}
-                  onTestConnection={handleTestConnection}
+                  onConnect={(data) => void handleConnectShopify(data)}
                   onCancel={handleBack}
                   busy={busy}
                 />
