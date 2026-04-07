@@ -63,6 +63,8 @@ class FeedSourceCreate(BaseModel):
     config: FeedSourceConfig = Field(default_factory=FeedSourceConfig)
     credentials_secret_id: str | None = None
     catalog_type: str = "product"
+    catalog_variant: str = "physical_products"
+    shop_domain: str | None = None
 
 
 class FeedSourceUpdate(BaseModel):
@@ -70,6 +72,8 @@ class FeedSourceUpdate(BaseModel):
     config: FeedSourceConfig | None = None
     credentials_secret_id: str | None = None
     is_active: bool | None = None
+    catalog_type: str | None = None
+    catalog_variant: str | None = None
 
 
 class FeedSourceResponse(BaseModel):
@@ -81,6 +85,14 @@ class FeedSourceResponse(BaseModel):
     credentials_secret_id: str | None
     is_active: bool
     catalog_type: str = "product"
+    catalog_variant: str = "physical_products"
+    shop_domain: str | None = None
+    connection_status: str = "pending"
+    last_connection_check: datetime | None = None
+    last_error: str | None = None
+    has_token: bool = False
+    token_scopes: str | None = None
+    last_import_at: datetime | None = None
     last_sync_at: datetime | None = None
     product_count: int = 0
     sync_schedule: str = "manual"

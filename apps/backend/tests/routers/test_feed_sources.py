@@ -98,8 +98,9 @@ class TestCreateFeedSource(unittest.TestCase):
                     config=FeedSourceConfig(file_url="https://example.com/products.csv"),
                 )
                 result = feed_sources_api.create_feed_source(subaccount_id=42, payload=payload, user=_ADMIN_USER)
-                self.assertEqual(result.source_type, FeedSourceType.csv)
-                self.assertEqual(result.name, "Test CSV Feed")
+                self.assertEqual(result.source.source_type, FeedSourceType.csv)
+                self.assertEqual(result.source.name, "Test CSV Feed")
+                self.assertIsNone(result.authorize_url)
             finally:
                 feed_sources_api._source_repo.create = original
 

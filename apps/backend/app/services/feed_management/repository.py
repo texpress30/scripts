@@ -44,6 +44,14 @@ def _parse_source_row(row: tuple) -> FeedSourceResponse:
         product_count=int(row[11] or 0),
         created_at=row[12],
         updated_at=row[13],
+        catalog_variant=str(row[14]) if row[14] else "physical_products",
+        shop_domain=str(row[15]) if row[15] else None,
+        connection_status=str(row[16]) if row[16] else "pending",
+        last_connection_check=row[17],
+        last_error=str(row[18]) if row[18] else None,
+        has_token=bool(row[19]),
+        token_scopes=str(row[20]) if row[20] else None,
+        last_import_at=row[21],
     )
 
 
@@ -78,25 +86,139 @@ class FeedSourceRepository:
                 if cur.fetchone() is not None:
                     raise FeedSourceAlreadyExistsError(payload.name, payload.subaccount_id)
 
+                # Check for duplicate Shopify shop within the same subaccount
+                if payload.shop_domain:
+                    cur.execute(
+                        """
+                        SELECT id FROM feed_sources
+                        WHERE subaccount_id = %s AND source_type = %s AND shop_domain = %s
+                        LIMIT 1
+                        """,
+                        (payload.subaccount_id, payload.source_type.value, payload.shop_domain),
+                    )
+                    if cur.fetchone() is not None:
+                        raise FeedSourceAlreadyExistsError(payload.shop_domain, payload.subaccount_id)
+
                 cur.execute(
                     """
-                    INSERT INTO feed_sources (id, subaccount_id, source_type, name, config, credentials_secret_id, catalog_type)
-                    VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)
-                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
+                    INSERT INTO feed_sources (
+                        id, subaccount_id, source_type, name, config,
+                        credentials_secret_id, catalog_type, catalog_variant, shop_domain
+                    )
+                    VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
                     """,
-                    (source_id, payload.subaccount_id, payload.source_type.value, payload.name, config_json, payload.credentials_secret_id, payload.catalog_type),
+                    (
+                        source_id,
+                        payload.subaccount_id,
+                        payload.source_type.value,
+                        payload.name,
+                        config_json,
+                        payload.credentials_secret_id,
+                        payload.catalog_type,
+                        payload.catalog_variant,
+                        payload.shop_domain,
+                    ),
                 )
                 row = cur.fetchone()
             conn.commit()
 
         return _parse_source_row(row)
 
+    def mark_oauth_connected(
+        self,
+        source_id: str,
+        *,
+        scopes: str | None,
+    ) -> FeedSourceResponse:
+        """Flip a feed source to ``connected`` after a successful OAuth exchange."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE feed_sources
+                    SET connection_status = 'connected',
+                        has_token = TRUE,
+                        token_scopes = %s,
+                        last_connection_check = NOW(),
+                        last_error = NULL,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    """,
+                    (scopes, source_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        if row is None:
+            raise FeedSourceNotFoundError(source_id)
+        return _parse_source_row(row)
+
+    def record_connection_check(
+        self,
+        source_id: str,
+        *,
+        success: bool,
+        error: str | None = None,
+    ) -> FeedSourceResponse:
+        """Persist the outcome of a live connection probe."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                if success:
+                    cur.execute(
+                        """
+                        UPDATE feed_sources
+                        SET last_connection_check = NOW(),
+                            connection_status = 'connected',
+                            last_error = NULL,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                        """,
+                        (source_id,),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE feed_sources
+                        SET last_connection_check = NOW(),
+                            connection_status = 'error',
+                            last_error = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                        """,
+                        (error or "Unknown error", source_id),
+                    )
+                row = cur.fetchone()
+            conn.commit()
+        if row is None:
+            raise FeedSourceNotFoundError(source_id)
+        return _parse_source_row(row)
+
+    def clear_token(self, source_id: str) -> None:
+        """Clear stored-token flags on the row (token row in integration_secrets is deleted separately)."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE feed_sources
+                    SET has_token = FALSE,
+                        token_scopes = NULL,
+                        connection_status = 'disconnected',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (source_id,),
+                )
+            conn.commit()
+
     def get_by_id(self, source_id: str) -> FeedSourceResponse:
         with _connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
                     FROM feed_sources WHERE id = %s LIMIT 1
                     """,
                     (source_id,),
@@ -112,7 +234,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
                     FROM feed_sources WHERE subaccount_id = %s ORDER BY created_at DESC
                     """,
                     (subaccount_id,),
@@ -137,6 +259,12 @@ class FeedSourceRepository:
         if payload.is_active is not None:
             sets.append("is_active = %s")
             params.append(payload.is_active)
+        if payload.catalog_type is not None:
+            sets.append("catalog_type = %s")
+            params.append(payload.catalog_type)
+        if payload.catalog_variant is not None:
+            sets.append("catalog_variant = %s")
+            params.append(payload.catalog_variant)
 
         if not sets:
             return self.get_by_id(source_id)
@@ -150,7 +278,7 @@ class FeedSourceRepository:
                     f"""
                     UPDATE feed_sources SET {', '.join(sets)}
                     WHERE id = %s
-                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
+                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
                     """,
                     tuple(params),
                 )
@@ -174,7 +302,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
                     FROM feed_sources ORDER BY created_at DESC LIMIT %s OFFSET %s
                     """,
                     (limit, offset),
