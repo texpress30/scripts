@@ -213,6 +213,48 @@ class FeedSourceRepository:
                 )
             conn.commit()
 
+    def get_by_shop_domain(self, shop_domain: str) -> list[FeedSourceResponse]:
+        """Return every Shopify feed source bound to ``shop_domain`` (across all subaccounts)."""
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    FROM feed_sources
+                    WHERE source_type = 'shopify' AND shop_domain = %s
+                    ORDER BY created_at DESC
+                    """,
+                    (shop_domain,),
+                )
+                rows = cur.fetchall() or []
+        return [_parse_source_row(row) for row in rows]
+
+    def mark_disconnected_by_shop_domain(self, shop_domain: str, *, reason: str) -> int:
+        """Mark every Shopify source bound to ``shop_domain`` as ``disconnected``.
+
+        Used by the ``app/uninstalled`` webhook handler. Returns the number of
+        rows updated. Idempotent — running it twice on an already-disconnected
+        shop simply refreshes ``updated_at``.
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE feed_sources
+                    SET connection_status = 'disconnected',
+                        has_token = FALSE,
+                        token_scopes = NULL,
+                        last_error = %s,
+                        last_connection_check = NOW(),
+                        updated_at = NOW()
+                    WHERE source_type = 'shopify' AND shop_domain = %s
+                    """,
+                    (reason, shop_domain),
+                )
+                affected = cur.rowcount or 0
+            conn.commit()
+        return int(affected)
+
     def get_by_id(self, source_id: str) -> FeedSourceResponse:
         with _connect() as conn:
             with conn.cursor() as cur:
