@@ -330,6 +330,116 @@ class TestTestConnectionEndpoint(unittest.TestCase):
         self.assertEqual(result.message, "No stored token")
 
 
+class TestImportEndpoint(unittest.TestCase):
+    def setUp(self):
+        self._env = os.environ.copy()
+        _set_oauth_env()
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._env)
+        import importlib
+        import app.integrations.shopify.config as cfg
+        import app.integrations.shopify.service as svc
+        importlib.reload(cfg)
+        importlib.reload(svc)
+
+    def _run(self, coro):
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    def test_import_rejects_non_connected_source(self):
+        with _enable_ff():
+            orig_get = feed_sources_api._source_repo.get_by_id
+            try:
+                feed_sources_api._source_repo.get_by_id = lambda source_id: _shopify_source(connection_status="pending")
+                with self.assertRaises(feed_sources_api.HTTPException) as ctx:
+                    self._run(feed_sources_api.import_shopify_products(
+                        subaccount_id=42, source_id="src-shop-1", user=_ADMIN
+                    ))
+            finally:
+                feed_sources_api._source_repo.get_by_id = orig_get
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_import_rejects_when_token_missing(self):
+        connected = _shopify_source(connection_status="connected", has_token=True)
+        from app.integrations.shopify import service as shopify_service
+
+        with _enable_ff():
+            orig_get = feed_sources_api._source_repo.get_by_id
+            orig_record = feed_sources_api._source_repo.record_connection_check
+            orig_token = shopify_service.get_access_token_for_shop
+            try:
+                feed_sources_api._source_repo.get_by_id = lambda source_id: connected
+                feed_sources_api._source_repo.record_connection_check = (
+                    lambda source_id, *, success, error=None: connected
+                )
+                shopify_service.get_access_token_for_shop = lambda shop: None
+                with self.assertRaises(feed_sources_api.HTTPException) as ctx:
+                    self._run(feed_sources_api.import_shopify_products(
+                        subaccount_id=42, source_id="src-shop-1", user=_ADMIN
+                    ))
+            finally:
+                feed_sources_api._source_repo.get_by_id = orig_get
+                feed_sources_api._source_repo.record_connection_check = orig_record
+                shopify_service.get_access_token_for_shop = orig_token
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("no stored token", ctx.exception.detail.lower())
+
+    def test_import_happy_path_returns_counts(self):
+        from app.services.feed_management import sync_service as sync_svc_module
+        from app.services.feed_management.models import (
+            FeedImportResponse,
+            FeedImportStatus,
+        )
+
+        connected = _shopify_source(connection_status="connected", has_token=True)
+        fake_import = FeedImportResponse(
+            id="imp-99",
+            feed_source_id="src-shop-1",
+            status=FeedImportStatus.completed,
+            total_products=120,
+            imported_products=118,
+            errors=[],
+            started_at=_NOW,
+            completed_at=_NOW,
+            created_at=_NOW,
+        )
+
+        async def _fake_run_sync(source_id):
+            return fake_import
+
+        from app.integrations.shopify import service as shopify_service
+
+        with _enable_ff():
+            orig_get = feed_sources_api._source_repo.get_by_id
+            orig_token = shopify_service.get_access_token_for_shop
+            orig_run = sync_svc_module.feed_sync_service.run_sync
+            try:
+                feed_sources_api._source_repo.get_by_id = lambda source_id: connected
+                shopify_service.get_access_token_for_shop = lambda shop: "shpua_LIVE"
+                sync_svc_module.feed_sync_service.run_sync = _fake_run_sync
+
+                result = self._run(feed_sources_api.import_shopify_products(
+                    subaccount_id=42, source_id="src-shop-1", user=_ADMIN
+                ))
+            finally:
+                feed_sources_api._source_repo.get_by_id = orig_get
+                shopify_service.get_access_token_for_shop = orig_token
+                sync_svc_module.feed_sync_service.run_sync = orig_run
+
+        self.assertEqual(result.import_id, "imp-99")
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(result.imported, 118)
+        self.assertEqual(result.total, 120)
+        self.assertEqual(result.deactivated, 2)
+
+
 class TestMigrationFileExists(unittest.TestCase):
     def test_migration_file_present_and_idempotent(self):
         from pathlib import Path

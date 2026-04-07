@@ -34,7 +34,26 @@ def _get_connector(source: FeedSourceResponse) -> BaseConnector:
         from app.services.feed_management.connectors.shopify_connector import ShopifyConnector
 
         credentials: dict[str, str] = {}
-        if source.credentials_secret_id:
+
+        # Primary path (PR #929/#930): OAuth-flow access token stored encrypted
+        # in integration_secrets keyed by shop_domain.
+        if source.shop_domain:
+            try:
+                from app.integrations.shopify.service import get_access_token_for_shop
+
+                token = get_access_token_for_shop(source.shop_domain)
+                if token:
+                    credentials["access_token"] = token
+                    # Make sure the connector targets the same shop the token belongs to.
+                    config.setdefault("store_url", source.shop_domain)
+            except Exception:
+                logger.exception(
+                    "Failed to load Shopify OAuth token by shop_domain for source %s",
+                    source.id,
+                )
+
+        # Legacy path: credentials_secret_id scope (pre-OAuth-flow installs).
+        if not credentials.get("access_token") and source.credentials_secret_id:
             try:
                 from app.services.integration_secrets_store import integration_secrets_store
 
@@ -48,7 +67,8 @@ def _get_connector(source: FeedSourceResponse) -> BaseConnector:
                         credentials[key] = secret.value
             except Exception:
                 logger.exception("Failed to load Shopify credentials for source %s", source.id)
-        # Fallback: read credentials from config (stored by frontend form)
+
+        # Last-resort fallback: credentials embedded in source.config (test/dev).
         if not credentials.get("access_token") and not credentials.get("api_key"):
             for key in ("api_key", "api_secret_key", "access_token"):
                 val = config.get(key)
