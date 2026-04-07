@@ -7,6 +7,10 @@ import type {
   FeedSourcesResponse,
   FeedImportsResponse,
   CreateFeedSourcePayload,
+  CreateShopifySourceResponse,
+  ShopifyImportResult,
+  ShopifyReconnectResult,
+  FeedConnectionStatus,
   TestConnectionPayload,
   TestConnectionResponse,
 } from "@/lib/types/feed-management";
@@ -21,6 +25,8 @@ const IMPORTS_KEY = (subId: number, sourceId: string) => ["feed-imports", subId,
 // ---------------------------------------------------------------------------
 
 function normalizeSource(raw: Record<string, unknown>): FeedSource {
+  const config = (raw.config as Record<string, unknown> | undefined) ?? undefined;
+  const shopDomain = (raw.shop_domain as string | null | undefined) ?? null;
   return {
     id: String(raw.id ?? ""),
     name: String(raw.name ?? ""),
@@ -29,10 +35,19 @@ function normalizeSource(raw: Record<string, unknown>): FeedSource {
     status: raw.is_active === false ? "inactive" : "active",
     last_sync: (raw.last_sync_at as string) ?? (raw.last_sync as string) ?? null,
     product_count: Number(raw.product_count ?? 0),
-    url: String(raw.config && typeof raw.config === "object" ? (raw.config as Record<string, unknown>).store_url ?? (raw.config as Record<string, unknown>).file_url ?? "" : ""),
-    config: raw.config as Record<string, unknown> | undefined,
+    url: String(
+      shopDomain ??
+        (config ? (config.store_url as string | undefined) ?? (config.file_url as string | undefined) ?? "" : ""),
+    ),
+    config,
     is_active: raw.is_active as boolean | undefined,
     subaccount_id: raw.subaccount_id as number | undefined,
+    shop_domain: shopDomain,
+    connection_status: (raw.connection_status as FeedConnectionStatus | undefined) ?? "pending",
+    last_connection_check: (raw.last_connection_check as string | null | undefined) ?? null,
+    last_error: (raw.last_error as string | null | undefined) ?? null,
+    has_token: Boolean(raw.has_token),
+    last_import_at: (raw.last_import_at as string | null | undefined) ?? null,
     sync_schedule: (raw.sync_schedule as FeedSource["sync_schedule"]) ?? "manual",
     next_scheduled_sync: (raw.next_scheduled_sync as string) ?? null,
     created_at: String(raw.created_at ?? ""),
@@ -72,25 +87,79 @@ async function fetchImports(subId: number, sourceId: string): Promise<FeedImport
 async function createSourceApi(subId: number, data: CreateFeedSourcePayload): Promise<FeedSource> {
   const config: Record<string, unknown> = { ...(data.config ?? {}) };
   if (data.url) {
-    if (data.source_type === "shopify") {
-      config.store_url = config.shop_url ?? config.store_url ?? data.url;
-    } else if (data.source_type === "woocommerce" || data.source_type === "magento" || data.source_type === "bigcommerce") {
+    if (data.source_type === "woocommerce" || data.source_type === "magento" || data.source_type === "bigcommerce") {
       config.store_url = config.store_url ?? data.url;
-    } else {
+    } else if (data.source_type !== "shopify") {
       config.file_url = config.file_url ?? data.url;
     }
   }
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     name: data.name,
     source_type: data.source_type,
     catalog_type: data.catalog_type ?? "product",
     config,
   };
+  if (data.catalog_variant) payload.catalog_variant = data.catalog_variant;
+  if (data.shop_domain) payload.shop_domain = data.shop_domain;
 
-  return apiRequest<FeedSource>(`/subaccount/${subId}/feed-sources`, {
+  const raw = await apiRequest<Record<string, unknown>>(`/subaccount/${subId}/feed-sources`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+  return normalizeSource(raw);
+}
+
+async function createShopifySourceApi(
+  subId: number,
+  data: { name: string; shop_domain: string; catalog_type?: string; catalog_variant?: string },
+): Promise<CreateShopifySourceResponse> {
+  const payload = {
+    name: data.name,
+    source_type: "shopify",
+    catalog_type: data.catalog_type ?? "product",
+    catalog_variant: data.catalog_variant ?? "physical_products",
+    shop_domain: data.shop_domain,
+    config: {},
+  };
+  const raw = await apiRequest<{ source: Record<string, unknown>; authorize_url: string | null; state: string | null }>(
+    `/subaccount/${subId}/feed-sources`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+  return {
+    source: normalizeSource(raw.source),
+    authorize_url: raw.authorize_url ?? null,
+    state: raw.state ?? null,
+  };
+}
+
+async function completeShopifyOAuthApi(
+  subId: number,
+  sourceId: string,
+  payload: { code: string; state: string; shop?: string },
+): Promise<FeedSource> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/subaccount/${subId}/feed-sources/${sourceId}/complete-oauth`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+  return normalizeSource(raw);
+}
+
+async function reconnectShopifySourceApi(subId: number, sourceId: string): Promise<ShopifyReconnectResult> {
+  return apiRequest<ShopifyReconnectResult>(`/subaccount/${subId}/feed-sources/${sourceId}/reconnect`, {
+    method: "POST",
+  });
+}
+
+async function importShopifySourceApi(subId: number, sourceId: string): Promise<ShopifyImportResult> {
+  return apiRequest<ShopifyImportResult>(`/subaccount/${subId}/feed-sources/${sourceId}/import`, {
+    method: "POST",
   });
 }
 
@@ -203,6 +272,21 @@ export function useFeedSources(subaccountId: number | null) {
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) }); },
   });
 
+  const createShopifyMutation = useMutation({
+    mutationFn: (payload: { name: string; shop_domain: string; catalog_type?: string; catalog_variant?: string }) =>
+      createShopifySourceApi(subId, payload),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) }); },
+  });
+
+  const reconnectMutation = useMutation({
+    mutationFn: (sourceId: string) => reconnectShopifySourceApi(subId, sourceId),
+  });
+
+  const importMutation = useMutation({
+    mutationFn: (sourceId: string) => importShopifySourceApi(subId, sourceId),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) }); },
+  });
+
   const scheduleMutation = useMutation({
     mutationFn: ({ id, schedule }: { id: string; schedule: string }) => updateScheduleApi(subId, id, schedule),
     onSuccess: () => {
@@ -218,11 +302,19 @@ export function useFeedSources(subaccountId: number | null) {
     deleteSource: (id: string) => deleteMutation.mutateAsync(id),
     syncSource: (id: string) => syncMutation.mutateAsync(id),
     createSource: (payload: CreateFeedSourcePayload) => createMutation.mutateAsync(payload),
+    createShopifySource: (payload: { name: string; shop_domain: string; catalog_type?: string; catalog_variant?: string }) =>
+      createShopifyMutation.mutateAsync(payload),
+    completeShopifyOAuth: (sourceId: string, payload: { code: string; state: string; shop?: string }) =>
+      completeShopifyOAuthApi(subId, sourceId, payload),
+    reconnectShopifySource: (sourceId: string) => reconnectMutation.mutateAsync(sourceId),
+    importShopifySource: (sourceId: string) => importMutation.mutateAsync(sourceId),
     testConnection: (payload: TestConnectionPayload) => testConnectionApi(payload),
     updateSchedule: (id: string, schedule: string) => scheduleMutation.mutateAsync({ id, schedule }),
     isDeleting: deleteMutation.isPending,
     isSyncing: syncMutation.isPending,
-    isCreating: createMutation.isPending,
+    isCreating: createMutation.isPending || createShopifyMutation.isPending,
+    isImporting: importMutation.isPending,
+    isReconnecting: reconnectMutation.isPending,
     syncingIds,
   };
 }

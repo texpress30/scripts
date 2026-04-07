@@ -2,10 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { MoreVertical, Eye, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { MoreVertical, Eye, Pencil, RefreshCw, Trash2, Download, PlugZap, Loader2 } from "lucide-react";
 import type { FeedSource, CatalogType } from "@/lib/types/feed-management";
 import { SourceTypeIcon } from "./SourceTypeIcon";
-import { FeedSourceStatusBadge } from "./FeedSourceStatusBadge";
+import { FeedConnectionStatusBadge } from "./FeedSourceStatusBadge";
 import { Package, Car, Home, Building, Plane, Film, MapPin, Briefcase } from "lucide-react";
 
 const CATALOG_CONFIG: Record<CatalogType, { label: string; icon: typeof Package; color: string }> = {
@@ -41,13 +41,25 @@ export function FeedSourceCard({
   source,
   onSync,
   onDelete,
+  onImport,
+  onReconnect,
   isSyncing = false,
+  isImporting = false,
+  isReconnecting = false,
 }: {
   source: FeedSource;
   onSync: (id: string) => void;
   onDelete: (id: string) => void;
+  onImport?: (id: string) => void;
+  onReconnect?: (id: string) => void;
   isSyncing?: boolean;
+  isImporting?: boolean;
+  isReconnecting?: boolean;
 }) {
+  const isShopify = source.source_type === "shopify";
+  const connectionStatus = source.connection_status ?? "pending";
+  const canImport = isShopify && connectionStatus === "connected";
+  const needsReconnect = isShopify && (connectionStatus === "error" || connectionStatus === "disconnected");
   const [menuOpen, setMenuOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
@@ -68,6 +80,9 @@ export function FeedSourceCard({
         >
           {source.name}
         </Link>
+        {isShopify && source.shop_domain ? (
+          <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{source.shop_domain}</div>
+        ) : null}
       </td>
       <td className="px-4 py-3">
         <SourceTypeIcon type={source.source_type} showLabel />
@@ -76,16 +91,45 @@ export function FeedSourceCard({
         <CatalogTypeBadge type={source.catalog_type} />
       </td>
       <td className="px-4 py-3">
-        <FeedSourceStatusBadge status={source.status} />
+        <FeedConnectionStatusBadge status={connectionStatus} />
+        {needsReconnect && source.last_error ? (
+          <div className="mt-1 max-w-[12rem] truncate text-xs text-red-600 dark:text-red-400" title={source.last_error}>
+            {source.last_error}
+          </div>
+        ) : null}
       </td>
       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-        {formatDate(source.last_sync)}
+        {formatDate(source.last_import_at ?? source.last_sync)}
       </td>
       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
         {(source.product_count ?? 0).toLocaleString()}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1">
+        {canImport && onImport ? (
+          <button
+            type="button"
+            onClick={() => onImport(source.id)}
+            disabled={isImporting}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
+            title="Importă produse"
+          >
+            {isImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {isImporting ? "Se importă..." : "Importă"}
+          </button>
+        ) : null}
+        {needsReconnect && onReconnect ? (
+          <button
+            type="button"
+            onClick={() => onReconnect(source.id)}
+            disabled={isReconnecting}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
+            title="Reconectează"
+          >
+            {isReconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
+            Reconectează
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => onSync(source.id)}
