@@ -34,6 +34,11 @@ SECRET_KEY_ACCESS_TOKEN = "access_token"
 SECRET_KEY_SCOPE = "scope"
 OAUTH_STATE_PROVIDER = "shopify"
 WEBHOOK_TOPIC_APP_UNINSTALLED = "app/uninstalled"
+GDPR_COMPLIANCE_WEBHOOK_TOPICS: tuple[str, ...] = (
+    "customers/data_request",
+    "customers/redact",
+    "shop/redact",
+)
 
 
 class ShopifyIntegrationError(RuntimeError):
@@ -280,6 +285,10 @@ def verify_shopify_webhook_hmac(body: bytes, hmac_header: str, secret: str) -> b
     return hmac.compare_digest(computed, hmac_header)
 
 
+def _webhook_base_url() -> str:
+    return os.environ.get("SHOPIFY_WEBHOOK_BASE_URL", "https://admin.omarosa.ro").rstrip("/")
+
+
 def get_uninstall_webhook_address() -> str:
     """Return the public URL Shopify should call for ``app/uninstalled``.
 
@@ -287,8 +296,17 @@ def get_uninstall_webhook_address() -> str:
     Falls back to the omarosa.ro admin host so the integration works out of
     the box without extra environment plumbing.
     """
-    base = os.environ.get("SHOPIFY_WEBHOOK_BASE_URL", "https://admin.omarosa.ro").rstrip("/")
-    return f"{base}/api/integrations/shopify/webhooks/app-uninstalled"
+    return f"{_webhook_base_url()}/api/integrations/shopify/webhooks/app-uninstalled"
+
+
+def get_compliance_webhook_address() -> str:
+    """Return the public URL Shopify should call for the three GDPR topics.
+
+    All three GDPR topics (``customers/data_request``, ``customers/redact``,
+    ``shop/redact``) share a single endpoint — Shopify dispatches the topic
+    via the ``X-Shopify-Topic`` header.
+    """
+    return f"{_webhook_base_url()}/api/integrations/shopify/webhooks/compliance"
 
 
 def _shop_admin_request(
@@ -393,6 +411,85 @@ def register_uninstall_webhook(shop_domain: str, access_token: str) -> bool:
         status_code,
     )
     return False
+
+
+def register_compliance_webhooks(shop_domain: str, access_token: str) -> dict[str, bool]:
+    """Register the three GDPR mandatory webhooks on a freshly connected shop.
+
+    Topics: ``customers/data_request``, ``customers/redact``, ``shop/redact``.
+    All three are POSTed to the same endpoint
+    (``/api/integrations/shopify/webhooks/compliance``); Shopify dispatches the
+    topic via the ``X-Shopify-Topic`` header.
+
+    Best-effort, non-blocking — the OAuth flow has already persisted the token,
+    so any failure here is logged and swallowed. Returns a per-topic
+    ``{topic: bool}`` map (``True`` for newly registered or already-registered,
+    ``False`` for any other failure).
+
+    Note: GDPR webhooks are typically declared once at the App level via
+    ``shopify.app.toml`` (see ``shopify-app/`` in this repo) so they apply to
+    every install of VOXEL automatically. This per-shop fallback exists for
+    development stores and any environment where the CLI deploy hasn't been
+    run, ensuring the App Store automated review can always reach a live
+    subscription.
+    """
+    try:
+        shop = shopify_config.validate_shop_domain(shop_domain)
+    except ValueError:
+        logger.warning("shopify_compliance_webhook_invalid_shop shop=%s", shop_domain)
+        return {topic: False for topic in GDPR_COMPLIANCE_WEBHOOK_TOPICS}
+
+    address = get_compliance_webhook_address()
+    results: dict[str, bool] = {}
+    for topic in GDPR_COMPLIANCE_WEBHOOK_TOPICS:
+        status_code, payload = _shop_admin_request(
+            method="POST",
+            shop_domain=shop,
+            path="/webhooks.json",
+            access_token=access_token,
+            body={
+                "webhook": {
+                    "topic": topic,
+                    "address": address,
+                    "format": "json",
+                }
+            },
+        )
+
+        if status_code in (200, 201):
+            logger.info("shopify_compliance_webhook_registered shop=%s topic=%s", shop, topic)
+            results[topic] = True
+            continue
+
+        if status_code == 422:
+            errors = payload.get("errors") if isinstance(payload, dict) else None
+            message = json.dumps(errors)[:200] if errors else ""
+            if "taken" in message.lower() or "already" in message.lower():
+                logger.info("shopify_compliance_webhook_already_registered shop=%s topic=%s", shop, topic)
+                results[topic] = True
+                continue
+            logger.warning(
+                "shopify_compliance_webhook_register_422 shop=%s topic=%s errors=%s",
+                shop,
+                topic,
+                message,
+            )
+            results[topic] = False
+            continue
+
+        if status_code == 0:
+            results[topic] = False
+            continue
+
+        logger.warning(
+            "shopify_compliance_webhook_register_failed shop=%s topic=%s status=%s",
+            shop,
+            topic,
+            status_code,
+        )
+        results[topic] = False
+
+    return results
 
 
 def list_webhooks(shop_domain: str, access_token: str) -> list[dict]:

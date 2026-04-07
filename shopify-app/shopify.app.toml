@@ -1,0 +1,50 @@
+# VOXEL Shopify Public App — TOML config consumed by `shopify app deploy`.
+#
+# Single source of truth for app metadata that the Shopify CLI pushes to
+# Shopify Partners. We currently use it ONLY for the GDPR mandatory webhooks
+# (customers/data_request, customers/redact, shop/redact) so the App Store
+# automated review can verify the endpoints. The actual webhook handler lives
+# in the backend at `POST /api/integrations/shopify/webhooks/compliance`
+# (apps/backend/app/api/integrations/shopify.py) and is shared by all three
+# topics — Shopify dispatches the topic via the `X-Shopify-Topic` header.
+#
+# To deploy from a workstation that has been authenticated with Shopify
+# Partners (`shopify auth login`):
+#
+#   cd shopify-app
+#   shopify app deploy --client-id 57f055a691df0b88ab9b50f0900556ad --allow-updates
+#
+# `--allow-updates` is the CI/CD-friendly flag that skips the interactive
+# "do you want to apply these changes?" prompt. Use `--no-release` first if
+# you want to dry-run the change without making it live for merchants.
+#
+# This is a config-only project (no extensions, no theme assets), so the CLI
+# will publish only the webhook subscriptions described below.
+
+client_id = "57f055a691df0b88ab9b50f0900556ad"
+name = "VOXEL"
+application_url = "https://admin.omarosa.ro"
+embedded = false
+
+[access_scopes]
+scopes = "read_products,read_product_listings,read_inventory,read_locations"
+
+[auth]
+redirect_urls = [
+  "https://admin.omarosa.ro/agency/integrations/shopify/callback",
+]
+
+[webhooks]
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = [
+    "customers/data_request",
+    "customers/redact",
+    "shop/redact",
+  ]
+  uri = "https://admin.omarosa.ro/api/integrations/shopify/webhooks/compliance"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "https://admin.omarosa.ro/api/integrations/shopify/webhooks/app-uninstalled"

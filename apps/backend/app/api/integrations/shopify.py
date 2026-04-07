@@ -189,6 +189,23 @@ def shopify_oauth_exchange(
     except Exception:  # noqa: BLE001
         logger.exception("shopify_webhook_register_unexpected_error shop=%s", exchange_result["shop"])
 
+    # Best-effort: register the three GDPR mandatory webhooks
+    # (customers/data_request, customers/redact, shop/redact). These are
+    # normally declared once at the App level via shopify.app.toml + the
+    # Shopify CLI deploy, but we also subscribe per-shop here so the App Store
+    # automated review always finds a live subscription on dev stores.
+    compliance_webhooks_registered: dict[str, bool] = {}
+    try:
+        compliance_webhooks_registered = shopify_oauth_service.register_compliance_webhooks(
+            shop_domain=exchange_result["shop"],
+            access_token=exchange_result["access_token"],
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "shopify_compliance_webhook_register_unexpected_error shop=%s",
+            exchange_result["shop"],
+        )
+
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -198,6 +215,7 @@ def shopify_oauth_exchange(
             "shop": exchange_result["shop"],
             "scope": exchange_result.get("scope", ""),
             "uninstall_webhook_registered": webhook_registered,
+            "compliance_webhooks_registered": compliance_webhooks_registered,
         },
     )
 

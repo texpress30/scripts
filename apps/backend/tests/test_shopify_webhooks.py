@@ -174,6 +174,107 @@ class RegisterUninstallWebhookTests(unittest.TestCase):
         self.assertEqual(called, [])
 
 
+class RegisterComplianceWebhooksTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._env = os.environ.copy()
+        _set_env()
+        _, self.svc = _reload_shopify_modules()
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._env)
+        _reload_shopify_modules()
+
+    def test_registers_all_three_topics_on_201(self) -> None:
+        captured: list[dict[str, Any]] = []
+
+        def _fake_request(*, method: str, shop_domain: str, path: str, access_token: str, body: dict | None = None, timeout: int = 15):
+            captured.append({"method": method, "shop_domain": shop_domain, "path": path, "body": body})
+            return 201, {"webhook": {"id": len(captured)}}
+
+        with patch.object(self.svc, "_shop_admin_request", side_effect=_fake_request):
+            results = self.svc.register_compliance_webhooks("My-Store.myshopify.com", "shpua_TEST")
+
+        self.assertEqual(
+            results,
+            {"customers/data_request": True, "customers/redact": True, "shop/redact": True},
+        )
+        self.assertEqual(len(captured), 3)
+        topics_called = [c["body"]["webhook"]["topic"] for c in captured]
+        self.assertEqual(
+            topics_called,
+            ["customers/data_request", "customers/redact", "shop/redact"],
+        )
+        for c in captured:
+            self.assertEqual(c["method"], "POST")
+            self.assertEqual(c["path"], "/webhooks.json")
+            self.assertEqual(c["shop_domain"], "my-store.myshopify.com")
+            self.assertEqual(
+                c["body"]["webhook"]["address"],
+                "https://admin.example.com/api/integrations/shopify/webhooks/compliance",
+            )
+            self.assertEqual(c["body"]["webhook"]["format"], "json")
+
+    def test_returns_true_when_already_registered_422(self) -> None:
+        def _fake_request(**kwargs):
+            return 422, {"errors": {"address": ["for this topic has already been taken"]}}
+
+        with patch.object(self.svc, "_shop_admin_request", side_effect=_fake_request):
+            results = self.svc.register_compliance_webhooks("store.myshopify.com", "shpua_TEST")
+        self.assertEqual(
+            results,
+            {"customers/data_request": True, "customers/redact": True, "shop/redact": True},
+        )
+
+    def test_partial_failure_marks_only_failing_topic_false(self) -> None:
+        # First two succeed, third returns 422 with a non-"taken" error
+        responses = iter([
+            (201, {"webhook": {"id": 1}}),
+            (201, {"webhook": {"id": 2}}),
+            (422, {"errors": {"address": ["is invalid"]}}),
+        ])
+
+        def _fake_request(**kwargs):
+            return next(responses)
+
+        with patch.object(self.svc, "_shop_admin_request", side_effect=_fake_request):
+            results = self.svc.register_compliance_webhooks("store.myshopify.com", "shpua_TEST")
+
+        self.assertTrue(results["customers/data_request"])
+        self.assertTrue(results["customers/redact"])
+        self.assertFalse(results["shop/redact"])
+
+    def test_network_error_returns_all_false(self) -> None:
+        with patch.object(self.svc, "_shop_admin_request", side_effect=lambda **kw: (0, {})):
+            results = self.svc.register_compliance_webhooks("store.myshopify.com", "shpua_TEST")
+        self.assertEqual(set(results.values()), {False})
+        self.assertEqual(set(results.keys()), set(self.svc.GDPR_COMPLIANCE_WEBHOOK_TOPICS))
+
+    def test_invalid_shop_returns_all_false_without_calling_api(self) -> None:
+        called: list[None] = []
+
+        def _spy(**kwargs):
+            called.append(None)
+            return 201, {}
+
+        with patch.object(self.svc, "_shop_admin_request", side_effect=_spy):
+            results = self.svc.register_compliance_webhooks("evil.com", "shpua_TEST")
+        self.assertEqual(set(results.values()), {False})
+        self.assertEqual(called, [])
+
+    def test_compliance_webhook_address_uses_env_override(self) -> None:
+        try:
+            os.environ["SHOPIFY_WEBHOOK_BASE_URL"] = "https://custom.example.org/"
+            _, svc = _reload_shopify_modules()
+            self.assertEqual(
+                svc.get_compliance_webhook_address(),
+                "https://custom.example.org/api/integrations/shopify/webhooks/compliance",
+            )
+        finally:
+            os.environ["SHOPIFY_WEBHOOK_BASE_URL"] = "https://admin.example.com"
+            _reload_shopify_modules()
+
+
 class DeleteShopifyTokenTests(unittest.TestCase):
     def setUp(self) -> None:
         self._env = os.environ.copy()
