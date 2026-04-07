@@ -149,7 +149,26 @@ Integrare completă OAuth pentru import de produse din magazine Shopify, folosin
   - Paginare cursor-based via `Link` header, max 250 produse/pagină.
   - Token-urile sunt mascate (`shpua_XXXXXX***`) în orice log output (`_mask_token`).
   - Callback URL frontend (Shopify Partners): `https://admin.omarosa.ro/agency/integrations/shopify/callback`.
-  - Webhook URL backend: `https://admin.omarosa.ro/api/integrations/shopify/webhooks/app-uninstalled`.
+  - Webhook URL backend `app/uninstalled`: `https://admin.omarosa.ro/api/integrations/shopify/webhooks/app-uninstalled`.
+  - Webhook URL backend GDPR (toate cele 3 topic-uri partajează endpoint-ul): `https://admin.omarosa.ro/api/integrations/shopify/webhooks/compliance`.
+
+#### Shopify CLI deploy (GDPR webhooks la nivel de App)
+
+GDPR mandatory webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) sunt obligatorii pentru orice Public App înainte de App Store review. Le declarăm la nivel de App via `shopify-app/shopify.app.toml`, deployat o singură dată cu Shopify CLI dintr-o stație autentificată în Shopify Partners. Subscripțiile devin active automat pentru orice instalare nouă.
+
+```bash
+# o singură dată per stație
+npm install -g @shopify/cli@latest
+shopify auth login
+
+# de fiecare dată când shopify-app/shopify.app.toml se schimbă
+cd shopify-app
+shopify app deploy --client-id 57f055a691df0b88ab9b50f0900556ad --allow-updates
+```
+
+`--allow-updates` e flag-ul CI/CD-friendly care sare peste prompt-ul interactiv de confirmare. Folosește `--no-release` pentru un dry-run care creează versiunea fără să o publice merchant-ilor.
+
+Ca **fallback** pentru development stores sau orice mediu unde CLI deploy nu a rulat încă, `shopify_oauth_exchange()` apelează best-effort `register_compliance_webhooks()` care POST-ează cele 3 topic-uri pe `/admin/api/{version}/webhooks.json` per-shop. La fel ca la `app/uninstalled`, eșecul e logat dar nu blochează flow-ul OAuth.
 
 ## Endpoint-uri cheie
 ### Core
