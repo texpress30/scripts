@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.core.config import load_settings
+from app.integrations.shopify import config as shopify_config
 from app.integrations.shopify import service as shopify_oauth_service
 from app.integrations.shopify.schemas import (
     ShopifyConnectResponse,
@@ -18,6 +20,7 @@ from app.integrations.shopify.schemas import (
 from app.integrations.shopify.service import ShopifyIntegrationError
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
+from app.services.feed_management.repository import FeedSourceRepository
 
 logger = logging.getLogger(__name__)
 
@@ -174,12 +177,28 @@ def shopify_oauth_exchange(
             detail="Failed to persist Shopify access token",
         ) from exc
 
+    # Best-effort: register the app/uninstalled webhook so we get notified
+    # when the merchant removes VOXEL. Failures are logged but never block the
+    # OAuth flow — the access token is already persisted.
+    webhook_registered = False
+    try:
+        webhook_registered = shopify_oauth_service.register_uninstall_webhook(
+            shop_domain=exchange_result["shop"],
+            access_token=exchange_result["access_token"],
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("shopify_webhook_register_unexpected_error shop=%s", exchange_result["shop"])
+
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
         action="shopify.connect.success",
         resource="integration:shopify",
-        details={"shop": exchange_result["shop"], "scope": exchange_result.get("scope", "")},
+        details={
+            "shop": exchange_result["shop"],
+            "scope": exchange_result.get("scope", ""),
+            "uninstall_webhook_registered": webhook_registered,
+        },
     )
 
     return ShopifyOAuthExchangeResponse(
@@ -208,3 +227,112 @@ def shopify_oauth_status(
         connected_shops=list(payload["connected_shops"]),
         token_count=int(payload["token_count"]),
     )
+
+
+# ---------------------------------------------------------------------------
+# Webhooks (PUBLIC — Shopify-authenticated via HMAC, no JWT/session required)
+# ---------------------------------------------------------------------------
+
+_source_repo = FeedSourceRepository()
+
+
+@router.post("/webhooks/app-uninstalled")
+async def shopify_webhook_app_uninstalled(request: Request) -> dict[str, str]:
+    """Handle Shopify ``app/uninstalled`` webhook.
+
+    Auth: ``X-Shopify-Hmac-Sha256`` (HMAC-SHA256 of the raw request body keyed
+    on ``SHOPIFY_APP_CLIENT_SECRET``). No JWT/session — Shopify calls this
+    endpoint directly when a merchant removes the VOXEL app.
+
+    On success: deletes the encrypted access token, marks every Shopify
+    feed source bound to the shop as ``disconnected`` and writes an audit
+    log entry. Always returns 200 OK on a valid HMAC (Shopify retries 5x on
+    non-2xx within 5 seconds, so internal cleanup errors must not surface).
+    """
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256", "")
+    topic = request.headers.get("X-Shopify-Topic", "")
+    shop_header = request.headers.get("X-Shopify-Shop-Domain", "")
+
+    secret = shopify_config.SHOPIFY_APP_CLIENT_SECRET
+    if not secret:
+        # Misconfigured server — fail closed (don't accept un-verifiable webhooks).
+        logger.error("shopify_webhook_secret_missing topic=%s shop=%s", topic, shop_header)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Shopify webhook secret is not configured",
+        )
+
+    if not shopify_oauth_service.verify_shopify_webhook_hmac(body, hmac_header, secret):
+        logger.warning(
+            "shopify_webhook_hmac_invalid topic=%s shop=%s body_bytes=%d",
+            topic,
+            shop_header,
+            len(body),
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook HMAC")
+
+    # HMAC is valid — every code path below MUST return 200.
+    parsed: dict = {}
+    try:
+        parsed = json.loads(body.decode("utf-8")) if body else {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        parsed = {}
+
+    raw_shop = (
+        shop_header
+        or str(parsed.get("myshopify_domain") or "")
+        or str(parsed.get("domain") or "")
+    ).strip().lower()
+
+    if not raw_shop:
+        logger.warning("shopify_webhook_app_uninstalled_missing_shop topic=%s", topic)
+        return {"status": "ok", "shop": "", "sources_disconnected": "0"}
+
+    try:
+        shop_domain = shopify_config.validate_shop_domain(raw_shop)
+    except ValueError:
+        logger.warning("shopify_webhook_app_uninstalled_invalid_shop shop=%s", raw_shop)
+        return {"status": "ok", "shop": raw_shop, "sources_disconnected": "0"}
+
+    sources_affected = 0
+    try:
+        sources_affected = _source_repo.mark_disconnected_by_shop_domain(
+            shop_domain,
+            reason="App uninstalled by merchant",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("shopify_webhook_mark_disconnected_failed shop=%s", shop_domain)
+
+    try:
+        shopify_oauth_service.delete_shopify_token(shop_domain)
+    except Exception:  # noqa: BLE001
+        logger.exception("shopify_webhook_delete_token_failed shop=%s", shop_domain)
+
+    try:
+        audit_log_service.log(
+            actor_email="shopify-webhook",
+            actor_role="system",
+            action="shopify.app.uninstalled",
+            resource="integration:shopify",
+            details={
+                "shop": shop_domain,
+                "sources_disconnected": sources_affected,
+                "topic": topic,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("shopify_webhook_audit_log_failed shop=%s", shop_domain)
+
+    logger.info(
+        "shopify_webhook_app_uninstalled_processed shop=%s sources_disconnected=%d",
+        shop_domain,
+        sources_affected,
+    )
+    return {
+        "status": "ok",
+        "shop": shop_domain,
+        "sources_disconnected": str(sources_affected),
+    }
