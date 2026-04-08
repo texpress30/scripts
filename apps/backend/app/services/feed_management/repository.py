@@ -296,6 +296,56 @@ class FeedSourceRepository:
             conn.commit()
         return int(affected)
 
+    def get_by_bigcommerce_store_hash(self, store_hash: str) -> list[FeedSourceResponse]:
+        """Return every BigCommerce feed source bound to ``store_hash``.
+
+        The BigCommerce OAuth flow reuses the generic ``shop_domain`` column
+        to store the store hash (``abc123``) so the uniqueness constraint
+        ``uq_feed_sources_subaccount_type_shop`` keeps each store linked to
+        at most one source per subaccount.
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
+                    FROM feed_sources
+                    WHERE source_type = 'bigcommerce' AND shop_domain = %s
+                    ORDER BY created_at DESC
+                    """,
+                    (store_hash,),
+                )
+                rows = cur.fetchall() or []
+        return [_parse_source_row(row) for row in rows]
+
+    def mark_disconnected_by_bigcommerce_store_hash(
+        self, store_hash: str, *, reason: str
+    ) -> int:
+        """Mark every BigCommerce source bound to ``store_hash`` as ``disconnected``.
+
+        Used by the BigCommerce ``uninstall`` callback handler. Returns the
+        number of rows updated. Idempotent — running it twice on an
+        already-disconnected store simply refreshes ``updated_at``.
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE feed_sources
+                    SET connection_status = 'disconnected',
+                        has_token = FALSE,
+                        token_scopes = NULL,
+                        last_error = %s,
+                        last_connection_check = NOW(),
+                        updated_at = NOW()
+                    WHERE source_type = 'bigcommerce' AND shop_domain = %s
+                    """,
+                    (reason, store_hash),
+                )
+                affected = cur.rowcount or 0
+            conn.commit()
+        return int(affected)
+
     def get_by_id(self, source_id: str) -> FeedSourceResponse:
         with _connect() as conn:
             with conn.cursor() as cur:
