@@ -133,6 +133,44 @@ def _get_connector(source: FeedSourceResponse) -> BaseConnector:
             magento_config_dict.setdefault("magento_store_code", source.magento_store_code)
         return MagentoConnector(config=magento_config_dict, credentials=magento_credentials)
 
+    if source.source_type == FeedSourceType.bigcommerce:
+        # BigCommerce OAuth 2.0 public app — single permanent access_token
+        # minted by the merchant during install, stored encrypted in
+        # integration_secrets (scope = bigcommerce_store_hash). The store
+        # hash itself lives on the dedicated feed_sources column added in
+        # migration 0056.
+        from app.integrations.bigcommerce import service as bc_service
+        from app.integrations.bigcommerce.connector import BigCommerceConnector
+
+        bc_credentials: dict[str, str] = {}
+        store_hash = source.bigcommerce_store_hash or ""
+        if store_hash:
+            try:
+                stored = bc_service.get_bigcommerce_credentials(store_hash)
+            except Exception:
+                logger.exception(
+                    "Failed to load BigCommerce credentials for source %s store_hash=%s",
+                    source.id,
+                    store_hash,
+                )
+                stored = None
+            if stored and stored.get("access_token"):
+                bc_credentials["access_token"] = stored["access_token"]
+
+        if not bc_credentials.get("access_token"):
+            logger.warning(
+                "BigCommerce source %s has no stored OAuth access token — sync will fail "
+                "with 401. Reinstall the BigCommerce app to provision a new token.",
+                source.id,
+            )
+
+        bc_config_dict: dict[str, Any] = dict(config)
+        if store_hash:
+            bc_config_dict.setdefault("bigcommerce_store_hash", store_hash)
+        return BigCommerceConnector(
+            config=bc_config_dict, credentials=bc_credentials
+        )
+
     raise ValueError(f"No connector available for source type: {source.source_type}")
 
 
