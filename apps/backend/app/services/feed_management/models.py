@@ -73,6 +73,7 @@ class FeedSourceCreate(BaseModel):
     shop_domain: str | None = None
     magento_base_url: str | None = None
     magento_store_code: str | None = None
+    bigcommerce_store_hash: str | None = None
 
 
 class FeedSourceUpdate(BaseModel):
@@ -99,6 +100,7 @@ class FeedSourceResponse(BaseModel):
     shop_domain: str | None = None
     magento_base_url: str | None = None
     magento_store_code: str | None = None
+    bigcommerce_store_hash: str | None = None
     connection_status: str = "pending"
     last_connection_check: datetime | None = None
     last_error: str | None = None

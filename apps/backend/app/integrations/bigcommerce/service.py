@@ -195,6 +195,67 @@ def _list_connected_stores() -> list[str]:
         return []
 
 
+def list_installed_stores_with_metadata() -> list[dict[str, Any]]:
+    """Return ``[{store_hash, installed_at, ...}, ...]`` for every installed store.
+
+    Joins all per-store secret rows so the caller (the
+    ``stores/available`` endpoint) can render an "available stores" list
+    without N+1 round-trips. The ``installed_at`` timestamp is the
+    ``updated_at`` of the access_token row.
+    """
+    try:
+        with integration_secrets_store._connect() as conn:  # noqa: SLF001
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT scope, secret_key, encrypted_value, updated_at
+                    FROM integration_secrets
+                    WHERE provider = %s
+                    ORDER BY scope ASC
+                    """,
+                    (PROVIDER,),
+                )
+                rows = cur.fetchall() or []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "bigcommerce_list_installed_stores_failed error=%s", exc
+        )
+        return []
+
+    stores: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        scope = str(row[0])
+        secret_key = str(row[1])
+        encrypted_value = str(row[2])
+        updated_at = row[3]
+
+        bucket = stores.setdefault(
+            scope,
+            {
+                "store_hash": scope,
+                "installed_at": None,
+                "user_email": None,
+                "scope": None,
+                "_has_token": False,
+            },
+        )
+
+        try:
+            decrypted = integration_secrets_store.decrypt_secret(encrypted_value)
+        except Exception:  # noqa: BLE001
+            decrypted = ""
+
+        if secret_key == SECRET_KEY_ACCESS_TOKEN:
+            bucket["_has_token"] = True
+            bucket["installed_at"] = updated_at
+        elif secret_key == SECRET_KEY_USER_EMAIL:
+            bucket["user_email"] = decrypted or None
+        elif secret_key == SECRET_KEY_SCOPE:
+            bucket["scope"] = decrypted or None
+
+    return [b for b in stores.values() if b.pop("_has_token", False)]
+
+
 def get_bigcommerce_status() -> dict[str, Any]:
     """Return integration status (configured + currently connected stores)."""
     configured = bc_config.oauth_configured()

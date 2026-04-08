@@ -33,13 +33,23 @@ from typing import Any
 from urllib import error, parse, request
 
 from app.integrations.bigcommerce import config as bc_config
+from app.integrations.bigcommerce.exceptions import (
+    BigCommerceAuthError as _BCAuthErrorBase,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
-class BigCommerceAuthError(RuntimeError):
-    """Raised for any BigCommerce OAuth / JWT verification failure."""
+class BigCommerceAuthError(_BCAuthErrorBase):
+    """Raised for any BigCommerce OAuth / JWT verification failure.
+
+    Subclasses :class:`app.integrations.bigcommerce.exceptions.BigCommerceAuthError`
+    so that ``except`` clauses catching the canonical exception type also
+    catch OAuth-flow failures. The OAuth flow needs a few extra fields
+    (``http_status``, ``provider_error``, ``retryable``) that don't make
+    sense on the generic API client, so they live as instance attrs here.
+    """
 
     def __init__(
         self,
@@ -49,7 +59,7 @@ class BigCommerceAuthError(RuntimeError):
         provider_error: str | None = None,
         retryable: bool | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, status_code=http_status)
         self.http_status = int(http_status) if http_status is not None else None
         self.provider_error = provider_error
         self.retryable = retryable
