@@ -53,6 +53,12 @@ class FeedSourceConfig(BaseModel):
     file_url: str | None = None
     delimiter: str | None = None
     sheet_id: str | None = None
+    # Magento 2 (OAuth 1.0a Integration) — non-sensitive routing fields only.
+    # The four credentials (consumer_key/secret, access_token/secret) are
+    # persisted encrypted-at-rest via ``app.integrations.magento.service``
+    # and never round-trip through this JSONB blob.
+    magento_base_url: str | None = None
+    magento_store_code: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -65,6 +71,8 @@ class FeedSourceCreate(BaseModel):
     catalog_type: str = "product"
     catalog_variant: str = "physical_products"
     shop_domain: str | None = None
+    magento_base_url: str | None = None
+    magento_store_code: str | None = None
 
 
 class FeedSourceUpdate(BaseModel):
@@ -74,6 +82,8 @@ class FeedSourceUpdate(BaseModel):
     is_active: bool | None = None
     catalog_type: str | None = None
     catalog_variant: str | None = None
+    magento_base_url: str | None = None
+    magento_store_code: str | None = None
 
 
 class FeedSourceResponse(BaseModel):
@@ -87,6 +97,8 @@ class FeedSourceResponse(BaseModel):
     catalog_type: str = "product"
     catalog_variant: str = "physical_products"
     shop_domain: str | None = None
+    magento_base_url: str | None = None
+    magento_store_code: str | None = None
     connection_status: str = "pending"
     last_connection_check: datetime | None = None
     last_error: str | None = None

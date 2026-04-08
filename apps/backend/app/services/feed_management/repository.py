@@ -26,6 +26,15 @@ def _connect():
     return get_connection()
 
 
+_SOURCE_ROW_COLUMNS = (
+    "id, subaccount_id, source_type, name, config, credentials_secret_id, "
+    "is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, "
+    "product_count, created_at, updated_at, catalog_variant, shop_domain, "
+    "connection_status, last_connection_check, last_error, has_token, "
+    "token_scopes, last_import_at, magento_base_url, magento_store_code"
+)
+
+
 def _parse_source_row(row: tuple) -> FeedSourceResponse:
     config_raw = row[4]
     config = json.loads(config_raw) if isinstance(config_raw, str) else (config_raw or {})
@@ -52,6 +61,8 @@ def _parse_source_row(row: tuple) -> FeedSourceResponse:
         has_token=bool(row[19]),
         token_scopes=str(row[20]) if row[20] else None,
         last_import_at=row[21],
+        magento_base_url=str(row[22]) if len(row) > 22 and row[22] else None,
+        magento_store_code=str(row[23]) if len(row) > 23 and row[23] else None,
     )
 
 
@@ -99,14 +110,42 @@ class FeedSourceRepository:
                     if cur.fetchone() is not None:
                         raise FeedSourceAlreadyExistsError(payload.shop_domain, payload.subaccount_id)
 
+                # Check for duplicate Magento store within the same subaccount.
+                # Uniqueness key = (subaccount, base_url, store_code) so a merchant
+                # can register both "default" and "en" store-views of the same
+                # Magento instance without conflict.
+                if payload.magento_base_url:
+                    cur.execute(
+                        """
+                        SELECT id FROM feed_sources
+                        WHERE subaccount_id = %s
+                          AND source_type = %s
+                          AND magento_base_url = %s
+                          AND COALESCE(magento_store_code, 'default') = COALESCE(%s, 'default')
+                        LIMIT 1
+                        """,
+                        (
+                            payload.subaccount_id,
+                            payload.source_type.value,
+                            payload.magento_base_url,
+                            payload.magento_store_code,
+                        ),
+                    )
+                    if cur.fetchone() is not None:
+                        raise FeedSourceAlreadyExistsError(
+                            f"{payload.magento_base_url}[{payload.magento_store_code or 'default'}]",
+                            payload.subaccount_id,
+                        )
+
                 cur.execute(
                     """
                     INSERT INTO feed_sources (
                         id, subaccount_id, source_type, name, config,
-                        credentials_secret_id, catalog_type, catalog_variant, shop_domain
+                        credentials_secret_id, catalog_type, catalog_variant, shop_domain,
+                        magento_base_url, magento_store_code
                     )
-                    VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
-                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
+                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                     """,
                     (
                         source_id,
@@ -118,6 +157,8 @@ class FeedSourceRepository:
                         payload.catalog_type,
                         payload.catalog_variant,
                         payload.shop_domain,
+                        payload.magento_base_url,
+                        payload.magento_store_code,
                     ),
                 )
                 row = cur.fetchone()
@@ -144,7 +185,7 @@ class FeedSourceRepository:
                         last_error = NULL,
                         updated_at = NOW()
                     WHERE id = %s
-                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                     """,
                     (scopes, source_id),
                 )
@@ -173,7 +214,7 @@ class FeedSourceRepository:
                             last_error = NULL,
                             updated_at = NOW()
                         WHERE id = %s
-                        RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                        RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                         """,
                         (source_id,),
                     )
@@ -186,7 +227,7 @@ class FeedSourceRepository:
                             last_error = %s,
                             updated_at = NOW()
                         WHERE id = %s
-                        RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                        RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                         """,
                         (error or "Unknown error", source_id),
                     )
@@ -219,7 +260,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                     FROM feed_sources
                     WHERE source_type = 'shopify' AND shop_domain = %s
                     ORDER BY created_at DESC
@@ -260,7 +301,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                     FROM feed_sources WHERE id = %s LIMIT 1
                     """,
                     (source_id,),
@@ -276,7 +317,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                     FROM feed_sources WHERE subaccount_id = %s ORDER BY created_at DESC
                     """,
                     (subaccount_id,),
@@ -307,6 +348,12 @@ class FeedSourceRepository:
         if payload.catalog_variant is not None:
             sets.append("catalog_variant = %s")
             params.append(payload.catalog_variant)
+        if payload.magento_base_url is not None:
+            sets.append("magento_base_url = %s")
+            params.append(payload.magento_base_url)
+        if payload.magento_store_code is not None:
+            sets.append("magento_store_code = %s")
+            params.append(payload.magento_store_code)
 
         if not sets:
             return self.get_by_id(source_id)
@@ -320,7 +367,7 @@ class FeedSourceRepository:
                     f"""
                     UPDATE feed_sources SET {', '.join(sets)}
                     WHERE id = %s
-                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                     """,
                     tuple(params),
                 )
@@ -344,7 +391,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at, catalog_variant, shop_domain, connection_status, last_connection_check, last_error, has_token, token_scopes, last_import_at, magento_base_url, magento_store_code
                     FROM feed_sources ORDER BY created_at DESC LIMIT %s OFFSET %s
                     """,
                     (limit, offset),
