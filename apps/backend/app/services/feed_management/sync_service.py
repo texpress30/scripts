@@ -110,6 +110,29 @@ def _get_connector(source: FeedSourceResponse) -> BaseConnector:
                            "Delete and re-create the source to fix.", source.id)
         return WooCommerceConnector(config=config, credentials=woo_credentials)
 
+    if source.source_type == FeedSourceType.magento:
+        # Magento 2 OAuth 1.0a integration — four credentials minted by the
+        # merchant in System → Extensions → Integrations, stored encrypted
+        # in integration_secrets (scope = feed_sources.id), routing (base
+        # url + store code) persisted as dedicated columns on feed_sources.
+        from app.integrations.magento import service as magento_service
+        from app.integrations.magento.connector import MagentoConnector
+
+        magento_credentials = magento_service.get_magento_credentials(source.id) or {}
+        if not magento_credentials:
+            logger.warning(
+                "Magento source %s has no stored OAuth 1.0a credentials — sync will fail "
+                "with 401. Reconnect the source to provision new credentials.",
+                source.id,
+            )
+
+        magento_config_dict: dict[str, Any] = dict(config)
+        if source.magento_base_url:
+            magento_config_dict.setdefault("magento_base_url", source.magento_base_url)
+        if source.magento_store_code:
+            magento_config_dict.setdefault("magento_store_code", source.magento_store_code)
+        return MagentoConnector(config=magento_config_dict, credentials=magento_credentials)
+
     raise ValueError(f"No connector available for source type: {source.source_type}")
 
 
