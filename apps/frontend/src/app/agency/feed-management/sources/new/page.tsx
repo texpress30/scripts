@@ -15,15 +15,20 @@ import {
   type MagentoConnectFormData,
   type MagentoTestConnectionResult,
 } from "@/components/feed-management/forms/MagentoSourceForm";
+import {
+  BigCommerceClaimForm,
+  type BigCommerceClaimFormData,
+} from "@/components/feed-management/forms/BigCommerceClaimForm";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import {
   createMagentoSourceApi,
   testMagentoConnectionBeforeSave,
 } from "@/lib/hooks/useMagentoSource";
+import { claimBigCommerceStore } from "@/lib/hooks/useBigCommerceSource";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 
 const FILE_TYPES: FeedSourceType[] = ["csv", "json", "xml", "google_sheets"];
-const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce", "bigcommerce"];
+const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce"];
 
 type Step = "source_type" | "catalog_type" | "configure";
 
@@ -124,6 +129,37 @@ export default function NewSourcePage() {
       router.push("/agency/feed-management/sources");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eroare la crearea sursei Magento.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleClaimBigCommerce(data: BigCommerceClaimFormData) {
+    if (!selectedId) {
+      setError("Selectează un client înainte de a crea sursa.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await claimBigCommerceStore(selectedId, {
+        store_hash: data.store_hash,
+        source_name: data.source_name,
+        catalog_type: selectedCatalog,
+        catalog_variant: selectedSubtype ?? "physical_products",
+      });
+      router.push("/agency/feed-management/sources");
+    } catch (err) {
+      // Surface a friendly message for the common 409 (already claimed)
+      // case so the agency user knows the store is bound to another row.
+      const message =
+        err instanceof Error ? err.message : "Eroare la revendicarea magazinului BigCommerce.";
+      const isConflict = /already.*claim|409/i.test(message);
+      setError(
+        isConflict
+          ? "Acest magazin BigCommerce este deja revendicat. Detașează sursa existentă mai întâi."
+          : message,
+      );
     } finally {
       setBusy(false);
     }
@@ -279,6 +315,12 @@ export default function NewSourcePage() {
                 <MagentoSourceForm
                   onSubmit={(data) => void handleCreateMagento(data)}
                   onTestConnection={handleTestMagentoConnection}
+                  onCancel={handleBack}
+                  busy={busy}
+                />
+              ) : selectedType === "bigcommerce" ? (
+                <BigCommerceClaimForm
+                  onClaim={(data) => void handleClaimBigCommerce(data)}
                   onCancel={handleBack}
                   busy={busy}
                 />
