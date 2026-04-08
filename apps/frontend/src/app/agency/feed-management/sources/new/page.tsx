@@ -10,11 +10,20 @@ import { CatalogTypeSelector } from "@/components/feed-management/CatalogTypeSel
 import { FileSourceForm } from "@/components/feed-management/forms/FileSourceForm";
 import { ShopifySourceForm } from "@/components/feed-management/forms/ShopifySourceForm";
 import { GenericEcommerceForm } from "@/components/feed-management/forms/GenericEcommerceForm";
+import {
+  MagentoSourceForm,
+  type MagentoConnectFormData,
+  type MagentoTestConnectionResult,
+} from "@/components/feed-management/forms/MagentoSourceForm";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
+import {
+  createMagentoSourceApi,
+  testMagentoConnectionBeforeSave,
+} from "@/lib/hooks/useMagentoSource";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 
 const FILE_TYPES: FeedSourceType[] = ["csv", "json", "xml", "google_sheets"];
-const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce", "magento", "bigcommerce"];
+const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce", "bigcommerce"];
 
 type Step = "source_type" | "catalog_type" | "configure";
 
@@ -90,6 +99,65 @@ export default function NewSourcePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eroare la inițierea conexiunii Shopify.");
       setBusy(false);
+    }
+  }
+
+  async function handleCreateMagento(data: MagentoConnectFormData) {
+    if (!selectedId) {
+      setError("Selectează un client înainte de a crea sursa.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await createMagentoSourceApi(selectedId, {
+        source_name: data.source_name,
+        magento_base_url: data.magento_base_url,
+        magento_store_code: data.magento_store_code,
+        consumer_key: data.consumer_key,
+        consumer_secret: data.consumer_secret,
+        access_token: data.access_token,
+        access_token_secret: data.access_token_secret,
+        catalog_type: selectedCatalog,
+        catalog_variant: selectedSubtype ?? "physical_products",
+      });
+      router.push("/agency/feed-management/sources");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Eroare la crearea sursei Magento.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleTestMagentoConnection(
+    data: MagentoConnectFormData,
+  ): Promise<MagentoTestConnectionResult> {
+    try {
+      const result = await testMagentoConnectionBeforeSave({
+        magento_base_url: data.magento_base_url,
+        magento_store_code: data.magento_store_code,
+        consumer_key: data.consumer_key,
+        consumer_secret: data.consumer_secret,
+        access_token: data.access_token,
+        access_token_secret: data.access_token_secret,
+      });
+      if (result.success) {
+        return {
+          success: true,
+          message: `Conectat: ${result.store_name ?? "Magento store"}`,
+          store_name: result.store_name,
+          base_currency: result.base_currency,
+        };
+      }
+      return {
+        success: false,
+        message: result.error ?? "Nu s-a putut valida conexiunea.",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : "Eroare la testarea conexiunii.",
+      };
     }
   }
 
@@ -204,6 +272,13 @@ export default function NewSourcePage() {
               {selectedType === "shopify" ? (
                 <ShopifySourceForm
                   onConnect={(data) => void handleConnectShopify(data)}
+                  onCancel={handleBack}
+                  busy={busy}
+                />
+              ) : selectedType === "magento" ? (
+                <MagentoSourceForm
+                  onSubmit={(data) => void handleCreateMagento(data)}
+                  onTestConnection={handleTestMagentoConnection}
                   onCancel={handleBack}
                   busy={busy}
                 />
