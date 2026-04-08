@@ -31,21 +31,47 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.api.dependencies import (
+    enforce_action_scope,
+    enforce_subaccount_action,
+    get_current_user,
+)
 from app.core.config import load_settings
 from app.integrations.bigcommerce import auth as bc_auth
+from app.integrations.bigcommerce import client as bc_client_module
 from app.integrations.bigcommerce import config as bc_config
 from app.integrations.bigcommerce import service as bc_service
 from app.integrations.bigcommerce.auth import BigCommerceAuthError
+from app.integrations.bigcommerce.client import (
+    TEST_CONNECTION_TIMEOUT_SECONDS,
+    BigCommerceClient,
+)
+from app.integrations.bigcommerce.exceptions import (
+    BigCommerceAPIError,
+    BigCommerceAuthError as _BCApiAuthError,
+    BigCommerceConnectionError,
+    BigCommerceNotFoundError,
+    BigCommerceRateLimitError,
+    BigCommerceServerError,
+)
 from app.integrations.bigcommerce.schemas import (
+    BigCommerceAvailableStore,
+    BigCommerceAvailableStoresResponse,
     BigCommerceCallbackResponse,
+    BigCommerceClaimRequest,
     BigCommerceLoadResponse,
     BigCommerceRemoveUserResponse,
+    BigCommerceSourceResponse,
+    BigCommerceSourceUpdateRequest,
     BigCommerceStatusResponse,
+    BigCommerceTestConnectionRequest,
+    BigCommerceTestConnectionResponse,
     BigCommerceUninstallResponse,
 )
 from app.services.audit import audit_log_service
+from app.services.auth import AuthUser
 from app.services.feed_management.exceptions import (
     FeedSourceAlreadyExistsError,
     FeedSourceNotFoundError,
@@ -53,7 +79,9 @@ from app.services.feed_management.exceptions import (
 from app.services.feed_management.models import (
     FeedSourceConfig,
     FeedSourceCreate,
+    FeedSourceResponse,
     FeedSourceType,
+    FeedSourceUpdate,
 )
 from app.services.feed_management.repository import FeedSourceRepository
 
@@ -132,7 +160,7 @@ def _ensure_feed_source(
                 source_type=FeedSourceType.bigcommerce,
                 name=f"BigCommerce store {store_hash}",
                 config=FeedSourceConfig(store_url=f"stores/{store_hash}"),
-                shop_domain=store_hash,
+                bigcommerce_store_hash=store_hash,
             )
         )
     except FeedSourceAlreadyExistsError:
@@ -524,3 +552,473 @@ def bigcommerce_status() -> BigCommerceStatusResponse:
         connected_stores=list(payload["connected_stores"]),
         token_count=int(payload["token_count"]),
     )
+
+
+# ---------------------------------------------------------------------------
+# CRUD endpoints — claim, list, read, update, delete BigCommerce sources
+# ---------------------------------------------------------------------------
+
+
+def _source_to_bc_response(source: FeedSourceResponse) -> BigCommerceSourceResponse:
+    """Project a generic ``FeedSourceResponse`` row onto the BigCommerce shape."""
+    return BigCommerceSourceResponse(
+        source_id=source.id,
+        subaccount_id=source.subaccount_id,
+        source_name=source.name,
+        store_hash=source.bigcommerce_store_hash or "",
+        catalog_type=source.catalog_type,
+        catalog_variant=source.catalog_variant,
+        connection_status=source.connection_status,
+        has_token=source.has_token,
+        token_scopes=source.token_scopes,
+        last_connection_check=source.last_connection_check,
+        last_error=source.last_error,
+        is_active=source.is_active,
+        created_at=source.created_at,
+        updated_at=source.updated_at,
+    )
+
+
+def _require_bigcommerce_source(
+    source_id: str, subaccount_id: int
+) -> FeedSourceResponse:
+    """Load a BigCommerce source row that MUST belong to ``subaccount_id``.
+
+    Returns 404 — never 403 — for cross-tenant lookups so the API does not
+    leak the existence of sources owned by other clients.
+    """
+    try:
+        source = _source_repo.get_by_id(source_id)
+    except FeedSourceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="BigCommerce source not found",
+        ) from exc
+    if source.subaccount_id != subaccount_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="BigCommerce source not found",
+        )
+    if source.source_type != FeedSourceType.bigcommerce:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="BigCommerce source not found",
+        )
+    return source
+
+
+@router.get(
+    "/stores/available",
+    response_model=BigCommerceAvailableStoresResponse,
+)
+def list_available_bigcommerce_stores(
+    user: AuthUser = Depends(get_current_user),
+) -> BigCommerceAvailableStoresResponse:
+    """Return BigCommerce stores that have installed the app but not yet been claimed.
+
+    The set is ``{installed credentials in integration_secrets}`` minus
+    ``{stores already linked to a feed_sources row}``. The endpoint is
+    agency-scoped because the unclaimed pool is global — any agency admin
+    can pick any unclaimed store and bind it to one of their subaccounts.
+    """
+    _enforce_feature_flag()
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+
+    installed = bc_service.list_installed_stores_with_metadata()
+    claimed = _source_repo.list_claimed_bigcommerce_store_hashes()
+    unclaimed = [
+        BigCommerceAvailableStore(
+            store_hash=str(entry.get("store_hash") or ""),
+            installed_at=entry.get("installed_at"),
+            user_email=entry.get("user_email"),
+            scope=entry.get("scope"),
+        )
+        for entry in installed
+        if str(entry.get("store_hash") or "") not in claimed
+    ]
+    unclaimed.sort(key=lambda item: item.store_hash)
+    return BigCommerceAvailableStoresResponse(
+        stores=unclaimed, total=len(unclaimed)
+    )
+
+
+@router.post(
+    "/sources/claim",
+    response_model=BigCommerceSourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def claim_bigcommerce_source(
+    payload: BigCommerceClaimRequest,
+    subaccount_id: int = Query(
+        ..., description="Subaccount that should own this BigCommerce source"
+    ),
+    user: AuthUser = Depends(get_current_user),
+) -> BigCommerceSourceResponse:
+    """Bind an installed BigCommerce store to a subaccount.
+
+    Pre-conditions checked here:
+
+    1. ``store_hash`` has credentials in ``integration_secrets`` (i.e. the
+       merchant has installed the app and the OAuth callback fired) — 404
+       otherwise so we don't leak the unclaimed pool.
+    2. ``store_hash`` is not already claimed by another row — 409 otherwise.
+
+    On success the new ``feed_sources`` row starts in
+    ``connection_status='pending'``; the caller should follow up with
+    ``test-connection`` to flip it to ``connected``.
+    """
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+
+    try:
+        clean_hash = bc_config.validate_store_hash(payload.store_hash)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    if bc_service.get_access_token_for_store(clean_hash) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "No installed BigCommerce store with this store_hash. "
+                "Make sure the merchant has installed the app first."
+            ),
+        )
+
+    try:
+        created = _source_repo.create(
+            FeedSourceCreate(
+                subaccount_id=subaccount_id,
+                source_type=FeedSourceType.bigcommerce,
+                name=payload.source_name,
+                config=FeedSourceConfig(store_url=f"stores/{clean_hash}"),
+                catalog_type=payload.catalog_type,
+                catalog_variant=payload.catalog_variant,
+                bigcommerce_store_hash=clean_hash,
+            )
+        )
+    except FeedSourceAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This BigCommerce store is already claimed (by this subaccount "
+                "or another). Detach the existing source first."
+            ),
+        ) from exc
+
+    # Mirror the OAuth scope onto the row so the UI knows the granted scope
+    # without re-reading the secrets store.
+    creds = bc_service.get_bigcommerce_credentials(clean_hash) or {}
+    granted_scope = creds.get("scope")
+    try:
+        refreshed = _source_repo.mark_oauth_connected(
+            created.id, scopes=granted_scope or None
+        )
+    except FeedSourceNotFoundError:
+        refreshed = created
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="bigcommerce.source.claimed",
+        resource=f"feed_source:{refreshed.id}",
+        details={
+            "subaccount_id": subaccount_id,
+            "store_hash": clean_hash,
+            "scope": granted_scope,
+        },
+    )
+    return _source_to_bc_response(refreshed)
+
+
+@router.get("/sources", response_model=list[BigCommerceSourceResponse])
+def list_bigcommerce_sources(
+    subaccount_id: int = Query(..., description="Subaccount to scope the listing"),
+    user: AuthUser = Depends(get_current_user),
+) -> list[BigCommerceSourceResponse]:
+    """List every BigCommerce source belonging to the requested subaccount."""
+    _enforce_feature_flag()
+    enforce_subaccount_action(
+        user=user, action="dashboard:view", subaccount_id=subaccount_id
+    )
+    sources = _source_repo.get_bigcommerce_sources_by_subaccount(subaccount_id)
+    return [_source_to_bc_response(src) for src in sources]
+
+
+@router.get(
+    "/sources/{source_id}", response_model=BigCommerceSourceResponse
+)
+def get_bigcommerce_source(
+    source_id: str,
+    subaccount_id: int = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> BigCommerceSourceResponse:
+    _enforce_feature_flag()
+    enforce_subaccount_action(
+        user=user, action="dashboard:view", subaccount_id=subaccount_id
+    )
+    source = _require_bigcommerce_source(source_id, subaccount_id)
+    return _source_to_bc_response(source)
+
+
+@router.put(
+    "/sources/{source_id}", response_model=BigCommerceSourceResponse
+)
+def update_bigcommerce_source(
+    source_id: str,
+    payload: BigCommerceSourceUpdateRequest,
+    subaccount_id: int = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> BigCommerceSourceResponse:
+    """Patch the cosmetic fields of a BigCommerce source.
+
+    The ``store_hash`` itself is immutable post-claim — there's no use case
+    for "point this row at a different merchant store" and silently
+    swapping it would orphan any synced products.
+    """
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+    _require_bigcommerce_source(source_id, subaccount_id)
+
+    has_any_update = any(
+        value is not None
+        for value in (
+            payload.source_name,
+            payload.catalog_type,
+            payload.catalog_variant,
+            payload.is_active,
+        )
+    )
+    if not has_any_update:
+        return _source_to_bc_response(_require_bigcommerce_source(source_id, subaccount_id))
+
+    update_payload = FeedSourceUpdate(
+        name=payload.source_name,
+        catalog_type=payload.catalog_type,
+        catalog_variant=payload.catalog_variant,
+        is_active=payload.is_active,
+    )
+    try:
+        updated = _source_repo.update(source_id, update_payload)
+    except FeedSourceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="BigCommerce source not found",
+        ) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="bigcommerce.source.updated",
+        resource=f"feed_source:{source_id}",
+        details={
+            "subaccount_id": subaccount_id,
+            "fields": {
+                k: v
+                for k, v in payload.model_dump(exclude_none=True).items()
+            },
+        },
+    )
+    return _source_to_bc_response(updated)
+
+
+@router.delete("/sources/{source_id}")
+def delete_bigcommerce_source(
+    source_id: str,
+    subaccount_id: int = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Delete the ``feed_sources`` row but **leave the credentials in place**.
+
+    This is the platform-side equivalent of "stop syncing this store" — the
+    BigCommerce app is still installed on the merchant's side, the encrypted
+    OAuth token still lives in ``integration_secrets``, and the store will
+    show up again in ``stores/available`` so it can be re-claimed by the
+    same or another subaccount.
+
+    Actual app uninstallation only happens when the merchant clicks "Remove"
+    in their BigCommerce control panel — that triggers the
+    ``/auth/uninstall`` callback which wipes the credentials.
+    """
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+    source = _require_bigcommerce_source(source_id, subaccount_id)
+
+    try:
+        _source_repo.delete(source_id)
+    except FeedSourceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="BigCommerce source not found",
+        ) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="bigcommerce.source.deleted",
+        resource=f"feed_source:{source_id}",
+        details={
+            "subaccount_id": subaccount_id,
+            "store_hash": source.bigcommerce_store_hash,
+        },
+    )
+    return {"status": "ok", "id": source_id}
+
+
+# ---------------------------------------------------------------------------
+# Test connection — pre-claim (by store_hash) + post-claim (by source_id)
+# ---------------------------------------------------------------------------
+
+
+async def _probe_store_info(client: BigCommerceClient) -> BigCommerceTestConnectionResponse:
+    """Hit BigCommerce ``/v2/store`` and map the result to the normalised probe.
+
+    Every BigCommerce exception is caught and folded into a
+    ``success=False`` payload so callers always get a predictable shape.
+    """
+    try:
+        data = await client.get("store", api_version="v2")
+    except _BCApiAuthError as exc:
+        return BigCommerceTestConnectionResponse(
+            success=False, error=f"Invalid credentials: {exc.message}"
+        )
+    except BigCommerceNotFoundError as exc:
+        return BigCommerceTestConnectionResponse(
+            success=False, error=f"Endpoint not found: {exc.message}"
+        )
+    except BigCommerceRateLimitError as exc:
+        return BigCommerceTestConnectionResponse(
+            success=False, error=f"Rate limit hit: {exc.message}"
+        )
+    except BigCommerceConnectionError as exc:
+        return BigCommerceTestConnectionResponse(
+            success=False, error=f"Connection failed: {exc.message}"
+        )
+    except BigCommerceServerError as exc:
+        return BigCommerceTestConnectionResponse(
+            success=False, error=f"BigCommerce server error: {exc.message}"
+        )
+    except BigCommerceAPIError as exc:
+        return BigCommerceTestConnectionResponse(
+            success=False, error=f"BigCommerce API error: {exc.message}"
+        )
+
+    if not isinstance(data, dict):
+        return BigCommerceTestConnectionResponse(
+            success=False,
+            error="BigCommerce returned an unexpected /v2/store payload",
+        )
+
+    return BigCommerceTestConnectionResponse(
+        success=True,
+        store_name=str(data.get("name") or "") or None,
+        domain=str(data.get("domain") or "") or None,
+        secure_url=str(data.get("secure_url") or "") or None,
+        currency=str(data.get("currency") or "") or None,
+    )
+
+
+@router.post(
+    "/sources/{source_id}/test-connection",
+    response_model=BigCommerceTestConnectionResponse,
+)
+async def test_bigcommerce_source_connection(
+    source_id: str,
+    subaccount_id: int = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> BigCommerceTestConnectionResponse:
+    """Probe a saved BigCommerce source using the stored encrypted credentials.
+
+    On success/failure the outcome is recorded via
+    ``FeedSourceRepository.record_connection_check`` so the source list UI
+    can show a fresh badge without an extra round-trip.
+    """
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+    _require_bigcommerce_source(source_id, subaccount_id)
+
+    try:
+        client = bc_client_module.create_bc_client_from_source(
+            source_id,
+            timeout_seconds=TEST_CONNECTION_TIMEOUT_SECONDS,
+        )
+    except _BCApiAuthError:
+        result = BigCommerceTestConnectionResponse(
+            success=False,
+            error="No credentials stored — reconnect required",
+        )
+    except ValueError as exc:
+        result = BigCommerceTestConnectionResponse(success=False, error=str(exc))
+    else:
+        result = await _probe_store_info(client)
+
+    try:
+        if result.success:
+            _source_repo.record_connection_check(source_id, success=True)
+        else:
+            _source_repo.record_connection_check(
+                source_id, success=False, error=result.error
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "bigcommerce_probe_persist_failed source_id=%s", source_id, exc_info=True
+        )
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="bigcommerce.source.test_connection",
+        resource=f"feed_source:{source_id}",
+        details={"subaccount_id": subaccount_id, "success": result.success},
+    )
+    return result
+
+
+@router.post(
+    "/test-connection", response_model=BigCommerceTestConnectionResponse
+)
+async def test_bigcommerce_connection_pre_claim(
+    payload: BigCommerceTestConnectionRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> BigCommerceTestConnectionResponse:
+    """Probe a not-yet-claimed BigCommerce store using the installed credentials.
+
+    Used by the wizard "test before claim" button — the merchant can verify
+    the install was wired correctly before binding the store to a
+    subaccount. Resolves credentials by ``store_hash`` from the secrets
+    store; the request body never carries an access token (BigCommerce
+    is OAuth-only, there's no manual token entry path).
+    """
+    _enforce_feature_flag()
+    enforce_action_scope(user=user, action="data:write", scope="agency")
+
+    try:
+        clean_hash = bc_config.validate_store_hash(payload.store_hash)
+    except ValueError as exc:
+        return BigCommerceTestConnectionResponse(success=False, error=str(exc))
+
+    try:
+        client = bc_client_module.create_bc_client_from_store_hash(
+            clean_hash,
+            timeout_seconds=TEST_CONNECTION_TIMEOUT_SECONDS,
+        )
+    except _BCApiAuthError as exc:
+        result = BigCommerceTestConnectionResponse(
+            success=False,
+            error=exc.message
+            or "No BigCommerce credentials stored for this store_hash",
+        )
+    except ValueError as exc:
+        result = BigCommerceTestConnectionResponse(success=False, error=str(exc))
+    else:
+        result = await _probe_store_info(client)
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="bigcommerce.test_connection.pre_claim",
+        resource="integration:bigcommerce",
+        details={"store_hash": clean_hash, "success": result.success},
+    )
+    return result
