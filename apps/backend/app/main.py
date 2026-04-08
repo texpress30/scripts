@@ -37,6 +37,7 @@ from app.api.internal_cron import router as internal_cron_router
 from app.api.field_mappings import router as field_mappings_router
 from app.api.integrations.shopify import router as shopify_integration_router
 from app.api.integrations.magento import router as magento_integration_router
+from app.api.integrations.bigcommerce import router as bigcommerce_integration_router
 from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
@@ -153,6 +154,7 @@ app.include_router(feed_channels_router)
 app.include_router(schema_registry_router)
 app.include_router(shopify_integration_router)
 app.include_router(magento_integration_router)
+app.include_router(bigcommerce_integration_router)
 app.include_router(woocommerce_router)
 
 # Enriched Catalog
