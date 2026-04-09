@@ -19,16 +19,36 @@ import {
   BigCommerceClaimForm,
   type BigCommerceClaimFormData,
 } from "@/components/feed-management/forms/BigCommerceClaimForm";
+import {
+  GenericApiKeySourceForm,
+  type GenericApiKeyFormData,
+} from "@/components/feed-management/forms/GenericApiKeySourceForm";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import {
   createMagentoSourceApi,
   testMagentoConnectionBeforeSave,
 } from "@/lib/hooks/useMagentoSource";
 import { claimBigCommerceStore } from "@/lib/hooks/useBigCommerceSource";
+import {
+  createGenericApiKeySource,
+  type GenericApiKeyPlatformKey,
+} from "@/lib/hooks/useGenericApiKeySource";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 
 const FILE_TYPES: FeedSourceType[] = ["csv", "json", "xml", "google_sheets"];
 const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce"];
+// Six "URL + API key" e-commerce platforms served by the parametrised
+// generic-API-key router on the backend (PrestaShop, OpenCart,
+// Shopware, Lightspeed, Volusion, Shift4Shop). All wired into the
+// wizard via the same ``GenericApiKeySourceForm`` + ``handleCreateGenericApiKey``.
+const GENERIC_API_KEY_TYPES: ReadonlySet<FeedSourceType> = new Set([
+  "prestashop",
+  "opencart",
+  "shopware",
+  "lightspeed",
+  "volusion",
+  "shift4shop",
+]);
 
 type Step = "source_type" | "catalog_type" | "configure";
 
@@ -103,6 +123,35 @@ export default function NewSourcePage() {
       window.location.href = result.authorize_url;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eroare la inițierea conexiunii Shopify.");
+      setBusy(false);
+    }
+  }
+
+  async function handleCreateGenericApiKey(
+    platform: GenericApiKeyPlatformKey,
+    data: GenericApiKeyFormData,
+  ) {
+    if (!selectedId) {
+      setError("Selectează un client înainte de a crea sursa.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await createGenericApiKeySource(platform, selectedId, {
+        source_name: data.source_name,
+        store_url: data.store_url,
+        api_key: data.api_key,
+        api_secret: data.api_secret,
+        catalog_type: selectedCatalog,
+        catalog_variant: selectedSubtype ?? "physical_products",
+      });
+      router.push("/agency/feed-management/sources");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Eroare la crearea sursei.",
+      );
+    } finally {
       setBusy(false);
     }
   }
@@ -334,6 +383,18 @@ export default function NewSourcePage() {
               ) : selectedType === "bigcommerce" ? (
                 <BigCommerceClaimForm
                   onClaim={(data) => void handleClaimBigCommerce(data)}
+                  onCancel={handleBack}
+                  busy={busy}
+                />
+              ) : GENERIC_API_KEY_TYPES.has(selectedType) ? (
+                <GenericApiKeySourceForm
+                  platform={selectedType as GenericApiKeyPlatformKey}
+                  onSubmit={(data) =>
+                    void handleCreateGenericApiKey(
+                      selectedType as GenericApiKeyPlatformKey,
+                      data,
+                    )
+                  }
                   onCancel={handleBack}
                   busy={busy}
                 />
