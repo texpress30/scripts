@@ -39,7 +39,7 @@ const FILE_TYPES: FeedSourceType[] = ["csv", "json", "xml", "google_sheets"];
 const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce"];
 // Six "URL + API key" e-commerce platforms served by the parametrised
 // generic-API-key router on the backend (PrestaShop, OpenCart,
-// Shopware, Lightspeed, Volusion, Shift4Shop). All wired into the
+// Shopware, Lightspeed, Volusion, Cart Storefront). All wired into the
 // wizard via the same ``GenericApiKeySourceForm`` + ``handleCreateGenericApiKey``.
 const GENERIC_API_KEY_TYPES: ReadonlySet<FeedSourceType> = new Set([
   "prestashop",
@@ -47,7 +47,7 @@ const GENERIC_API_KEY_TYPES: ReadonlySet<FeedSourceType> = new Set([
   "shopware",
   "lightspeed",
   "volusion",
-  "shift4shop",
+  "cart_storefront",
 ]);
 
 type Step = "source_type" | "catalog_type" | "configure";

@@ -61,7 +61,7 @@ def store_credentials(
     Raises ``ValueError`` for missing required fields. The
     :class:`PlatformDefinition` ``has_api_secret`` flag drives whether
     the secret half is required (Shopware, Lightspeed, OpenCart,
-    Shift4Shop) or optional / unused (PrestaShop, Volusion).
+    Cart Storefront) or optional / unused (PrestaShop, Volusion).
     """
     definition = get_platform(platform)
     if not source_id:

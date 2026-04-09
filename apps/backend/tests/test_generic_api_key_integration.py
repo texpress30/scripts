@@ -59,10 +59,10 @@ class PlatformDefinitionsTests(unittest.TestCase):
         self.assertEqual(
             sorted(PLATFORM_DEFINITIONS.keys()),
             [
+                "cart_storefront",
                 "lightspeed",
                 "opencart",
                 "prestashop",
-                "shift4shop",
                 "shopware",
                 "volusion",
             ],
@@ -89,7 +89,7 @@ class PlatformDefinitionsTests(unittest.TestCase):
         self.assertTrue(get_platform("shopware").has_api_secret)
         self.assertTrue(get_platform("opencart").has_api_secret)
         self.assertTrue(get_platform("lightspeed").has_api_secret)
-        self.assertTrue(get_platform("shift4shop").has_api_secret)
+        self.assertTrue(get_platform("cart_storefront").has_api_secret)
 
 
 class ValidateStoreUrlTests(unittest.TestCase):
@@ -672,7 +672,7 @@ class FeedSourceTypeEnumTests(unittest.TestCase):
             "shopware",
             "lightspeed",
             "volusion",
-            "shift4shop",
+            "cart_storefront",
         ):
             self.assertIn(platform, values)
 
@@ -692,20 +692,25 @@ class FeedSourceTypeEnumTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# DB enum migration (0057) — guards against the Codex P1 review finding
+# DB enum migrations (0057 + 0058) — guards against the Codex P1 review
+# finding plus the Cart Storefront rename hotfix.
 # ---------------------------------------------------------------------------
 
 
 class DbEnumMigrationTests(unittest.TestCase):
-    """Verify the 0057 SQL migration covers every stub platform.
+    """Verify the SQL migrations cover every stub platform.
 
-    Without this migration, ``feed_sources.source_type`` (a real
-    PostgreSQL ENUM declared in 0033) would reject INSERTs of the new
-    Python enum values with "invalid input value for enum" because the
-    DB-side enum and the application-side enum are separate things.
-    The test loads the migration file as text and asserts that an
-    ``ALTER TYPE … ADD VALUE`` statement exists for each new platform
-    so a refactor that drops one is caught immediately by CI.
+    Without 0057, ``feed_sources.source_type`` (a real PostgreSQL ENUM
+    declared in 0033) would reject INSERTs of the new Python enum values
+    with "invalid input value for enum" because the DB-side enum and the
+    application-side enum are separate things. The test loads the
+    migration file as text and asserts that an ``ALTER TYPE … ADD VALUE``
+    statement exists for each new platform so a refactor that drops one
+    is caught immediately by CI.
+
+    Migration 0058 then renames ``shift4shop`` (the misnamed value
+    introduced in 0057) to ``cart_storefront`` so the DB and application
+    enums match the corrected naming.
     """
 
     def test_every_new_platform_has_an_alter_type_add_value(self) -> None:
@@ -750,6 +755,29 @@ class DbEnumMigrationTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("ALTER TYPE feed_source_type", sql)
 
+    def test_0058_renames_shift4shop_to_cart_storefront(self) -> None:
+        """The hotfix migration must rename the misnamed enum value so
+        production rows created with ``source_type='shift4shop'`` carry
+        over cleanly to ``source_type='cart_storefront'``."""
+        from pathlib import Path
+
+        migration_path = (
+            Path(__file__).resolve().parents[1]
+            / "db"
+            / "migrations"
+            / "0058_rename_shift4shop_to_cart_storefront.sql"
+        )
+        self.assertTrue(
+            migration_path.exists(),
+            f"Migration file missing: {migration_path}",
+        )
+        sql = migration_path.read_text(encoding="utf-8")
+        self.assertIn(
+            "RENAME VALUE 'shift4shop' TO 'cart_storefront'",
+            sql,
+        )
+        self.assertIn("ALTER TYPE feed_source_type", sql)
+
 
 # ---------------------------------------------------------------------------
 # Sync gate — guards against the Codex P2 review finding
@@ -780,7 +808,7 @@ class SyncGateTests(unittest.TestCase):
             FeedSourceType.shopware,
             FeedSourceType.lightspeed,
             FeedSourceType.volusion,
-            FeedSourceType.shift4shop,
+            FeedSourceType.cart_storefront,
         ):
             with self.subTest(stub=stub.value):
                 self.assertIn(stub, self._unsupported)

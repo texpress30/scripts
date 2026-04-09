@@ -8,7 +8,7 @@ export type FeedSourceType =
   | "shopware"
   | "lightspeed"
   | "volusion"
-  | "shift4shop"
+  | "cart_storefront"
   | "csv"
   | "json"
   | "xml"

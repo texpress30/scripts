@@ -37,7 +37,7 @@ const ECOMMERCE_SOURCES: SourceTypeOption[] = [
   { type: "shopware", label: "Shopware", description: "Sincronizează catalogul din Shopware 6", icon: Globe, color: "text-indigo-600 dark:text-indigo-400" },
   { type: "lightspeed", label: "Lightspeed", description: "Importă produse din Lightspeed eCom", icon: Zap, color: "text-yellow-600 dark:text-yellow-400" },
   { type: "volusion", label: "Volusion", description: "Conectare la Volusion prin API", icon: Truck, color: "text-red-600 dark:text-red-400" },
-  { type: "shift4shop", label: "Shift4Shop", description: "Importă produse din Shift4Shop / 3dcart", icon: Rocket, color: "text-fuchsia-600 dark:text-fuchsia-400" },
+  { type: "cart_storefront", label: "Cart Storefront", description: "Importă produse din Cart.com", icon: Rocket, color: "text-fuchsia-600 dark:text-fuchsia-400" },
 ];
 
 const FILE_SOURCES: SourceTypeOption[] = [

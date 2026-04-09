@@ -10,7 +10,7 @@ connector yet:
 * Shopware
 * Lightspeed
 * Volusion
-* Shift4Shop (a.k.a. 3dcart, Cart Storefront)
+* Cart Storefront (cart.com)
 
 Each platform gets its own router instance via :func:`build_router` —
 ``main.py`` mounts six instances under

@@ -159,7 +159,7 @@ app.include_router(bigcommerce_integration_router)
 app.include_router(woocommerce_router)
 
 # Generic API-key e-commerce platforms (PrestaShop / OpenCart / Shopware /
-# Lightspeed / Volusion / Shift4Shop). Each platform mounts the same
+# Lightspeed / Volusion / Cart Storefront). Each platform mounts the same
 # parametrised CRUD router under ``/integrations/{platform}/sources``.
 # Adding a 7th platform = one new entry in
 # ``app.integrations.generic_api_key.config.PLATFORM_DEFINITIONS`` plus a
@@ -170,7 +170,7 @@ for _generic_platform_key in (
     "shopware",
     "lightspeed",
     "volusion",
-    "shift4shop",
+    "cart_storefront",
 ):
     app.include_router(build_generic_api_key_router(_generic_platform_key))
 

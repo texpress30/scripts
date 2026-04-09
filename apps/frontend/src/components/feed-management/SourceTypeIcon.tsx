@@ -26,7 +26,7 @@ const SOURCE_TYPE_CONFIG: Record<FeedSourceType, { icon: typeof ShoppingBag; lab
   shopware: { icon: Globe, label: "Shopware", color: "text-indigo-600 dark:text-indigo-400" },
   lightspeed: { icon: Zap, label: "Lightspeed", color: "text-yellow-600 dark:text-yellow-400" },
   volusion: { icon: Truck, label: "Volusion", color: "text-red-600 dark:text-red-400" },
-  shift4shop: { icon: Rocket, label: "Shift4Shop", color: "text-fuchsia-600 dark:text-fuchsia-400" },
+  cart_storefront: { icon: Rocket, label: "Cart Storefront", color: "text-fuchsia-600 dark:text-fuchsia-400" },
   csv: { icon: FileSpreadsheet, label: "CSV", color: "text-emerald-600 dark:text-emerald-400" },
   json: { icon: FileJson, label: "JSON", color: "text-amber-600 dark:text-amber-400" },
   xml: { icon: FileCode, label: "XML", color: "text-rose-600 dark:text-rose-400" },
