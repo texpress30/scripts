@@ -99,6 +99,48 @@ class _StubSource:
         self.shop_domain = shop_domain
 
 
+class _FakeRequest:
+    """Minimal stand-in for ``starlette.requests.Request`` — only needs headers.
+
+    The new HTML-first callbacks read ``request.headers.get("accept")`` to
+    decide whether to return HTML (browser / BC iFrame) or JSON (API
+    clients / existing tests). Most tests want the JSON branch so the
+    existing assertions on ``.success`` / ``.store_hash`` continue to
+    work; a few new tests pass ``text/html`` to exercise the HTML branch.
+    """
+
+    def __init__(self, accept: str = "application/json") -> None:
+        self.headers = {"accept": accept}
+
+
+def _json_request() -> _FakeRequest:
+    return _FakeRequest(accept="application/json")
+
+
+def _html_request() -> _FakeRequest:
+    return _FakeRequest(accept="text/html,application/xhtml+xml,*/*;q=0.8")
+
+
+def _parse_json_response(response) -> dict[str, Any]:
+    """Decode a Starlette ``JSONResponse`` body back into a dict.
+
+    The router now returns raw ``JSONResponse`` / ``HTMLResponse`` objects
+    instead of Pydantic models, so assertions need to pull values out of
+    the encoded body. Every call site that used to assert on
+    ``response.success`` etc. now asserts on ``_parse_json_response(...)['success']``.
+    """
+    body = getattr(response, "body", None)
+    assert body is not None, f"expected JSONResponse, got {response!r}"
+    return json.loads(body.decode("utf-8"))
+
+
+def _extract_html(response) -> str:
+    """Decode a Starlette ``HTMLResponse`` body to a string."""
+    body = getattr(response, "body", None)
+    assert body is not None, f"expected HTMLResponse, got {response!r}"
+    return body.decode("utf-8")
+
+
 class AuthCallbackTests(unittest.TestCase):
     def setUp(self) -> None:
         self._env = os.environ.copy()
@@ -159,6 +201,7 @@ class AuthCallbackTests(unittest.TestCase):
             self.bc_api._source_repo, "mark_oauth_connected", side_effect=_fake_mark
         ):
             response = self.bc_api.bigcommerce_auth_callback(
+                request=_json_request(),
                 code="code-xyz",
                 scope="store_v2_products_read_only",
                 context="stores/abc123",
@@ -166,9 +209,10 @@ class AuthCallbackTests(unittest.TestCase):
                 subaccount_id=42,
             )
 
-        self.assertTrue(response.success)
-        self.assertEqual(response.store_hash, "abc123")
-        self.assertEqual(response.scope, "store_v2_products_read_only")
+        body = _parse_json_response(response)
+        self.assertTrue(body["success"])
+        self.assertEqual(body["store_hash"], "abc123")
+        self.assertEqual(body["scope"], "store_v2_products_read_only")
         self.assertEqual(len(stored_creds), 1)
         self.assertEqual(stored_creds[0]["store_hash"], "abc123")
         self.assertEqual(stored_creds[0]["access_token"], "bc_TOKEN")
@@ -210,6 +254,7 @@ class AuthCallbackTests(unittest.TestCase):
             self.bc_api._source_repo, "mark_oauth_connected", side_effect=_fake_mark
         ):
             response = self.bc_api.bigcommerce_auth_callback(
+                request=_json_request(),
                 code="code-xyz",
                 scope="store_v2_products_read_only",
                 context="stores/abc123",
@@ -217,7 +262,8 @@ class AuthCallbackTests(unittest.TestCase):
                 subaccount_id=42,
             )
 
-        self.assertTrue(response.success)
+        body = _parse_json_response(response)
+        self.assertTrue(body["success"])
         self.assertEqual(created_sources, [])
         self.assertEqual(marked_connected, ["existing-src"])
         self.assertEqual(len(stored_creds), 1)
@@ -243,6 +289,7 @@ class AuthCallbackTests(unittest.TestCase):
             side_effect=_unexpected,
         ):
             response = self.bc_api.bigcommerce_auth_callback(
+                request=_json_request(),
                 code="code-xyz",
                 scope="store_v2_products_read_only",
                 context="stores/abc123",
@@ -250,35 +297,45 @@ class AuthCallbackTests(unittest.TestCase):
                 subaccount_id=None,
             )
 
-        self.assertTrue(response.success)
+        body = _parse_json_response(response)
+        self.assertTrue(body["success"])
         self.assertEqual(len(stored_creds), 1)
         self.assertEqual(called_repo, [])  # repo lookup is skipped w/o subaccount
 
     def test_callback_invalid_context_returns_400(self) -> None:
+        # HTML errors are now returned as HTMLResponse with status_code=400
+        # (no HTTPException raised) so the browser iFrame shows a friendly
+        # page. JSON clients get the same 400 but with a JSON body.
         with patch.object(self.bc_api.bc_auth, "exchange_code_for_token"):
-            with self.assertRaises(self.bc_api.HTTPException) as ctx:
-                self.bc_api.bigcommerce_auth_callback(
-                    code="code",
-                    scope="",
-                    context="not-a-context",
-                    account_uuid=None,
-                    subaccount_id=None,
-                )
-        self.assertEqual(ctx.exception.status_code, 400)
+            response = self.bc_api.bigcommerce_auth_callback(
+                request=_json_request(),
+                code="code",
+                scope="",
+                context="not-a-context",
+                account_uuid=None,
+                subaccount_id=None,
+            )
+        self.assertEqual(response.status_code, 400)
+        body = _parse_json_response(response)
+        self.assertFalse(body["success"])
+        self.assertIn("stores/", body["error"])
 
     def test_callback_unconfigured_returns_503(self) -> None:
         for key in ("BC_CLIENT_ID", "BC_CLIENT_SECRET", "BC_REDIRECT_URI"):
             os.environ.pop(key, None)
         bc_api = _reload_router()
-        with self.assertRaises(bc_api.HTTPException) as ctx:
-            bc_api.bigcommerce_auth_callback(
-                code="code",
-                scope="",
-                context="stores/abc123",
-                account_uuid=None,
-                subaccount_id=None,
-            )
-        self.assertEqual(ctx.exception.status_code, 503)
+        response = bc_api.bigcommerce_auth_callback(
+            request=_json_request(),
+            code="code",
+            scope="",
+            context="stores/abc123",
+            account_uuid=None,
+            subaccount_id=None,
+        )
+        self.assertEqual(response.status_code, 503)
+        body = _parse_json_response(response)
+        self.assertFalse(body["success"])
+        self.assertIn("OAuth", body["error"])
         _set_env()
         _reload_router()
 
@@ -291,15 +348,82 @@ class AuthCallbackTests(unittest.TestCase):
         with patch.object(
             self.bc_api.bc_auth, "exchange_code_for_token", side_effect=_boom
         ):
-            with self.assertRaises(self.bc_api.HTTPException) as ctx:
-                self.bc_api.bigcommerce_auth_callback(
-                    code="bad",
-                    scope="",
-                    context="stores/abc123",
-                    account_uuid=None,
-                    subaccount_id=None,
-                )
-        self.assertEqual(ctx.exception.status_code, 400)
+            response = self.bc_api.bigcommerce_auth_callback(
+                request=_json_request(),
+                code="bad",
+                scope="",
+                context="stores/abc123",
+                account_uuid=None,
+                subaccount_id=None,
+            )
+        self.assertEqual(response.status_code, 400)
+        body = _parse_json_response(response)
+        self.assertFalse(body["success"])
+        self.assertIn("bad code", body["error"])
+
+    def test_callback_returns_html_success_page_for_browser(self) -> None:
+        """When the merchant browser hits the callback from the BC iFrame
+        (``Accept: text/html``), the response is a rendered success page."""
+
+        def _fake_store(**kwargs):
+            pass
+
+        with patch.object(
+            self.bc_api.bc_auth, "exchange_code_for_token", side_effect=self._fake_exchange()
+        ), patch.object(
+            self.bc_api.bc_service, "store_bigcommerce_credentials", side_effect=_fake_store
+        ):
+            response = self.bc_api.bigcommerce_auth_callback(
+                request=_html_request(),
+                code="code-xyz",
+                scope="store_v2_products_read_only",
+                context="stores/abc123",
+                account_uuid="bc-account-uuid",
+                subaccount_id=None,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        html = _extract_html(response)
+        self.assertIn("<!DOCTYPE html>", html)
+        self.assertIn("Instalare reușită", html)
+        self.assertIn("abc123", html)
+        # Link out to Omarosa must open in a new tab (we're in an iFrame).
+        self.assertIn('target="_blank"', html)
+        self.assertIn("admin.omarosa.ro", html)
+
+    def test_callback_returns_html_error_page_for_browser_on_bad_context(self) -> None:
+        with patch.object(self.bc_api.bc_auth, "exchange_code_for_token"):
+            response = self.bc_api.bigcommerce_auth_callback(
+                request=_html_request(),
+                code="code",
+                scope="",
+                context="not-a-context",
+                account_uuid=None,
+                subaccount_id=None,
+            )
+        self.assertEqual(response.status_code, 400)
+        html = _extract_html(response)
+        self.assertIn("Instalare eșuată", html)
+        self.assertIn("stores/", html)
+
+    def test_callback_html_escapes_malicious_store_hash(self) -> None:
+        """Defensive: the store hash comes from a query param and could
+        theoretically contain HTML. ``render_install_error`` HTML-escapes
+        it before embedding in the page."""
+        response = self.bc_api.bigcommerce_auth_callback(
+            request=_html_request(),
+            code="code",
+            scope="",
+            context="stores/<script>alert(1)</script>",
+            account_uuid=None,
+            subaccount_id=None,
+        )
+        self.assertEqual(response.status_code, 400)
+        html = _extract_html(response)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        # The raw angle brackets from the error message MAY be escaped
+        # or absent — the only hard requirement is that no executable
+        # <script> tag lands in the output.
 
 
 class LoadCallbackTests(unittest.TestCase):
@@ -315,24 +439,74 @@ class LoadCallbackTests(unittest.TestCase):
 
     def test_valid_jwt_returns_session_info(self) -> None:
         token = _valid_jwt()
-        response = self.bc_api.bigcommerce_load_callback(signed_payload_jwt=token)
-        self.assertEqual(response.status, "ok")
-        self.assertEqual(response.store_hash, "abc123")
-        self.assertEqual(response.user_email, "user@example.com")
-        self.assertEqual(response.owner_email, "owner@example.com")
+        with patch.object(
+            self.bc_api.bc_service,
+            "get_access_token_for_store",
+            return_value="bc_TOKEN",
+        ):
+            response = self.bc_api.bigcommerce_load_callback(
+                request=_json_request(), signed_payload_jwt=token
+            )
+        body = _parse_json_response(response)
+        self.assertEqual(body["status"], "ok")
+        self.assertEqual(body["store_hash"], "abc123")
+        self.assertEqual(body["user_email"], "user@example.com")
+        self.assertEqual(body["owner_email"], "owner@example.com")
 
     def test_invalid_jwt_returns_401(self) -> None:
         # Tamper the signature segment.
         token = _valid_jwt() + "tampered"
         with self.assertRaises(self.bc_api.HTTPException) as ctx:
-            self.bc_api.bigcommerce_load_callback(signed_payload_jwt=token)
+            self.bc_api.bigcommerce_load_callback(
+                request=_json_request(), signed_payload_jwt=token
+            )
         self.assertEqual(ctx.exception.status_code, 401)
 
     def test_wrong_secret_returns_401(self) -> None:
         token = _valid_jwt(secret="other-secret")
         with self.assertRaises(self.bc_api.HTTPException) as ctx:
-            self.bc_api.bigcommerce_load_callback(signed_payload_jwt=token)
+            self.bc_api.bigcommerce_load_callback(
+                request=_json_request(), signed_payload_jwt=token
+            )
         self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_valid_jwt_returns_html_dashboard_for_browser(self) -> None:
+        """The happy path from BC iFrame: merchant clicks the app → load
+        callback fires → they see a rendered mini-dashboard, not JSON."""
+        token = _valid_jwt()
+        with patch.object(
+            self.bc_api.bc_service,
+            "get_access_token_for_store",
+            return_value="bc_TOKEN",
+        ):
+            response = self.bc_api.bigcommerce_load_callback(
+                request=_html_request(), signed_payload_jwt=token
+            )
+        self.assertEqual(response.status_code, 200)
+        html = _extract_html(response)
+        self.assertIn("<!DOCTYPE html>", html)
+        self.assertIn("Voxel Feed Management", html)
+        self.assertIn("abc123", html)
+        self.assertIn("user@example.com", html)
+        self.assertIn("Activ", html)  # Connected badge
+        self.assertIn('target="_blank"', html)
+        self.assertIn("admin.omarosa.ro", html)
+
+    def test_html_dashboard_shows_inactive_when_credentials_missing(self) -> None:
+        """If the store was uninstalled + reopened before the auth callback
+        ran, the load dashboard surfaces an 'Inactiv' badge."""
+        token = _valid_jwt()
+        with patch.object(
+            self.bc_api.bc_service,
+            "get_access_token_for_store",
+            return_value=None,
+        ):
+            response = self.bc_api.bigcommerce_load_callback(
+                request=_html_request(), signed_payload_jwt=token
+            )
+        self.assertEqual(response.status_code, 200)
+        html = _extract_html(response)
+        self.assertIn("Inactiv", html)
 
 
 class UninstallCallbackTests(unittest.TestCase):
