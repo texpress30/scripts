@@ -408,6 +408,28 @@ class FeedSourceRepository:
                 rows = cur.fetchall() or []
         return {str(row[0]) for row in rows if row[0]}
 
+    def list_claimed_shop_domains(self) -> set[str]:
+        """Return the set of Shopify shop domains that already have a feed_sources row.
+
+        Used by the ``GET /integrations/shopify/stores/available`` endpoint to
+        compute the unclaimed pool (= installed tokens minus rows that have
+        already been bound to a subaccount). Mirrors
+        :meth:`list_claimed_bigcommerce_store_hashes` — the deferred-claim
+        flow treats Shopify identically to BigCommerce.
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT shop_domain
+                    FROM feed_sources
+                    WHERE source_type = 'shopify'
+                      AND shop_domain IS NOT NULL
+                    """
+                )
+                rows = cur.fetchall() or []
+        return {str(row[0]) for row in rows if row[0]}
+
     def get_by_id(self, source_id: str) -> FeedSourceResponse:
         with _connect() as conn:
             with conn.cursor() as cur:

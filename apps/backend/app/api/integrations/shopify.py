@@ -3,23 +3,44 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from urllib import error, request
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import (
+    enforce_action_scope,
+    enforce_subaccount_action,
+    get_current_user,
+)
 from app.core.config import load_settings
 from app.integrations.shopify import config as shopify_config
 from app.integrations.shopify import service as shopify_oauth_service
 from app.integrations.shopify.schemas import (
+    ShopifyAvailableStore,
+    ShopifyAvailableStoresResponse,
+    ShopifyClaimRequest,
     ShopifyConnectResponse,
     ShopifyOAuthExchangeRequest,
     ShopifyOAuthExchangeResponse,
+    ShopifyPreClaimTestRequest,
+    ShopifyPreClaimTestResponse,
+    ShopifySourceResponse,
     ShopifyStatusResponse,
 )
 from app.integrations.shopify.service import ShopifyIntegrationError
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
+from app.services.feed_management.exceptions import (
+    FeedSourceAlreadyExistsError,
+    FeedSourceNotFoundError,
+)
+from app.services.feed_management.models import (
+    FeedSourceConfig,
+    FeedSourceCreate,
+    FeedSourceResponse,
+    FeedSourceType,
+)
 from app.services.feed_management.repository import FeedSourceRepository
 
 logger = logging.getLogger(__name__)
@@ -248,10 +269,266 @@ def shopify_oauth_status(
 
 
 # ---------------------------------------------------------------------------
-# Webhooks (PUBLIC — Shopify-authenticated via HMAC, no JWT/session required)
+# Deferred creation + claim flow (mirrors BigCommerce, PR #942–#948)
 # ---------------------------------------------------------------------------
+#
+# The merchant installs VOXEL from the Shopify App Store; the OAuth
+# callback persists the access token encrypted at rest keyed by
+# ``shop_domain`` **without** creating a ``feed_sources`` row. The agency
+# admin then hits ``GET /stores/available`` from the wizard, picks an
+# installed shop, and POSTs ``/sources/claim`` to bind it to one of
+# their subaccounts.
+#
+# Backward compatibility: the legacy agency-initiated OAuth flow —
+# ``POST /subaccount/{id}/feed-sources`` creates the row first, then
+# returns an authorize URL — still works unchanged. The deferred flow
+# only **adds** new endpoints; nothing existing is removed.
+
 
 _source_repo = FeedSourceRepository()
+
+
+def _source_to_shopify_response(source: FeedSourceResponse) -> ShopifySourceResponse:
+    """Project a generic ``FeedSourceResponse`` row onto the Shopify shape."""
+    return ShopifySourceResponse(
+        source_id=source.id,
+        subaccount_id=source.subaccount_id,
+        source_name=source.name,
+        shop_domain=source.shop_domain or "",
+        catalog_type=source.catalog_type,
+        catalog_variant=source.catalog_variant,
+        connection_status=source.connection_status,
+        has_token=source.has_token,
+        token_scopes=source.token_scopes,
+        last_connection_check=source.last_connection_check,
+        last_error=source.last_error,
+        is_active=source.is_active,
+        created_at=source.created_at,
+        updated_at=source.updated_at,
+    )
+
+
+@router.get(
+    "/stores/available",
+    response_model=ShopifyAvailableStoresResponse,
+)
+def list_available_shopify_stores(
+    user: AuthUser = Depends(get_current_user),
+) -> ShopifyAvailableStoresResponse:
+    """Return Shopify shops that have installed the app but not yet been claimed.
+
+    The set is ``{installed tokens in integration_secrets}`` minus
+    ``{shop_domains already linked to a feed_sources row}``. Agency-scoped
+    because the unclaimed pool is global — any agency admin can pick any
+    unclaimed shop and bind it to one of their subaccounts. Mirrors the
+    BigCommerce ``GET /integrations/bigcommerce/stores/available`` shape.
+    """
+    _enforce_feature_flag()
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+
+    installed = shopify_oauth_service.list_installed_shops_with_metadata()
+    claimed = _source_repo.list_claimed_shop_domains()
+    unclaimed = [
+        ShopifyAvailableStore(
+            shop_domain=str(entry.get("shop_domain") or ""),
+            installed_at=entry.get("installed_at"),
+            scope=entry.get("scope"),
+        )
+        for entry in installed
+        if str(entry.get("shop_domain") or "") not in claimed
+    ]
+    unclaimed.sort(key=lambda item: item.shop_domain)
+    return ShopifyAvailableStoresResponse(stores=unclaimed, total=len(unclaimed))
+
+
+@router.post(
+    "/sources/claim",
+    response_model=ShopifySourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def claim_shopify_source(
+    payload: ShopifyClaimRequest,
+    subaccount_id: int = Query(
+        ..., description="Subaccount that should own this Shopify source"
+    ),
+    user: AuthUser = Depends(get_current_user),
+) -> ShopifySourceResponse:
+    """Bind an installed Shopify shop to a subaccount.
+
+    Pre-conditions checked here:
+
+    1. ``shop_domain`` has a token in ``integration_secrets`` (i.e. the
+       merchant has installed VOXEL from the Shopify App Store and the
+       OAuth callback fired) — 404 otherwise so we don't leak the
+       unclaimed pool.
+    2. ``shop_domain`` is not already claimed — 409 otherwise. The
+       duplicate check runs inside ``FeedSourceRepository.create`` by
+       ``(subaccount_id, source_type, shop_domain)``.
+
+    On success the new ``feed_sources`` row is flipped to
+    ``connection_status='connected'`` immediately: we already hold a
+    valid offline token for this shop from the install flow, so there's
+    no reason to make the agency admin click "Test connection" before
+    using the source.
+    """
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
+
+    try:
+        clean_shop = shopify_config.validate_shop_domain(payload.shop_domain)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    creds = shopify_oauth_service.get_shopify_credentials(clean_shop)
+    if creds is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "No installed Shopify shop with this shop_domain. "
+                "Make sure the merchant has installed the app first."
+            ),
+        )
+
+    try:
+        created = _source_repo.create(
+            FeedSourceCreate(
+                subaccount_id=subaccount_id,
+                source_type=FeedSourceType.shopify,
+                name=payload.source_name,
+                config=FeedSourceConfig(store_url=f"https://{clean_shop}"),
+                catalog_type=payload.catalog_type,
+                catalog_variant=payload.catalog_variant,
+                shop_domain=clean_shop,
+            )
+        )
+    except FeedSourceAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This Shopify shop is already claimed (by this subaccount "
+                "or another). Detach the existing source first."
+            ),
+        ) from exc
+
+    # Mirror the OAuth scope onto the row so the UI knows the granted
+    # scope without re-reading the secrets store on every page load.
+    granted_scope = creds.get("scope")
+    try:
+        refreshed = _source_repo.mark_oauth_connected(
+            created.id, scopes=granted_scope or None
+        )
+    except FeedSourceNotFoundError:
+        refreshed = created
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="shopify.source.claimed",
+        resource=f"feed_source:{refreshed.id}",
+        details={
+            "subaccount_id": subaccount_id,
+            "shop_domain": clean_shop,
+            "scope": granted_scope,
+        },
+    )
+    return _source_to_shopify_response(refreshed)
+
+
+@router.post(
+    "/test-connection/by-shop",
+    response_model=ShopifyPreClaimTestResponse,
+)
+def test_shopify_connection_pre_claim(
+    payload: ShopifyPreClaimTestRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> ShopifyPreClaimTestResponse:
+    """Probe a not-yet-claimed Shopify shop using the installed credentials.
+
+    Used by the wizard "test before claim" button — the agency admin
+    can verify the install was wired correctly before binding the shop
+    to a subaccount. Resolves credentials by ``shop_domain`` from the
+    secrets store; the request body never carries an access token
+    (the merchant flow is OAuth-only via the Shopify App Store).
+
+    A separate endpoint path (``/test-connection/by-shop``) keeps this
+    route distinct from the legacy ``POST /test-connection`` — which
+    accepts manually supplied credentials for the old agency-initiated
+    flow — so existing callers don't break.
+    """
+    _enforce_feature_flag()
+    enforce_action_scope(user=user, action="data:write", scope="agency")
+
+    try:
+        clean_shop = shopify_config.validate_shop_domain(payload.shop_domain)
+    except ValueError as exc:
+        return ShopifyPreClaimTestResponse(success=False, error=str(exc))
+
+    access_token = shopify_oauth_service.get_access_token_for_shop(clean_shop)
+    if access_token is None:
+        return ShopifyPreClaimTestResponse(
+            success=False,
+            error="No Shopify credentials stored for this shop_domain",
+        )
+
+    url = f"{shopify_config.get_shopify_api_base_url(clean_shop)}/shop.json"
+    req = request.Request(
+        url=url,
+        method="GET",
+        headers={
+            "X-Shopify-Access-Token": access_token,
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=8) as response:
+            raw = response.read().decode("utf-8")
+    except error.HTTPError as exc:
+        logger.warning(
+            "shopify_preclaim_probe_http_error shop=%s status=%s",
+            clean_shop,
+            exc.code,
+        )
+        result = ShopifyPreClaimTestResponse(
+            success=False,
+            error=f"Shopify HTTP {exc.code}",
+        )
+    except (error.URLError, TimeoutError) as exc:
+        logger.warning(
+            "shopify_preclaim_probe_network_error shop=%s err=%s", clean_shop, exc
+        )
+        result = ShopifyPreClaimTestResponse(
+            success=False, error="Could not reach Shopify"
+        )
+    else:
+        try:
+            parsed = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            parsed = {}
+        shop_info = parsed.get("shop") if isinstance(parsed, dict) else {}
+        if not isinstance(shop_info, dict):
+            shop_info = {}
+        result = ShopifyPreClaimTestResponse(
+            success=True,
+            store_name=str(shop_info.get("name") or "") or None,
+            domain=str(shop_info.get("domain") or clean_shop) or None,
+            currency=str(shop_info.get("currency") or "") or None,
+        )
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="shopify.test_connection.pre_claim",
+        resource="integration:shopify",
+        details={"shop_domain": clean_shop, "success": result.success},
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Webhooks (PUBLIC — Shopify-authenticated via HMAC, no JWT/session required)
+# ---------------------------------------------------------------------------
 
 
 @router.post("/webhooks/app-uninstalled")

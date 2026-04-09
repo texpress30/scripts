@@ -9,6 +9,10 @@ import { SourceTypeSelector } from "@/components/feed-management/SourceTypeSelec
 import { CatalogTypeSelector } from "@/components/feed-management/CatalogTypeSelector";
 import { FileSourceForm } from "@/components/feed-management/forms/FileSourceForm";
 import { ShopifySourceForm } from "@/components/feed-management/forms/ShopifySourceForm";
+import {
+  ShopifyClaimForm,
+  type ShopifyClaimFormData,
+} from "@/components/feed-management/forms/ShopifyClaimForm";
 import { GenericEcommerceForm } from "@/components/feed-management/forms/GenericEcommerceForm";
 import {
   MagentoSourceForm,
@@ -29,6 +33,7 @@ import {
   testMagentoConnectionBeforeSave,
 } from "@/lib/hooks/useMagentoSource";
 import { claimBigCommerceStore } from "@/lib/hooks/useBigCommerceSource";
+import { claimShopifyStore } from "@/lib/hooks/useShopifySource";
 import {
   createGenericApiKeySource,
   type GenericApiKeyPlatformKey,
@@ -62,6 +67,12 @@ export default function NewSourcePage() {
   const [selectedSubtype, setSelectedSubtype] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // When ``true``, the Shopify step renders the legacy ``ShopifySourceForm``
+  // (manual Shop URL + agency-initiated OAuth) instead of the default
+  // deferred-claim form. Toggled by the "Conectează manual" link on
+  // ``ShopifyClaimForm`` so edge cases (no App Store access, reconnect
+  // flows) keep working without losing functionality.
+  const [shopifyManualMode, setShopifyManualMode] = useState(false);
 
   function handleSelectSourceType(type: FeedSourceType) {
     setSelectedType(type);
@@ -81,9 +92,11 @@ export default function NewSourcePage() {
   function handleBack() {
     if (step === "configure") {
       setStep("catalog_type");
+      setShopifyManualMode(false);
       setError("");
     } else if (step === "catalog_type") {
       setSelectedType(null);
+      setShopifyManualMode(false);
       setStep("source_type");
       setError("");
     } else {
@@ -123,6 +136,37 @@ export default function NewSourcePage() {
       window.location.href = result.authorize_url;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eroare la inițierea conexiunii Shopify.");
+      setBusy(false);
+    }
+  }
+
+  async function handleClaimShopify(data: ShopifyClaimFormData) {
+    if (!selectedId) {
+      setError("Selectează un client înainte de a crea sursa.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await claimShopifyStore(selectedId, {
+        shop_domain: data.shop_domain,
+        source_name: data.source_name,
+        catalog_type: selectedCatalog,
+        catalog_variant: selectedSubtype ?? "physical_products",
+      });
+      router.push("/agency/feed-management/sources");
+    } catch (err) {
+      // Surface a friendly message for the common 409 (already claimed)
+      // case so the agency user knows the shop is bound to another row.
+      const message =
+        err instanceof Error ? err.message : "Eroare la revendicarea magazinului Shopify.";
+      const isConflict = /already.*claim|409/i.test(message);
+      setError(
+        isConflict
+          ? "Acest magazin Shopify este deja revendicat. Detașează sursa existentă mai întâi."
+          : message,
+      );
+    } finally {
       setBusy(false);
     }
   }
@@ -368,11 +412,30 @@ export default function NewSourcePage() {
           {step === "configure" && selectedType !== null && (
             <div className="wm-card max-w-2xl p-6">
               {selectedType === "shopify" ? (
-                <ShopifySourceForm
-                  onConnect={(data) => void handleConnectShopify(data)}
-                  onCancel={handleBack}
-                  busy={busy}
-                />
+                shopifyManualMode ? (
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => setShopifyManualMode(false)}
+                      className="text-xs text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+                      disabled={busy}
+                    >
+                      ← Înapoi la lista de magazine instalate
+                    </button>
+                    <ShopifySourceForm
+                      onConnect={(data) => void handleConnectShopify(data)}
+                      onCancel={handleBack}
+                      busy={busy}
+                    />
+                  </div>
+                ) : (
+                  <ShopifyClaimForm
+                    onClaim={(data) => void handleClaimShopify(data)}
+                    onFallbackManual={() => setShopifyManualMode(true)}
+                    onCancel={handleBack}
+                    busy={busy}
+                  />
+                )
               ) : selectedType === "magento" ? (
                 <MagentoSourceForm
                   onSubmit={(data) => void handleCreateMagento(data)}
