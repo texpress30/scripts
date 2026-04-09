@@ -25,10 +25,26 @@ def _get_connector(source: FeedSourceResponse) -> BaseConnector:
     config = source.config or {}
 
     if source.source_type in (FeedSourceType.csv, FeedSourceType.json, FeedSourceType.xml):
+        from app.integrations.file_source import service as file_source_service
         from app.services.feed_management.connectors.file_connector import FileConnector
 
         config.setdefault("file_type", source.source_type.value)
-        return FileConnector(config=config)
+
+        # Optional HTTP Basic Auth — the auth panel on the wizard's file
+        # source form writes these into ``integration_secrets`` via
+        # ``file_source_service.store_file_source_credentials``. When the
+        # feed URL is public the service returns None and the connector
+        # falls back to an unauthenticated fetch (backwards compatible).
+        file_credentials: dict[str, str] | None = None
+        try:
+            file_credentials = file_source_service.get_file_source_credentials(
+                source.id
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to load file source credentials for source %s", source.id
+            )
+        return FileConnector(config=config, credentials=file_credentials or None)
 
     if source.source_type == FeedSourceType.shopify:
         from app.services.feed_management.connectors.shopify_connector import ShopifyConnector

@@ -47,6 +47,9 @@ function normalizeSource(raw: Record<string, unknown>): FeedSource {
     last_connection_check: (raw.last_connection_check as string | null | undefined) ?? null,
     last_error: (raw.last_error as string | null | undefined) ?? null,
     has_token: Boolean(raw.has_token),
+    has_file_auth: Boolean(raw.has_file_auth),
+    file_auth_username: (raw.file_auth_username as string | null | undefined) ?? null,
+    file_auth_password_masked: (raw.file_auth_password_masked as string | null | undefined) ?? null,
     last_import_at: (raw.last_import_at as string | null | undefined) ?? null,
     sync_schedule: (raw.sync_schedule as FeedSource["sync_schedule"]) ?? "manual",
     next_scheduled_sync: (raw.next_scheduled_sync as string) ?? null,
@@ -102,6 +105,14 @@ async function createSourceApi(subId: number, data: CreateFeedSourcePayload): Pr
   };
   if (data.catalog_variant) payload.catalog_variant = data.catalog_variant;
   if (data.shop_domain) payload.shop_domain = data.shop_domain;
+  // Only forward HTTP Basic Auth credentials for file sources that
+  // actually supplied both halves of the pair. The backend rejects
+  // half-configured auth with a 400, so we gate the forward client-side
+  // to keep the API contract tight.
+  if (data.feed_auth_username && data.feed_auth_password) {
+    payload.feed_auth_username = data.feed_auth_username;
+    payload.feed_auth_password = data.feed_auth_password;
+  }
 
   const raw = await apiRequest<Record<string, unknown>>(`/subaccount/${subId}/feed-sources`, {
     method: "POST",
