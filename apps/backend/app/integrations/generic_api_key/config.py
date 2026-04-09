@@ -95,13 +95,13 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
         has_api_secret=False,
         api_key_label="API Key",
     ),
-    "shift4shop": PlatformDefinition(
-        key="shift4shop",
-        display_name="Shift4Shop",
-        feed_source_type=FeedSourceType.shift4shop,
+    "cart_storefront": PlatformDefinition(
+        key="cart_storefront",
+        display_name="Cart Storefront",
+        feed_source_type=FeedSourceType.cart_storefront,
         has_api_secret=True,
-        api_key_label="Private Key",
-        api_secret_label="Token",
+        api_key_label="API Token",
+        api_secret_label="API Secret",
     ),
 }
 

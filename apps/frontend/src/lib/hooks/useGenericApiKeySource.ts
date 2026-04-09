@@ -4,7 +4,7 @@
  * Thin client for the generic-API-key e-commerce platform endpoints.
  *
  * Six platforms share the same parametrised CRUD shape on the backend
- * (PrestaShop, OpenCart, Shopware, Lightspeed, Volusion, Shift4Shop).
+ * (PrestaShop, OpenCart, Shopware, Lightspeed, Volusion, Cart Storefront).
  * This module exposes one set of plain async helpers that take
  * ``platform`` as the first argument so callers don't have to maintain
  * six near-identical hooks.
@@ -26,7 +26,7 @@ export type GenericApiKeyPlatformKey =
   | "shopware"
   | "lightspeed"
   | "volusion"
-  | "shift4shop";
+  | "cart_storefront";
 
 export type GenericApiKeyPlatformDefinition = {
   key: GenericApiKeyPlatformKey;
@@ -95,16 +95,16 @@ export const GENERIC_API_KEY_PLATFORMS: Record<
     helpText:
       "Găsește cheia în Volusion Admin → Inventory → Import/Export → Generic API URL. Copiază cheia URL encoded fără partea de domeniu.",
   },
-  shift4shop: {
-    key: "shift4shop",
-    displayName: "Shift4Shop",
-    apiKeyLabel: "Private Key",
-    apiSecretLabel: "Token",
+  cart_storefront: {
+    key: "cart_storefront",
+    displayName: "Cart Storefront",
+    apiKeyLabel: "API Token",
+    apiSecretLabel: "API Secret",
     hasApiSecret: true,
-    apiKeyPlaceholder: "ex: your-private-key",
-    apiSecretPlaceholder: "ex: your-token",
+    apiKeyPlaceholder: "ex: your-cart-api-token",
+    apiSecretPlaceholder: "ex: your-cart-api-secret",
     helpText:
-      "Activează din Shift4Shop Admin → Modules → REST API. Generează un Private Key + Token și acordă permisiunile pentru produse.",
+      "Generează tokenul din Cart.com Admin → Settings → API → Storefront API Tokens. Acordă permisiunile pentru catalog și produse, apoi copiază API Token + Secret.",
   },
 };
 
