@@ -217,9 +217,10 @@ class FeedGenerator:
                 channel.channel_type.value, channel.feed_source_id,
             )
 
-            # 3. Fetch all products from MongoDB
-            raw_products = feed_products_repository.list_products(
-                channel.feed_source_id, limit=200,
+            # 3. Fetch all products from MongoDB (no hard cap — feeds must
+            #    emit every synced product, not just the first 200).
+            raw_products = feed_products_repository.list_all_products(
+                channel.feed_source_id,
             )
 
             # 4. Transform each product

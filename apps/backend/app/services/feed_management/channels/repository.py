@@ -149,6 +149,24 @@ class FeedChannelRepository:
                 rows = cur.fetchall()
         return [_parse_channel_row(r) for r in rows]
 
+    def list_active_by_source(self, source_id: str) -> list[FeedChannelResponse]:
+        """Return only channels with status='active' for a source.
+
+        Used by the sync pipeline to decide which channels to auto-regenerate
+        after a successful sync. Draft / paused / error channels are skipped
+        on purpose so we don't revive them silently.
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_CHANNEL_COLUMNS} FROM feed_channels "
+                    "WHERE feed_source_id = %s AND status = 'active' "
+                    "ORDER BY created_at DESC",
+                    (source_id,),
+                )
+                rows = cur.fetchall()
+        return [_parse_channel_row(r) for r in rows]
+
     def update(self, channel_id: str, payload: FeedChannelUpdate) -> FeedChannelResponse:
         sets: list[str] = []
         params: list[Any] = []

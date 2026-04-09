@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -313,6 +314,21 @@ class FeedSyncService:
 
         # Always update source metadata after sync
         self._update_source_after_sync(feed_source_id, imported_count)
+
+        # Auto-regenerate channel feed artifacts on S3 so the public
+        # /feeds/{token}.{ext} endpoint serves the fresh MongoDB data.
+        # Only fires on the success path — gated on status == completed so
+        # we don't overwrite a good feed after a failed / partial sync.
+        if feed_import.status == FeedImportStatus.completed:
+            try:
+                await self._regenerate_channels_after_sync(feed_source_id)
+            except Exception:
+                # Final safety net: regeneration must never break sync.
+                logger.exception(
+                    "sync.post_regen.unexpected_crash feed_source_id=%s",
+                    feed_source_id,
+                )
+
         return feed_import
 
     def _reconcile_stale_products(
@@ -412,6 +428,83 @@ class FeedSyncService:
             logger.info("Updated feed_source %s: product_count=%d, next_sync=%s", feed_source_id, product_count, next_sync)
         except Exception:
             logger.exception("Failed to update feed_source after sync: %s", feed_source_id)
+
+    async def _regenerate_channels_after_sync(
+        self, feed_source_id: str,
+    ) -> None:
+        """Regenerate every active channel's feed artifact after a
+        successful sync, so the public ``/feeds/{token}.{ext}`` endpoint
+        immediately serves the fresh MongoDB data.
+
+        Resilient: one channel failure must not affect others or crash
+        the sync pipeline. Each (synchronous) ``generate()`` call runs in
+        a thread so we don't block the event loop when invoked from a
+        FastAPI BackgroundTask.
+        """
+        try:
+            from app.services.feed_management.channels.feed_generator import (
+                feed_generator,
+            )
+            from app.services.feed_management.channels.repository import (
+                feed_channel_repository,
+            )
+        except Exception:
+            logger.exception(
+                "sync.post_regen.import_failed feed_source_id=%s",
+                feed_source_id,
+            )
+            return
+
+        try:
+            channels = feed_channel_repository.list_active_by_source(
+                feed_source_id,
+            )
+        except Exception:
+            logger.exception(
+                "sync.post_regen.list_channels_failed feed_source_id=%s",
+                feed_source_id,
+            )
+            return
+
+        if not channels:
+            logger.info(
+                "sync.post_regen.no_active_channels feed_source_id=%s",
+                feed_source_id,
+            )
+            return
+
+        logger.info(
+            "sync.post_regen.start feed_source_id=%s channel_count=%d",
+            feed_source_id,
+            len(channels),
+        )
+
+        for channel in channels:
+            try:
+                result = await asyncio.to_thread(
+                    feed_generator.generate, channel.id,
+                )
+                logger.info(
+                    "sync.post_regen.channel_done feed_source_id=%s "
+                    "channel_id=%s status=%s included=%d excluded=%d",
+                    feed_source_id,
+                    channel.id,
+                    result.status,
+                    result.included_products,
+                    result.excluded_products,
+                )
+            except Exception:
+                logger.exception(
+                    "sync.post_regen.channel_failed feed_source_id=%s "
+                    "channel_id=%s",
+                    feed_source_id,
+                    channel.id,
+                )
+                continue  # must not break the loop
+
+        logger.info(
+            "sync.post_regen.done feed_source_id=%s", feed_source_id,
+        )
 
     async def run_sync_background(self, feed_source_id: str) -> None:
         """Wrapper for background task execution."""

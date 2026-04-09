@@ -100,6 +100,35 @@ class FeedProductsRepository:
         )
         return [self._normalize(doc) for doc in cursor if doc]
 
+    def list_all_products(
+        self,
+        feed_source_id: str,
+        *,
+        search: str | None = None,
+        category: str | None = None,
+        batch_size: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Return ALL products for a feed source (no hard cap).
+
+        Used by feed generation where we must emit every synced product.
+        Uses a server-side cursor ``batch_size`` so pymongo's network
+        buffer stays bounded on large sources.
+        """
+        query = self._build_query(
+            feed_source_id, search=search, category=category,
+        )
+        cursor = (
+            self._collection()
+            .find(query)
+            .sort([("updated_at", -1)])
+            .batch_size(batch_size)
+        )
+        return [
+            normalized
+            for normalized in (self._normalize(doc) for doc in cursor if doc)
+            if normalized is not None
+        ]
+
     def count_products(
         self,
         feed_source_id: str,
