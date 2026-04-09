@@ -691,5 +691,230 @@ class FeedSourceTypeEnumTests(unittest.TestCase):
             self.assertIn(platform, values)
 
 
+# ---------------------------------------------------------------------------
+# DB enum migration (0057) — guards against the Codex P1 review finding
+# ---------------------------------------------------------------------------
+
+
+class DbEnumMigrationTests(unittest.TestCase):
+    """Verify the 0057 SQL migration covers every stub platform.
+
+    Without this migration, ``feed_sources.source_type`` (a real
+    PostgreSQL ENUM declared in 0033) would reject INSERTs of the new
+    Python enum values with "invalid input value for enum" because the
+    DB-side enum and the application-side enum are separate things.
+    The test loads the migration file as text and asserts that an
+    ``ALTER TYPE … ADD VALUE`` statement exists for each new platform
+    so a refactor that drops one is caught immediately by CI.
+    """
+
+    def test_every_new_platform_has_an_alter_type_add_value(self) -> None:
+        from pathlib import Path
+
+        migration_path = (
+            Path(__file__).resolve().parents[1]
+            / "db"
+            / "migrations"
+            / "0057_feed_source_type_add_six_platforms.sql"
+        )
+        self.assertTrue(
+            migration_path.exists(),
+            f"Migration file missing: {migration_path}",
+        )
+        sql = migration_path.read_text(encoding="utf-8")
+
+        for platform in (
+            "prestashop",
+            "opencart",
+            "shopware",
+            "lightspeed",
+            "volusion",
+            "shift4shop",
+        ):
+            with self.subTest(platform=platform):
+                expected = f"ADD VALUE IF NOT EXISTS '{platform}'"
+                self.assertIn(
+                    expected,
+                    sql,
+                    f"Migration is missing the ADD VALUE for {platform!r}",
+                )
+
+    def test_uses_alter_type_on_feed_source_type_enum(self) -> None:
+        from pathlib import Path
+
+        sql = (
+            Path(__file__).resolve().parents[1]
+            / "db"
+            / "migrations"
+            / "0057_feed_source_type_add_six_platforms.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ALTER TYPE feed_source_type", sql)
+
+
+# ---------------------------------------------------------------------------
+# Sync gate — guards against the Codex P2 review finding
+# ---------------------------------------------------------------------------
+
+
+class SyncGateTests(unittest.TestCase):
+    """``trigger_sync`` and ``FeedSyncService.run_sync`` must refuse to
+    operate on the six stub source types so we never leave behind a
+    ``feed_imports`` row stuck in ``pending`` or crash inside
+    ``_get_connector`` (which raises ``ValueError`` for unknown types).
+    """
+
+    def setUp(self) -> None:
+        _set_env()
+        from app.services.feed_management.models import (
+            SYNC_UNSUPPORTED_SOURCE_TYPES,
+            is_sync_supported,
+        )
+
+        self._unsupported = SYNC_UNSUPPORTED_SOURCE_TYPES
+        self._is_sync_supported = is_sync_supported
+
+    def test_unsupported_set_includes_all_six_stub_platforms(self) -> None:
+        for stub in (
+            FeedSourceType.prestashop,
+            FeedSourceType.opencart,
+            FeedSourceType.shopware,
+            FeedSourceType.lightspeed,
+            FeedSourceType.volusion,
+            FeedSourceType.shift4shop,
+        ):
+            with self.subTest(stub=stub.value):
+                self.assertIn(stub, self._unsupported)
+                self.assertFalse(self._is_sync_supported(stub))
+
+    def test_supported_platforms_remain_supported(self) -> None:
+        for platform in (
+            FeedSourceType.shopify,
+            FeedSourceType.woocommerce,
+            FeedSourceType.magento,
+            FeedSourceType.bigcommerce,
+            FeedSourceType.csv,
+            FeedSourceType.json,
+            FeedSourceType.xml,
+            FeedSourceType.google_sheets,
+        ):
+            with self.subTest(platform=platform.value):
+                self.assertNotIn(platform, self._unsupported)
+                self.assertTrue(self._is_sync_supported(platform))
+
+    def test_trigger_sync_returns_400_for_stub_source(self) -> None:
+        """The API endpoint must reject the request before it creates an import row."""
+        from app.api import feed_sources as fs_api
+        from app.services.auth import AuthUser
+
+        source = _make_source(source_type=FeedSourceType.shopware)
+        created_imports: list[Any] = []
+
+        def _fake_create(payload):
+            created_imports.append(payload)
+            raise AssertionError(
+                "import row must NOT be created when sync is gated"
+            )
+
+        with patch.object(fs_api, "_enforce_feature_flag", lambda: None), patch.object(
+            fs_api._source_repo, "get_by_id", return_value=source
+        ), patch.object(
+            fs_api._import_repo, "create", side_effect=_fake_create
+        ):
+            from fastapi import BackgroundTasks
+
+            user = AuthUser(
+                email="admin@example.com",
+                role="agency_admin",
+                user_id=1,
+                is_env_admin=True,
+            )
+            with self.assertRaises(fs_api.HTTPException) as ctx:
+                fs_api.trigger_sync(
+                    subaccount_id=_SUBACCOUNT_ID,
+                    source_id=_SOURCE_ID,
+                    background_tasks=BackgroundTasks(),
+                    user=user,
+                )
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("not yet available", ctx.exception.detail)
+        self.assertIn("shopware", ctx.exception.detail)
+        self.assertEqual(created_imports, [])  # no orphan import row
+
+    def test_run_sync_marks_existing_pending_import_failed(self) -> None:
+        """Defensive: if a stub source somehow reaches ``run_sync`` with a
+        pending import (legacy / cron path), the import is marked failed
+        instead of left stuck."""
+        import asyncio
+
+        from app.services.feed_management.models import FeedImportStatus
+        from app.services.feed_management.sync_service import FeedSyncService
+
+        source = _make_source(source_type=FeedSourceType.prestashop)
+
+        from datetime import datetime, timezone
+
+        from app.services.feed_management.models import FeedImportResponse
+
+        existing_import = FeedImportResponse(
+            id="imp-001",
+            feed_source_id=_SOURCE_ID,
+            status=FeedImportStatus.pending,
+            total_products=0,
+            imported_products=0,
+            errors=[],
+            started_at=None,
+            completed_at=None,
+            created_at=datetime(2026, 4, 9, tzinfo=timezone.utc),
+        )
+        update_calls: list[dict[str, Any]] = []
+
+        def _fake_update(import_id, **kwargs):
+            update_calls.append({"id": import_id, **kwargs})
+            return existing_import.model_copy(
+                update={"status": kwargs.get("status", existing_import.status)}
+            )
+
+        svc = FeedSyncService()
+        with patch.object(
+            svc._source_repo, "get_by_id", return_value=source
+        ), patch.object(
+            svc._import_repo, "get_latest_by_source", return_value=existing_import
+        ), patch.object(
+            svc._import_repo, "update_status", side_effect=_fake_update
+        ):
+            result = asyncio.get_event_loop().run_until_complete(
+                svc.run_sync(_SOURCE_ID)
+            )
+
+        self.assertEqual(result.status, FeedImportStatus.failed)
+        self.assertEqual(len(update_calls), 1)
+        self.assertEqual(update_calls[0]["status"], FeedImportStatus.failed)
+        # Error message includes the source_type so logs / UI can surface
+        # a clean reason instead of "ValueError".
+        self.assertIn("prestashop", str(update_calls[0]["errors"]))
+
+    def test_run_sync_raises_value_error_when_no_pending_import(self) -> None:
+        """If there's no existing import row to mark failed, raising
+        ``ValueError`` is fine — the cron's per-source try/except
+        already handles it."""
+        import asyncio
+
+        from app.services.feed_management.sync_service import FeedSyncService
+
+        source = _make_source(source_type=FeedSourceType.prestashop)
+        svc = FeedSyncService()
+        with patch.object(
+            svc._source_repo, "get_by_id", return_value=source
+        ), patch.object(
+            svc._import_repo, "get_latest_by_source", return_value=None
+        ):
+            with self.assertRaises(ValueError) as ctx:
+                asyncio.get_event_loop().run_until_complete(
+                    svc.run_sync(_SOURCE_ID)
+                )
+        self.assertIn("prestashop", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

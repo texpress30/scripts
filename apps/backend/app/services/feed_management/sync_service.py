@@ -11,6 +11,7 @@ from app.services.feed_management.models import (
     FeedImportStatus,
     FeedSourceResponse,
     FeedSourceType,
+    SYNC_UNSUPPORTED_SOURCE_TYPES,
 )
 from app.services.feed_management.products_repository import feed_products_repository
 from app.services.feed_management.repository import FeedImportRepository, FeedSourceRepository
@@ -204,6 +205,39 @@ class FeedSyncService:
         4. Mark import as completed (or failed)
         """
         source = self._source_repo.get_by_id(feed_source_id)
+
+        # Defensive guard for the six "generic API key" stub platforms.
+        # The API-layer ``trigger_sync`` already returns 400 for these so
+        # the BackgroundTasks runner never gets here in the happy path —
+        # but the cron entry point and any direct service caller (tests,
+        # admin scripts, future schedulers) need the same protection.
+        # Without this, ``_get_connector`` raises ``ValueError`` and the
+        # request leaves an orphan ``feed_imports`` row in ``pending``.
+        if source.source_type in SYNC_UNSUPPORTED_SOURCE_TYPES:
+            logger.warning(
+                "sync.skip_unsupported source_id=%s source_type=%s",
+                feed_source_id,
+                source.source_type.value,
+            )
+            stub_message = (
+                f"Sync not yet available for source_type='{source.source_type.value}'"
+            )
+            latest = self._import_repo.get_latest_by_source(feed_source_id)
+            if latest is not None and latest.status in (
+                FeedImportStatus.pending,
+                FeedImportStatus.in_progress,
+            ):
+                # An earlier API call already created a row — close it
+                # cleanly so it doesn't sit pending forever. New code path
+                # in this PR shouldn't reach here, but legacy / cron callers
+                # might still have orphans.
+                return self._import_repo.update_status(
+                    latest.id,
+                    status=FeedImportStatus.failed,
+                    errors=[{"error": stub_message}],
+                )
+            raise ValueError(stub_message)
+
         connector = _get_connector(source)
 
         # Find existing pending import or create one
