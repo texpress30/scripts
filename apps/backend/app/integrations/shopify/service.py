@@ -16,6 +16,7 @@ import hmac
 import json
 import logging
 import os
+from typing import Any
 from urllib import error, request
 
 from app.integrations.shopify import config as shopify_config
@@ -233,6 +234,7 @@ def get_access_token_for_shop(shop: str) -> str | None:
 def _list_connected_shops() -> list[str]:
     """List all shop domains that have a stored Shopify access token."""
     try:
+        integration_secrets_store._ensure_schema()  # noqa: SLF001
         with integration_secrets_store._connect() as conn:  # noqa: SLF001
             with conn.cursor() as cur:
                 cur.execute(
@@ -249,6 +251,91 @@ def _list_connected_shops() -> list[str]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("shopify_list_connected_shops_failed error=%s", exc)
         return []
+
+
+def get_shopify_credentials(shop_domain: str) -> dict[str, str] | None:
+    """Return the decrypted credential bag for ``shop_domain`` (or ``None``).
+
+    Mirrors :func:`bigcommerce.service.get_bigcommerce_credentials` — the
+    returned dict always contains ``access_token`` when present plus any
+    additional metadata that was stored alongside (currently just
+    ``scope``). Used by the claim flow's pre-claim probe, which needs the
+    token to hit ``/admin/api/{version}/shop.json`` without re-doing the
+    OAuth dance.
+    """
+    try:
+        clean_shop = shopify_config.validate_shop_domain(shop_domain)
+    except ValueError:
+        return None
+
+    token_row = integration_secrets_store.get_secret(
+        provider=PROVIDER,
+        secret_key=SECRET_KEY_ACCESS_TOKEN,
+        scope=clean_shop,
+    )
+    if token_row is None or not token_row.value.strip():
+        return None
+
+    result: dict[str, str] = {"access_token": token_row.value.strip()}
+    scope_row = integration_secrets_store.get_secret(
+        provider=PROVIDER,
+        secret_key=SECRET_KEY_SCOPE,
+        scope=clean_shop,
+    )
+    if scope_row is not None and scope_row.value.strip():
+        result[SECRET_KEY_SCOPE] = scope_row.value.strip()
+    return result
+
+
+def list_installed_shops_with_metadata() -> list[dict[str, Any]]:
+    """Return ``[{shop_domain, installed_at, scope}, ...]`` for every installed shop.
+
+    This is the read-side twin of :func:`store_shopify_token`. It
+    surfaces every Shopify shop whose merchant has installed the VOXEL
+    app (token encrypted at rest in ``integration_secrets``), letting
+    the wizard render a "claim" picker identical to the BigCommerce
+    flow. The ``installed_at`` timestamp is the ``updated_at`` of the
+    access-token row — when a merchant uninstalls + reinstalls it gets
+    refreshed.
+
+    Implementation deliberately goes through the public
+    ``integration_secrets_store`` API (rather than raw SQL) so the read
+    path shares all the encryption / schema bookkeeping done by
+    ``upsert_secret``.
+    """
+    shop_domains = _list_connected_shops()
+    if not shop_domains:
+        return []
+
+    results: list[dict[str, Any]] = []
+    for shop_domain in shop_domains:
+        creds = get_shopify_credentials(shop_domain)
+        if creds is None:
+            # Defensive: the access_token row vanished between the scan
+            # above and the per-shop fetch. Skip rather than leak an
+            # inconsistent partial entry.
+            continue
+
+        installed_at = None
+        try:
+            token_row = integration_secrets_store.get_secret(
+                provider=PROVIDER,
+                secret_key=SECRET_KEY_ACCESS_TOKEN,
+                scope=shop_domain,
+            )
+            if token_row is not None:
+                installed_at = token_row.updated_at
+        except Exception:  # noqa: BLE001
+            installed_at = None
+
+        results.append(
+            {
+                "shop_domain": shop_domain,
+                "installed_at": installed_at,
+                "scope": creds.get(SECRET_KEY_SCOPE) or None,
+            }
+        )
+    return results
 
 
 def get_shopify_status() -> dict[str, object]:
