@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/mcp.json",
+  "_comment": "Project-level MCP servers for Claude Code. This file IS committed to git, but secrets are NEVER stored here — use ${VAR} references and put the real values in a local .env (gitignored) or export them in your shell.",
+  "mcpServers": {
+    "mongodb": {
+      "_comment": "Read-only MongoDB Atlas access scoped to voxel_db. Provisioned with the 'claude-code-readonly' Atlas user + readAnyDatabase role + MDB_MCP_READ_ONLY=true as a belt-and-braces lock. Used for debugging queries against feed_products / media_files without round-tripping through the backend.",
+      "command": "npx",
+      "args": ["-y", "mongodb-mcp-server"],
+      "env": {
+        "MDB_MCP_CONNECTION_STRING": "${MONGO_MCP_CONNECTION_STRING}",
+        "MDB_MCP_READ_ONLY": "true"
+      }
+    }
+  }
+}
