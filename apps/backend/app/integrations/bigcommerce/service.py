@@ -175,8 +175,15 @@ def get_access_token_for_store(store_hash: str) -> str | None:
 
 
 def _list_connected_stores() -> list[str]:
-    """List every store hash that currently has a stored BigCommerce token."""
+    """List every store hash that currently has a stored BigCommerce token.
+
+    Uses raw SQL against ``integration_secrets`` for a single-round-trip
+    scan. Defensively calls ``_ensure_schema()`` first so a fresh
+    deployment that hits ``/stores/available`` before any write never
+    trips on a "relation does not exist" error.
+    """
     try:
+        integration_secrets_store._ensure_schema()  # noqa: SLF001
         with integration_secrets_store._connect() as conn:  # noqa: SLF001
             with conn.cursor() as cur:
                 cur.execute(
@@ -198,62 +205,66 @@ def _list_connected_stores() -> list[str]:
 def list_installed_stores_with_metadata() -> list[dict[str, Any]]:
     """Return ``[{store_hash, installed_at, ...}, ...]`` for every installed store.
 
-    Joins all per-store secret rows so the caller (the
-    ``stores/available`` endpoint) can render an "available stores" list
-    without N+1 round-trips. The ``installed_at`` timestamp is the
-    ``updated_at`` of the access_token row.
+    This is the read-side twin of :func:`store_bigcommerce_credentials`. It
+    MUST share the same identity keys as the write path (``provider`` +
+    ``secret_key`` + ``scope``) so any store the auth callback writes is
+    guaranteed to surface here.
+
+    Implementation strategy — deliberately goes through the public
+    ``integration_secrets_store`` API rather than raw SQL:
+
+    1. Fetch the set of store hashes that own an ``access_token`` row via
+       :func:`_list_connected_stores`. This uses the exact same
+       ``WHERE provider=%s AND secret_key=%s`` predicate the write path
+       hits at the DB level.
+    2. For every hash, load the full credential bag via
+       :func:`get_bigcommerce_credentials`, which itself calls
+       ``integration_secrets_store.get_secret(...)`` — the exact symmetric
+       API of ``upsert_secret`` used on the write side. This also triggers
+       ``_ensure_schema`` so a worker that has never touched the table
+       still sees a valid schema.
+    3. Ask ``get_secret`` for the ``access_token`` row one more time to
+       recover its ``updated_at`` timestamp (which the
+       ``BigCommerceAvailableStore`` schema surfaces as ``installed_at``).
+
+    This keeps the read path on the same code path as the write — there
+    is no separate raw-SQL branch that can silently drift away from the
+    encryption / schema bookkeeping done by ``upsert_secret``.
     """
-    try:
-        with integration_secrets_store._connect() as conn:  # noqa: SLF001
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT scope, secret_key, encrypted_value, updated_at
-                    FROM integration_secrets
-                    WHERE provider = %s
-                    ORDER BY scope ASC
-                    """,
-                    (PROVIDER,),
-                )
-                rows = cur.fetchall() or []
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "bigcommerce_list_installed_stores_failed error=%s", exc
-        )
+    store_hashes = _list_connected_stores()
+    if not store_hashes:
         return []
 
-    stores: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        scope = str(row[0])
-        secret_key = str(row[1])
-        encrypted_value = str(row[2])
-        updated_at = row[3]
+    results: list[dict[str, Any]] = []
+    for store_hash in store_hashes:
+        creds = get_bigcommerce_credentials(store_hash)
+        if creds is None:
+            # Defensive: the access_token row vanished between the scan
+            # above and the per-store fetch. Skip rather than leak an
+            # inconsistent partial entry.
+            continue
 
-        bucket = stores.setdefault(
-            scope,
-            {
-                "store_hash": scope,
-                "installed_at": None,
-                "user_email": None,
-                "scope": None,
-                "_has_token": False,
-            },
-        )
-
+        installed_at = None
         try:
-            decrypted = integration_secrets_store.decrypt_secret(encrypted_value)
+            token_row = integration_secrets_store.get_secret(
+                provider=PROVIDER,
+                secret_key=SECRET_KEY_ACCESS_TOKEN,
+                scope=store_hash,
+            )
+            if token_row is not None:
+                installed_at = token_row.updated_at
         except Exception:  # noqa: BLE001
-            decrypted = ""
+            installed_at = None
 
-        if secret_key == SECRET_KEY_ACCESS_TOKEN:
-            bucket["_has_token"] = True
-            bucket["installed_at"] = updated_at
-        elif secret_key == SECRET_KEY_USER_EMAIL:
-            bucket["user_email"] = decrypted or None
-        elif secret_key == SECRET_KEY_SCOPE:
-            bucket["scope"] = decrypted or None
-
-    return [b for b in stores.values() if b.pop("_has_token", False)]
+        results.append(
+            {
+                "store_hash": store_hash,
+                "installed_at": installed_at,
+                "user_email": creds.get(SECRET_KEY_USER_EMAIL) or None,
+                "scope": creds.get(SECRET_KEY_SCOPE) or None,
+            }
+        )
+    return results
 
 
 def get_bigcommerce_status() -> dict[str, Any]:
