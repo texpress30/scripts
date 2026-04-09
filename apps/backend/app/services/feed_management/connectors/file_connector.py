@@ -24,9 +24,41 @@ _DEFAULT_CSV_DELIMITER = ","
 _SUPPORTED_ENCODINGS = ("utf-8", "latin-1", "cp1252")
 
 
-def _fetch_remote_content(url: str) -> bytes:
+def _resolve_basic_auth(
+    credentials: dict[str, str] | None,
+) -> tuple[str, str] | None:
+    """Return ``(username, password)`` when both are set, else ``None``.
+
+    Accepts the credential bag the connector is instantiated with
+    (either from the wizard's create-source payload or from the
+    per-source entry in ``integration_secrets`` — see
+    ``app/integrations/file_source/service.py``). Both fields must be
+    present for auth to kick in; an empty string on either side means
+    "no auth" so a half-configured source falls back to the public
+    fetch path instead of sending a broken ``Authorization`` header.
+    """
+    if not credentials:
+        return None
+    username = str(credentials.get("username") or "").strip()
+    password = str(credentials.get("password") or "").strip()
+    if not username or not password:
+        return None
+    return (username, password)
+
+
+def _fetch_remote_content(
+    url: str,
+    *,
+    auth: tuple[str, str] | None = None,
+) -> bytes:
+    """Fetch a remote URL and return the raw bytes.
+
+    When ``auth`` is supplied, ``requests`` stitches the
+    ``Authorization: Basic ...`` header automatically. Otherwise the
+    request goes out unauthenticated (the pre-Basic-Auth behaviour).
+    """
     timeout = load_settings().storage_media_remote_fetch_timeout_seconds
-    resp = requests.get(url, timeout=timeout)
+    resp = requests.get(url, timeout=timeout, auth=auth)
     resp.raise_for_status()
     return resp.content
 
@@ -40,16 +72,31 @@ def _decode_bytes(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def _read_source(config: dict[str, Any]) -> str:
+def _read_source(
+    config: dict[str, Any],
+    *,
+    auth: tuple[str, str] | None = None,
+) -> str:
     file_url = config.get("file_url") or ""
     if file_url.startswith(("http://", "https://")):
-        return _decode_bytes(_fetch_remote_content(file_url))
+        return _decode_bytes(_fetch_remote_content(file_url, auth=auth))
     with open(file_url, "rb") as fh:
         return _decode_bytes(fh.read())
 
 
 class FileConnector(BaseConnector):
-    """Connector for file-based feeds: CSV, JSON, XML."""
+    """Connector for file-based feeds: CSV, JSON, XML.
+
+    Optional HTTP Basic Auth credentials flow in via the shared
+    ``BaseConnector`` ``credentials`` kwarg. When both ``username`` and
+    ``password`` are set, :func:`_fetch_remote_content` sends an
+    ``Authorization: Basic`` header automatically — otherwise the URL
+    is fetched unauthenticated, preserving backwards compatibility
+    with every existing public feed.
+    """
+
+    def _basic_auth(self) -> tuple[str, str] | None:
+        return _resolve_basic_auth(self.credentials)
 
     async def validate_config(self) -> ValidationResult:
         errors: list[str] = []
@@ -63,13 +110,13 @@ class FileConnector(BaseConnector):
 
     async def test_connection(self) -> ConnectionTestResult:
         try:
-            content = _read_source(self.config)
+            content = _read_source(self.config, auth=self._basic_auth())
             return ConnectionTestResult(success=True, message="File is accessible", details={"content_length": len(content)})
         except Exception as exc:
             return ConnectionTestResult(success=False, message=str(exc))
 
     async def fetch_products(self, since: datetime | None = None) -> AsyncIterator[ProductData]:
-        content = _read_source(self.config)
+        content = _read_source(self.config, auth=self._basic_auth())
         file_type = self.config.get("file_type", "csv")
         if file_type == "csv":
             async for product in self._parse_csv(content):

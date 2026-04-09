@@ -4,10 +4,11 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from app.api.dependencies import enforce_subaccount_action, get_current_user
 from app.core.config import load_settings
+from app.integrations.file_source import service as file_source_service
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.feed_management.exceptions import (
@@ -31,6 +32,11 @@ from app.services.feed_management.repository import FeedImportRepository, FeedSo
 
 logger = logging.getLogger(__name__)
 
+
+_FILE_SOURCE_AUTH_TYPES: frozenset[FeedSourceType] = frozenset(
+    {FeedSourceType.csv, FeedSourceType.json, FeedSourceType.xml}
+)
+
 router = APIRouter(prefix="/subaccount/{subaccount_id}/feed-sources", tags=["feed-sources"])
 
 _source_repo = FeedSourceRepository()
@@ -40,6 +46,37 @@ _import_repo = FeedImportRepository()
 def _enforce_feature_flag() -> None:
     if not load_settings().ff_feed_management_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed management is not enabled")
+
+
+def _enrich_with_file_auth(source: FeedSourceResponse) -> FeedSourceResponse:
+    """Populate the ``has_file_auth`` / ``file_auth_username`` / masked
+    password fields from ``integration_secrets`` for file sources.
+
+    Non-file sources (shopify, magento, bigcommerce, woocommerce) and
+    file sources without stored credentials pass through unchanged with
+    the default ``has_file_auth=False`` and null username / masked.
+    """
+    if source.source_type not in _FILE_SOURCE_AUTH_TYPES:
+        return source
+    try:
+        creds = file_source_service.get_file_source_credentials(source.id)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "file_source_credentials_lookup_failed source_id=%s",
+            source.id,
+            exc_info=True,
+        )
+        return source
+    masked = file_source_service.mask_file_source_credentials(creds)
+    if not masked.get("has_auth"):
+        return source
+    return source.model_copy(
+        update={
+            "has_file_auth": True,
+            "file_auth_username": masked.get("username"),
+            "file_auth_password_masked": masked.get("password_masked"),
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +91,20 @@ class CreateFeedSourceRequest(BaseModel):
     catalog_type: str = "product"
     catalog_variant: str = "physical_products"
     shop_domain: str | None = Field(default=None, description="Required for source_type=shopify")
+    # Optional HTTP Basic Auth for file sources (CSV / JSON / XML).
+    # Google Sheets never uses these — its share model is public URL /
+    # service-account, not Basic Auth. Credentials are persisted encrypted
+    # via ``app.integrations.file_source.service`` and never round-trip
+    # back to the frontend.
+    feed_auth_username: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Optional HTTP Basic Auth username for file sources (CSV/JSON/XML).",
+    )
+    feed_auth_password: SecretStr | None = Field(
+        default=None,
+        description="Optional HTTP Basic Auth password for file sources (CSV/JSON/XML).",
+    )
 
 
 class UpdateFeedSourceRequest(BaseModel):
@@ -63,6 +114,19 @@ class UpdateFeedSourceRequest(BaseModel):
     is_active: bool | None = None
     catalog_type: str | None = None
     catalog_variant: str | None = None
+    feed_auth_username: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Update the file-source Basic Auth username.",
+    )
+    feed_auth_password: SecretStr | None = Field(
+        default=None,
+        description="Update the file-source Basic Auth password.",
+    )
+    clear_file_auth: bool = Field(
+        default=False,
+        description="When true, wipe every stored HTTP Basic Auth credential for this source.",
+    )
 
 
 class CreateFeedSourceResponse(BaseModel):
@@ -119,7 +183,7 @@ def list_feed_sources(
     _enforce_feature_flag()
     enforce_subaccount_action(user=user, action="dashboard:view", subaccount_id=subaccount_id)
     sources = _source_repo.get_by_subaccount(subaccount_id)
-    return FeedSourceListResponse(items=sources)
+    return FeedSourceListResponse(items=[_enrich_with_file_auth(src) for src in sources])
 
 
 @router.get("/{source_id}", response_model=FeedSourceResponse)
@@ -136,7 +200,7 @@ def get_feed_source(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if source.subaccount_id != subaccount_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed source not found")
-    return source
+    return _enrich_with_file_auth(source)
 
 
 @router.post("", response_model=CreateFeedSourceResponse, status_code=status.HTTP_201_CREATED)
@@ -186,6 +250,42 @@ def create_feed_source(
     except FeedSourceAlreadyExistsError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
+    # File source Basic Auth (CSV/JSON/XML): persist credentials encrypted
+    # after the source row is created so the scope key (source.id) is
+    # stable. Roll back the row on any credential-store failure so we
+    # never leave behind an orphan ``feed_sources`` entry the connector
+    # can't authenticate.
+    stored_file_auth = False
+    if (
+        payload.source_type in _FILE_SOURCE_AUTH_TYPES
+        and payload.feed_auth_username
+        and payload.feed_auth_password
+    ):
+        password_plain = payload.feed_auth_password.get_secret_value().strip()
+        username_plain = payload.feed_auth_username.strip()
+        if username_plain and password_plain:
+            try:
+                file_source_service.store_file_source_credentials(
+                    source_id=source.id,
+                    username=username_plain,
+                    password=password_plain,
+                )
+                stored_file_auth = True
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "file_source_credentials_store_failed source_id=%s", source.id
+                )
+                try:
+                    _source_repo.delete(source.id)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "file_source_create_rollback_failed source_id=%s", source.id
+                    )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to persist file source credentials",
+                ) from exc
+
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -196,10 +296,11 @@ def create_feed_source(
             "source_type": payload.source_type.value,
             "name": payload.name,
             "shop_domain": shop_domain,
+            "has_file_auth": stored_file_auth,
         },
     )
     return CreateFeedSourceResponse(
-        source=source,
+        source=_enrich_with_file_auth(source),
         authorize_url=authorize_payload.get("authorize_url") if authorize_payload else None,
         state=authorize_payload.get("state") if authorize_payload else None,
     )
@@ -231,14 +332,78 @@ def update_feed_source(
         ))
     except FeedSourceNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    # File source Basic Auth (CSV/JSON/XML): rotate or clear credentials
+    # according to the update payload. The three possibilities are:
+    #   * ``clear_file_auth=True`` → wipe every stored credential row
+    #   * both username + password supplied → upsert (rotates either)
+    #   * only username supplied + existing password row → merge
+    #   * only password supplied + existing username row → merge
+    #   * neither supplied → no-op (cosmetic update of other fields only)
+    file_auth_changed = False
+    file_auth_cleared = False
+    if updated.source_type in _FILE_SOURCE_AUTH_TYPES:
+        if payload.clear_file_auth:
+            try:
+                file_source_service.delete_file_source_credentials(source_id)
+                file_auth_cleared = True
+                file_auth_changed = True
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "file_source_credentials_clear_failed source_id=%s",
+                    source_id,
+                    exc_info=True,
+                )
+        elif payload.feed_auth_username is not None or payload.feed_auth_password is not None:
+            existing_creds = (
+                file_source_service.get_file_source_credentials(source_id) or {}
+            )
+            new_username = (
+                payload.feed_auth_username.strip()
+                if payload.feed_auth_username is not None
+                else existing_creds.get("username", "")
+            )
+            new_password = (
+                payload.feed_auth_password.get_secret_value().strip()
+                if payload.feed_auth_password is not None
+                else existing_creds.get("password", "")
+            )
+            if not new_username or not new_password:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Both feed_auth_username and feed_auth_password are "
+                        "required to enable HTTP Basic Auth on a file source."
+                    ),
+                )
+            try:
+                file_source_service.store_file_source_credentials(
+                    source_id=source_id,
+                    username=new_username,
+                    password=new_password,
+                )
+                file_auth_changed = True
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "file_source_credentials_update_failed source_id=%s", source_id
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to persist file source credentials",
+                ) from exc
+
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
         action="feed_source.updated",
         resource=f"feed_source:{source_id}",
-        details={"subaccount_id": subaccount_id},
+        details={
+            "subaccount_id": subaccount_id,
+            "file_auth_changed": file_auth_changed,
+            "file_auth_cleared": file_auth_cleared,
+        },
     )
-    return updated
+    return _enrich_with_file_auth(updated)
 
 
 @router.delete("/{source_id}")
@@ -277,6 +442,19 @@ def delete_feed_source(
             )
         except Exception:
             logger.warning("shopify_token_delete_failed source_id=%s", source_id, exc_info=True)
+
+    # File source Basic Auth cleanup: drop any encrypted credentials we
+    # stored for CSV / JSON / XML sources. Idempotent — runs even for
+    # sources that never had auth configured.
+    if existing.source_type in _FILE_SOURCE_AUTH_TYPES:
+        try:
+            file_source_service.delete_file_source_credentials(source_id)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "file_source_credentials_delete_failed source_id=%s",
+                source_id,
+                exc_info=True,
+            )
 
     _source_repo.delete(source_id)
     audit_log_service.log(

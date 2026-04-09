@@ -206,12 +206,25 @@ export default function NewSourcePage() {
     setBusy(true);
     setError("");
     try {
+      // Surface any optional HTTP Basic Auth credentials the file source
+      // form may have included. The fields only appear for CSV / JSON /
+      // XML sources; for other source types they're always undefined and
+      // the extra keys get dropped by ``createSourceApi``.
+      const authUsername = typeof data.feed_auth_username === "string"
+        ? (data.feed_auth_username as string).trim()
+        : "";
+      const authPassword = typeof data.feed_auth_password === "string"
+        ? (data.feed_auth_password as string)
+        : "";
+
       await createSource({
         name: data.name as string,
         source_type: selectedType,
         catalog_type: selectedCatalog,
         url: (data.url ?? data.shop_url ?? data.store_url ?? "") as string,
         config: extractConfig(data),
+        feed_auth_username: authUsername || undefined,
+        feed_auth_password: authPassword || undefined,
       });
       router.push("/agency/feed-management/sources");
     } catch (err) {
@@ -335,7 +348,15 @@ export default function NewSourcePage() {
               ) : FILE_TYPES.includes(selectedType) ? (
                 <FileSourceForm
                   initialType={selectedType}
-                  onSubmit={(data) => void handleCreate({ name: data.name, url: data.url, source_type: data.file_type })}
+                  onSubmit={(data) =>
+                    void handleCreate({
+                      name: data.name,
+                      url: data.url,
+                      source_type: data.file_type,
+                      feed_auth_username: data.feed_auth_username,
+                      feed_auth_password: data.feed_auth_password,
+                    })
+                  }
                   onCancel={handleBack}
                   busy={busy}
                 />

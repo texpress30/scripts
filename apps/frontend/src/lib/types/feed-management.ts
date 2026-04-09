@@ -32,6 +32,13 @@ export type FeedSource = {
   last_connection_check?: string | null;
   last_error?: string | null;
   has_token?: boolean;
+  // Optional HTTP Basic Auth metadata for file sources (CSV / JSON / XML).
+  // Populated by the backend from ``integration_secrets`` — the password
+  // itself is never exposed; only ``file_auth_password_masked`` (e.g.
+  // ``"****"``) comes back for display.
+  has_file_auth?: boolean;
+  file_auth_username?: string | null;
+  file_auth_password_masked?: string | null;
   last_import_at?: string | null;
   sync_schedule?: SyncSchedule;
   next_scheduled_sync?: string | null;
@@ -99,6 +106,10 @@ export type CreateFeedSourcePayload = {
   url?: string;
   shop_domain?: string;
   config?: Record<string, string>;
+  // Optional HTTP Basic Auth for file sources (CSV / JSON / XML).
+  // Absent or empty for every other source type.
+  feed_auth_username?: string;
+  feed_auth_password?: string;
 };
 
 export type TestConnectionPayload = {

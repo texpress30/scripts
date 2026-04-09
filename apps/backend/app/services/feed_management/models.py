@@ -101,6 +101,14 @@ class FeedSourceResponse(BaseModel):
     magento_base_url: str | None = None
     magento_store_code: str | None = None
     bigcommerce_store_hash: str | None = None
+    # Optional HTTP Basic Auth metadata for file sources (CSV / JSON / XML).
+    # Populated by the API layer from ``integration_secrets`` — NOT read
+    # from the ``feed_sources`` row. The password field is intentionally
+    # absent: it stays server-side and is only surfaced as a masked
+    # placeholder via ``file_auth_password_masked``.
+    has_file_auth: bool = False
+    file_auth_username: str | None = None
+    file_auth_password_masked: str | None = None
     connection_status: str = "pending"
     last_connection_check: datetime | None = None
     last_error: str | None = None
