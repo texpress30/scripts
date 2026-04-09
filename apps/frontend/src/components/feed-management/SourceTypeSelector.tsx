@@ -6,6 +6,12 @@ import {
   ShoppingCart,
   Store,
   Building2,
+  Boxes,
+  Package,
+  Globe,
+  Zap,
+  Rocket,
+  Truck,
   FileSpreadsheet,
   FileJson,
   FileCode,
@@ -26,6 +32,12 @@ const ECOMMERCE_SOURCES: SourceTypeOption[] = [
   { type: "woocommerce", label: "WooCommerce", description: "Importă produse din WooCommerce via REST API", icon: ShoppingCart, color: "text-purple-600 dark:text-purple-400" },
   { type: "magento", label: "Magento", description: "Sincronizează catalogul din Magento 2", icon: Store, color: "text-orange-600 dark:text-orange-400" },
   { type: "bigcommerce", label: "BigCommerce", description: "Conectare la BigCommerce prin API", icon: Building2, color: "text-blue-600 dark:text-blue-400" },
+  { type: "prestashop", label: "PrestaShop", description: "Importă produse din PrestaShop via Webservice API", icon: Boxes, color: "text-pink-600 dark:text-pink-400" },
+  { type: "opencart", label: "OpenCart", description: "Conectare la OpenCart prin REST API", icon: Package, color: "text-cyan-600 dark:text-cyan-400" },
+  { type: "shopware", label: "Shopware", description: "Sincronizează catalogul din Shopware 6", icon: Globe, color: "text-indigo-600 dark:text-indigo-400" },
+  { type: "lightspeed", label: "Lightspeed", description: "Importă produse din Lightspeed eCom", icon: Zap, color: "text-yellow-600 dark:text-yellow-400" },
+  { type: "volusion", label: "Volusion", description: "Conectare la Volusion prin API", icon: Truck, color: "text-red-600 dark:text-red-400" },
+  { type: "shift4shop", label: "Shift4Shop", description: "Importă produse din Shift4Shop / 3dcart", icon: Rocket, color: "text-fuchsia-600 dark:text-fuchsia-400" },
 ];
 
 const FILE_SOURCES: SourceTypeOption[] = [

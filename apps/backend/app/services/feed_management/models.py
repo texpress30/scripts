@@ -30,10 +30,50 @@ class FeedSourceType(str, enum.Enum):
     woocommerce = "woocommerce"
     magento = "magento"
     bigcommerce = "bigcommerce"
+    prestashop = "prestashop"
+    opencart = "opencart"
+    shopware = "shopware"
+    lightspeed = "lightspeed"
+    volusion = "volusion"
+    shift4shop = "shift4shop"
     csv = "csv"
     json = "json"
     xml = "xml"
     google_sheets = "google_sheets"
+
+
+# ---------------------------------------------------------------------------
+# Source-type capability matrix
+# ---------------------------------------------------------------------------
+#
+# The six "generic API key" e-commerce platforms are stubs — the wizard +
+# CRUD endpoints + credential storage all work, but there's no connector,
+# normalizer, or sync pipeline yet (each lands in its own follow-up PR).
+# Triggering a sync on one of these sources would create a ``feed_imports``
+# row that the background runner can never advance past ``pending``,
+# because :func:`sync_service._get_connector` raises ``ValueError`` for
+# unknown types.
+#
+# This set is the single source of truth — both the API trigger
+# (``trigger_sync`` in ``app/api/feed_sources.py``) and the service-level
+# entry point (``FeedSyncService.run_sync``) consult it before creating /
+# advancing import rows. Removing a platform from the set is the gate
+# that lets each follow-up connector PR enable sync.
+SYNC_UNSUPPORTED_SOURCE_TYPES: frozenset[FeedSourceType] = frozenset(
+    {
+        FeedSourceType.prestashop,
+        FeedSourceType.opencart,
+        FeedSourceType.shopware,
+        FeedSourceType.lightspeed,
+        FeedSourceType.volusion,
+        FeedSourceType.shift4shop,
+    }
+)
+
+
+def is_sync_supported(source_type: FeedSourceType) -> bool:
+    """Return True when ``source_type`` has a connector wired up."""
+    return source_type not in SYNC_UNSUPPORTED_SOURCE_TYPES
 
 
 class FeedImportStatus(str, enum.Enum):

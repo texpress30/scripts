@@ -26,6 +26,7 @@ from app.services.feed_management.models import (
     FeedSourceUpdate,
     ProductListResponse,
     ProductStatsResponse,
+    SYNC_UNSUPPORTED_SOURCE_TYPES,
 )
 from app.services.feed_management.products_repository import feed_products_repository
 from app.services.feed_management.repository import FeedImportRepository, FeedSourceRepository
@@ -536,6 +537,21 @@ def trigger_sync(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed source not found")
     if not source.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Feed source is not active")
+
+    # Block sync triggers for source types that have no connector wired up
+    # yet (the six "generic API key" e-commerce stubs). Without this gate
+    # the BackgroundTasks runner would create a ``feed_imports`` row in
+    # ``pending`` and then crash inside ``_get_connector`` (which raises
+    # ValueError for unknown source types), leaving the import row stuck.
+    if source.source_type in SYNC_UNSUPPORTED_SOURCE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Sync is not yet available for source_type='{source.source_type.value}'. "
+                "The connector is in development — credentials are saved and the source "
+                "will start syncing automatically when support lands."
+            ),
+        )
 
     try:
         feed_import = _import_repo.create(FeedImportCreate(feed_source_id=source_id))
