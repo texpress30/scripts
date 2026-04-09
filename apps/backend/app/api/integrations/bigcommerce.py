@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.api.dependencies import (
     enforce_action_scope,
@@ -42,6 +43,7 @@ from app.core.config import load_settings
 from app.integrations.bigcommerce import auth as bc_auth
 from app.integrations.bigcommerce import client as bc_client_module
 from app.integrations.bigcommerce import config as bc_config
+from app.integrations.bigcommerce import html_templates as bc_html
 from app.integrations.bigcommerce import service as bc_service
 from app.integrations.bigcommerce.auth import BigCommerceAuthError
 from app.integrations.bigcommerce.client import (
@@ -190,8 +192,35 @@ def _ensure_feed_source(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/auth/callback", response_model=BigCommerceCallbackResponse)
+def _auth_error_response(
+    *,
+    accept_header: str | None,
+    status_code: int,
+    message: str,
+    store_hash: str | None = None,
+) -> Response:
+    """Return either an HTML error page (browser) or a JSON error (API client).
+
+    BigCommerce renders the callback response in an iFrame inside the
+    merchant's control panel, so a JSON blob would leak internal
+    detail and make the merchant think the whole app is broken. The
+    HTML branch surfaces a friendly "Instalare eșuată" page with the
+    underlying reason displayed but safely escaped.
+    """
+    if bc_html.wants_json(accept_header):
+        return JSONResponse(
+            status_code=status_code,
+            content={"success": False, "error": message, "store_hash": store_hash},
+        )
+    html = bc_html.render_install_error(
+        error_message=message, store_hash=store_hash
+    )
+    return HTMLResponse(content=html, status_code=status_code)
+
+
+@router.get("/auth/callback")
 def bigcommerce_auth_callback(
+    request: Request,
     code: str = Query(..., min_length=1, description="Short-lived authorization code"),
     scope: str = Query("", description="Space-separated scope list granted by the merchant"),
     context: str = Query(..., min_length=1, description="stores/{store_hash}"),
@@ -202,7 +231,7 @@ def bigcommerce_auth_callback(
         default=None,
         description="Optional Omarosa subaccount to attach this store to",
     ),
-) -> BigCommerceCallbackResponse:
+) -> Response:
     """BigCommerce redirects the merchant here after they install the app.
 
     Exchanges the short-lived ``code`` for a permanent ``access_token`` and
@@ -210,16 +239,35 @@ def bigcommerce_auth_callback(
     rest, keyed by ``store_hash``. When the caller includes a ``subaccount_id``
     query hint (e.g. the merchant was redirected from within an Omarosa
     admin session), we also create/refresh the matching ``feed_sources`` row.
+
+    Content negotiation: the response is an HTML install-success page by
+    default (BigCommerce renders this endpoint inside an iFrame in the
+    merchant's control panel, so returning raw JSON is terrible UX). API
+    clients can opt into the ``BigCommerceCallbackResponse`` JSON shape by
+    sending ``Accept: application/json``.
     """
     _enforce_feature_flag()
-    _raise_if_oauth_unconfigured()
+
+    accept_header = request.headers.get("accept")
+
+    if not bc_config.oauth_configured():
+        return _auth_error_response(
+            accept_header=accept_header,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            message=(
+                "BigCommerce OAuth is not configured. "
+                "Set BC_CLIENT_ID, BC_CLIENT_SECRET and BC_REDIRECT_URI."
+            ),
+        )
 
     try:
         store_hash = bc_auth.extract_store_hash(context)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        return _auth_error_response(
+            accept_header=accept_header,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message=str(exc),
+        )
 
     try:
         payload = bc_auth.exchange_code_for_token(
@@ -234,7 +282,15 @@ def bigcommerce_auth_callback(
             exc.http_status,
             exc,
         )
-        raise _bigcommerce_error_to_http(exc) from exc
+        http_status = exc.http_status or status.HTTP_400_BAD_REQUEST
+        if http_status not in {400, 401, 403, 502, 503}:
+            http_status = status.HTTP_400_BAD_REQUEST
+        return _auth_error_response(
+            accept_header=accept_header,
+            status_code=http_status,
+            message=str(exc),
+            store_hash=store_hash,
+        )
 
     access_token = str(payload.get("access_token") or "").strip()
     granted_scope = str(payload.get("scope") or scope or "").strip()
@@ -248,12 +304,14 @@ def bigcommerce_auth_callback(
             scope=granted_scope,
             user_info=user_info,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("bigcommerce_credentials_store_failed store_hash=%s", store_hash)
-        raise HTTPException(
+        return _auth_error_response(
+            accept_header=accept_header,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to persist BigCommerce access token",
-        ) from exc
+            message="Failed to persist BigCommerce access token",
+            store_hash=store_hash,
+        )
 
     source_id = _ensure_feed_source(
         store_hash=store_hash,
@@ -286,13 +344,22 @@ def bigcommerce_auth_callback(
         source_id,
     )
 
-    return BigCommerceCallbackResponse(
-        success=True,
+    if bc_html.wants_json(accept_header):
+        return JSONResponse(
+            content=BigCommerceCallbackResponse(
+                success=True,
+                store_hash=store_hash,
+                scope=granted_scope,
+                account_uuid=returned_uuid or None,
+                message="BigCommerce OAuth connected. Access token stored securely.",
+            ).model_dump()
+        )
+
+    html = bc_html.render_install_success(
         store_hash=store_hash,
-        scope=granted_scope,
-        account_uuid=returned_uuid or None,
-        message="BigCommerce OAuth connected. Access token stored securely.",
+        scope=granted_scope or None,
     )
+    return HTMLResponse(content=html, status_code=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
@@ -300,22 +367,29 @@ def bigcommerce_auth_callback(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/auth/load", response_model=BigCommerceLoadResponse)
+@router.get("/auth/load")
 def bigcommerce_load_callback(
+    request: Request,
     signed_payload_jwt: str = Query(
         ..., min_length=1, description="HS256 signed payload JWT"
     ),
-) -> BigCommerceLoadResponse:
+) -> Response:
     """BigCommerce calls this endpoint every time the merchant opens the app.
 
     The ``signed_payload_jwt`` is verified (HS256 with the app client secret)
-    and the ``sub`` claim gives us the store hash. In a full-featured app we'd
-    mint a short-lived session cookie and redirect the iFrame to the frontend
-    app shell; for this slice we just return the decoded session info so the
-    router can be unit-tested end-to-end.
+    and the ``sub`` claim gives us the store hash + the currently-logged-in
+    user + the store owner email.
+
+    Content negotiation: the response is an HTML mini-dashboard by default
+    (BigCommerce embeds this endpoint in an iFrame in the merchant's control
+    panel, so returning raw JSON leaves the merchant staring at internal
+    state). API clients can still opt into the ``BigCommerceLoadResponse``
+    JSON shape by sending ``Accept: application/json``.
     """
     _enforce_feature_flag()
     _raise_if_oauth_unconfigured()
+
+    accept_header = request.headers.get("accept")
 
     try:
         claims = bc_auth.verify_signed_payload_jwt(
@@ -366,12 +440,30 @@ def bigcommerce_load_callback(
         user_email or "-",
     )
 
-    return BigCommerceLoadResponse(
-        status="ok",
+    # Determine whether the store is "connected" — i.e. we actually have
+    # credentials in integration_secrets for this store_hash. The happy
+    # path is True; if the user uninstalled + reinstalled without us
+    # seeing the auth callback it falls back to False and the load page
+    # surfaces an "Inactiv" badge instead of "Activ".
+    connected = bc_service.get_access_token_for_store(store_hash) is not None
+
+    if bc_html.wants_json(accept_header):
+        return JSONResponse(
+            content=BigCommerceLoadResponse(
+                status="ok",
+                store_hash=store_hash,
+                user_email=user_email,
+                owner_email=owner_email,
+            ).model_dump()
+        )
+
+    html = bc_html.render_load_page(
         store_hash=store_hash,
-        user_email=user_email,
-        owner_email=owner_email,
+        user_email=user_email or None,
+        owner_email=owner_email or None,
+        connected=connected,
     )
+    return HTMLResponse(content=html, status_code=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
