@@ -484,5 +484,202 @@ class BigCommerceServiceTests(unittest.TestCase):
         self.assertEqual(payload["token_count"], 0)
 
 
+# ---------------------------------------------------------------------------
+# End-to-end write → read cycle regression (hotfix)
+# ---------------------------------------------------------------------------
+
+
+class WriteReadCycleRegressionTests(unittest.TestCase):
+    """Guard against the ``/stores/available`` empty-list regression.
+
+    The bug: ``list_installed_stores_with_metadata`` used a raw-SQL scan
+    and a Python-side ``_has_token`` filter that could drift away from
+    the write path's ``integration_secrets_store.upsert_secret`` API —
+    most notably because the raw-SQL path bypassed ``_ensure_schema`` and
+    the encryption round-trip. After the hotfix, the read path calls
+    ``_list_connected_stores`` (with ``_ensure_schema()``) to get the
+    store_hash set, then hydrates metadata via ``get_bigcommerce_credentials``
+    — i.e., the exact symmetric API of the write side.
+
+    These tests simulate the full write → read cycle using the
+    ``_install_fake_store`` helper from :class:`BigCommerceServiceTests`
+    plus a fake for ``_list_connected_stores`` (which uses raw SQL
+    directly and is the only bit the fake ``upsert_secret`` / ``get_secret``
+    doesn't cover).
+    """
+
+    def setUp(self) -> None:
+        self._env = os.environ.copy()
+        _set_env()
+        _, _, self.svc = _reload_bigcommerce_modules()
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._env)
+        _reload_bigcommerce_modules()
+
+    def _install_fake_store(self) -> dict[tuple[str, str, str], str]:
+        stored: dict[tuple[str, str, str], str] = {}
+        timestamp = datetime(2026, 4, 9, 5, 30, tzinfo=timezone.utc)
+
+        def _fake_upsert(*, provider: str, secret_key: str, value: str, scope: str = "agency_default") -> None:
+            stored[(provider, secret_key, scope)] = value
+
+        def _fake_get(*, provider: str, secret_key: str, scope: str = "agency_default"):
+            value = stored.get((provider, secret_key, scope))
+            if value is None:
+                return None
+            return IntegrationSecretValue(
+                provider=provider,
+                secret_key=secret_key,
+                scope=scope,
+                value=value,
+                updated_at=timestamp,
+            )
+
+        def _fake_delete(*, provider: str, secret_key: str, scope: str = "agency_default") -> None:
+            stored.pop((provider, secret_key, scope), None)
+
+        def _fake_list_connected_stores() -> list[str]:
+            # Mirrors the SQL ``WHERE provider = 'bigcommerce' AND secret_key = 'access_token'``.
+            return sorted(
+                key[2] for key in stored.keys()
+                if key[0] == self.svc.PROVIDER
+                and key[1] == self.svc.SECRET_KEY_ACCESS_TOKEN
+            )
+
+        self.svc.integration_secrets_store.upsert_secret = _fake_upsert  # type: ignore[assignment]
+        self.svc.integration_secrets_store.get_secret = _fake_get  # type: ignore[assignment]
+        self.svc.integration_secrets_store.delete_secret = _fake_delete  # type: ignore[assignment]
+        self.svc._list_connected_stores = _fake_list_connected_stores  # type: ignore[assignment]
+        return stored
+
+    def test_install_callback_write_surfaces_in_stores_available_read(self) -> None:
+        """Reproduces the exact reported bug: install → /stores/available empty.
+
+        Writes credentials exactly as ``bigcommerce_auth_callback`` would
+        (``store_hash='o7cxkbkkmz'`` matching the user-reported hash),
+        then reads via ``list_installed_stores_with_metadata`` which is
+        what the ``/stores/available`` endpoint calls. The store MUST
+        appear in the result.
+        """
+        self._install_fake_store()
+
+        # Simulate the auth callback's store_bigcommerce_credentials call.
+        self.svc.store_bigcommerce_credentials(
+            store_hash="o7cxkbkkmz",
+            access_token="bc_TOKEN_o7cxkbkkmz",
+            scope="store_v2_products_read_only store_v2_content_read_only",
+            user_info={"id": 12345, "email": "admin@omarosa.ro"},
+        )
+
+        # Read path used by /stores/available.
+        result = self.svc.list_installed_stores_with_metadata()
+
+        self.assertEqual(len(result), 1)
+        entry = result[0]
+        self.assertEqual(entry["store_hash"], "o7cxkbkkmz")
+        self.assertEqual(entry["user_email"], "admin@omarosa.ro")
+        self.assertEqual(
+            entry["scope"],
+            "store_v2_products_read_only store_v2_content_read_only",
+        )
+        self.assertIsNotNone(entry["installed_at"])
+
+    def test_multiple_stores_are_all_listed(self) -> None:
+        """Two separate installs → both show up in /stores/available."""
+        self._install_fake_store()
+
+        self.svc.store_bigcommerce_credentials(
+            store_hash="abc123",
+            access_token="bc_TOKEN_abc",
+            scope="store_v2_products_read_only",
+            user_info={"id": 1, "email": "owner@a.com"},
+        )
+        self.svc.store_bigcommerce_credentials(
+            store_hash="def456",
+            access_token="bc_TOKEN_def",
+            scope="store_v2_products_read_only",
+            user_info={"id": 2, "email": "owner@b.com"},
+        )
+
+        result = self.svc.list_installed_stores_with_metadata()
+        hashes = sorted(entry["store_hash"] for entry in result)
+        self.assertEqual(hashes, ["abc123", "def456"])
+
+    def test_credentials_deleted_store_vanishes_from_available(self) -> None:
+        """Uninstall callback wipes credentials → store disappears from read."""
+        self._install_fake_store()
+
+        self.svc.store_bigcommerce_credentials(
+            store_hash="abc123",
+            access_token="bc_TOKEN",
+            scope="",
+            user_info={"id": 1, "email": "a@b.com"},
+        )
+        self.assertEqual(
+            len(self.svc.list_installed_stores_with_metadata()), 1
+        )
+
+        self.svc.delete_bigcommerce_credentials("abc123")
+        self.assertEqual(
+            len(self.svc.list_installed_stores_with_metadata()), 0
+        )
+
+    def test_partial_write_still_surfaces_the_store(self) -> None:
+        """Only ``access_token`` stored (no scope / user_email) → still visible.
+
+        The auth callback writes the access_token unconditionally but
+        skips ``user_email`` and ``scope`` if the upstream payload was
+        sparse. The read path must still surface the store — the
+        ``_has_token`` gate from the old implementation did this
+        correctly, and so must the refactored version.
+        """
+        self._install_fake_store()
+
+        self.svc.store_bigcommerce_credentials(
+            store_hash="sparse1",
+            access_token="bc_TOKEN",
+            scope="",  # OAuth scope list omitted
+            user_info=None,  # no user info
+        )
+
+        result = self.svc.list_installed_stores_with_metadata()
+        self.assertEqual(len(result), 1)
+        entry = result[0]
+        self.assertEqual(entry["store_hash"], "sparse1")
+        self.assertIsNone(entry["scope"])
+        self.assertIsNone(entry["user_email"])
+        self.assertIsNotNone(entry["installed_at"])
+
+    def test_read_skips_stores_with_vanished_access_token_row(self) -> None:
+        """Defensive: if the ``access_token`` row is torn down mid-scan,
+        don't leak an inconsistent partial entry."""
+        stored = self._install_fake_store()
+        self.svc.store_bigcommerce_credentials(
+            store_hash="abc123",
+            access_token="bc_TOKEN",
+            scope="s",
+            user_info={"id": 1, "email": "a@b.com"},
+        )
+
+        # Simulate the race: ``_list_connected_stores`` returns the hash
+        # but the underlying access_token row has already been deleted.
+        def _stale_list() -> list[str]:
+            return ["abc123"]
+
+        self.svc._list_connected_stores = _stale_list  # type: ignore[assignment]
+        for key in (
+            self.svc.SECRET_KEY_ACCESS_TOKEN,
+            self.svc.SECRET_KEY_SCOPE,
+            self.svc.SECRET_KEY_USER_EMAIL,
+            self.svc.SECRET_KEY_USER_ID,
+        ):
+            stored.pop((self.svc.PROVIDER, key, "abc123"), None)
+
+        result = self.svc.list_installed_stores_with_metadata()
+        self.assertEqual(result, [])
+
+
 if __name__ == "__main__":
     unittest.main()
