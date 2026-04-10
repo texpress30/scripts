@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
 
 export interface CanvasElement {
+  element_id: string | null;
   type: "text" | "image" | "shape" | "dynamic_field";
   position_x: number;
   position_y: number;
@@ -24,6 +25,7 @@ export interface CreativeTemplate {
   background_color: string;
   format_group_id: string | null;
   format_label: string | null;
+  style_sync_enabled: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -114,7 +114,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           fontSize: 24,
           fill: "#000000",
           fontFamily: "Arial",
-          data: { elementType: "text" },
+          data: { elementId: crypto.randomUUID(), elementType: "text" },
         });
         canvas.add(textbox);
         canvas.setActiveObject(textbox);
@@ -131,7 +131,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           fontSize: 20,
           fill: "#6366f1",
           fontFamily: "Arial",
-          data: { elementType: "dynamic_field", dynamicBinding: binding },
+          data: { elementId: crypto.randomUUID(), elementType: "dynamic_field", dynamicBinding: binding },
         });
         canvas.add(textbox);
         canvas.setActiveObject(textbox);
@@ -149,7 +149,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
             rx: 75,
             ry: 50,
             fill: "#e2e8f0",
-            data: { elementType: "shape", shapeType: "ellipse" },
+            data: { elementId: crypto.randomUUID(), elementType: "shape", shapeType: "ellipse" },
           });
         } else {
           obj = new Rect({
@@ -158,7 +158,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
             width: 200,
             height: 100,
             fill: "#e2e8f0",
-            data: { elementType: "shape", shapeType: "rectangle" },
+            data: { elementId: crypto.randomUUID(), elementType: "shape", shapeType: "rectangle" },
           });
         }
         canvas.add(obj);
@@ -169,7 +169,6 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
       addImagePlaceholder: (binding?: string) => {
         const canvas = fabricRef.current;
         if (!canvas) return;
-        // Add a placeholder rectangle representing the image zone
         const placeholder = new Rect({
           left: 50,
           top: 50,
@@ -180,6 +179,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           strokeWidth: 2,
           strokeDashArray: [8, 4],
           data: {
+            elementId: crypto.randomUUID(),
             elementType: "image",
             dynamicBinding: binding || "{{image_link}}",
           },

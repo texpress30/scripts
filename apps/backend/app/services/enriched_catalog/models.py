@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 class CanvasElement(BaseModel):
+    element_id: str | None = None  # unique ID for matching across format siblings
     type: Literal["text", "image", "shape", "dynamic_field"]
     position_x: float = 0.0
     position_y: float = 0.0
@@ -35,6 +36,7 @@ class CreativeTemplate(BaseModel):
     background_color: str = "#FFFFFF"
     format_group_id: str | None = None
     format_label: str | None = None
+    style_sync_enabled: bool = True
     created_at: str = ""
     updated_at: str = ""
 
@@ -47,6 +49,7 @@ class CreativeTemplateCreate(BaseModel):
     background_color: str = "#FFFFFF"
     format_group_id: str | None = None
     format_label: str | None = None
+    style_sync_enabled: bool = True
 
 
 class CreativeTemplateUpdate(BaseModel):
