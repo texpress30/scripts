@@ -419,18 +419,6 @@ export default function TemplateEditorPage() {
                   onSelectionChange={handleSelectionChange}
                   onModified={handleModified}
                 />
-
-                {/* Empty state hint */}
-                {canvasObjects.length === 0 && (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <div className="rounded-lg bg-white/90 px-6 py-4 text-center shadow dark:bg-slate-800/90">
-                      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Add Layers</p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500">
-                        Drag elements from your library or click the toolbar to add them to the canvas
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           </div>
