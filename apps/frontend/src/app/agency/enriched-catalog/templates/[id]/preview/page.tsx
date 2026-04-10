@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Copy, Check } from "lucide-react";
+import { ArrowLeft, Loader2, Copy, Check, X, Plus } from "lucide-react";
 import { useCreativeTemplate } from "@/lib/hooks/useCreativeTemplates";
 import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useChannelProducts } from "@/lib/hooks/useChannelProducts";
 import { useChannels } from "@/lib/hooks/useMasterFields";
+import { useOutputFeeds } from "@/lib/hooks/useOutputFeeds";
 import { apiRequest } from "@/lib/api";
 
 interface RenderedPreview {
@@ -158,13 +159,18 @@ export default function PreviewCreativesPage() {
   const firstChannelId = (channels?.length ?? 0) > 0 ? channels![0].id : null;
   const { products, total: totalProducts } = useChannelProducts(firstChannelId, 1, 48);
 
+  const { feeds, create: createFeed, isCreating: isCreatingFeed } = useOutputFeeds(subaccountId);
+
   const [rendering, setRendering] = useState(true);
   const [progress, setProgress] = useState(0);
   const [previews, setPreviews] = useState<RenderedPreview[]>([]);
   const [renderedCount, setRenderedCount] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [showFeedModal, setShowFeedModal] = useState(false);
+  const [selectedFeedId, setSelectedFeedId] = useState<string | null>(null);
   const [addingToFeed, setAddingToFeed] = useState(false);
   const [addedToFeed, setAddedToFeed] = useState(false);
+  const [newFeedName, setNewFeedName] = useState("");
   const renderingRef = useRef(false);
 
   useEffect(() => {
@@ -306,25 +312,11 @@ export default function PreviewCreativesPage() {
 
           {/* Add to Feed button */}
           <button
-            onClick={async () => {
-              setAddingToFeed(true);
-              try {
-                await apiRequest(`/creative/templates/${templateId}/publish-to-feed`, {
-                  method: "POST",
-                  body: JSON.stringify({ subaccount_id: subaccountId }),
-                });
-                setAddedToFeed(true);
-              } catch (err) {
-                console.error("Failed to add to feed:", err);
-                alert("Failed to add to feed. Please try again.");
-              } finally {
-                setAddingToFeed(false);
-              }
-            }}
-            disabled={addingToFeed || addedToFeed || rendering}
+            onClick={() => setShowFeedModal(true)}
+            disabled={addedToFeed || rendering}
             className="mb-6 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 py-2.5 text-sm font-medium text-white shadow hover:bg-emerald-600 disabled:opacity-50"
           >
-            {addingToFeed ? <Loader2 className="h-4 w-4 animate-spin" /> : addedToFeed ? <Check className="h-4 w-4" /> : null}
+            {addedToFeed ? <Check className="h-4 w-4" /> : null}
             {addedToFeed ? "Added to Feed" : "Add to Feed"}
           </button>
 
@@ -365,6 +357,109 @@ export default function PreviewCreativesPage() {
           </div>
         </div>
       </div>
+
+      {/* Select Output Feed Modal */}
+      {showFeedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl dark:bg-slate-800">
+            <button
+              onClick={() => setShowFeedModal(false)}
+              className="absolute right-4 top-4 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Select an output feed</h2>
+            <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
+              You can use multiple designs in a single live feed
+            </p>
+
+            {/* Existing feeds */}
+            <div className="mb-4 max-h-64 space-y-2 overflow-y-auto">
+              {feeds.map((feed) => (
+                <button
+                  key={feed.id}
+                  onClick={() => setSelectedFeedId(feed.id)}
+                  className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
+                    selectedFeedId === feed.id
+                      ? "border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/20"
+                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                    <Loader2 className="h-5 w-5" style={{ animation: "none" }} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{feed.name}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {feed.status} {feed.products_count > 0 ? `· ${feed.products_count} products` : ""}
+                    </p>
+                  </div>
+                  {selectedFeedId === feed.id && <Check className="h-4 w-4 text-indigo-600" />}
+                </button>
+              ))}
+
+              {feeds.length === 0 && !newFeedName && (
+                <p className="py-4 text-center text-sm text-slate-400">No output feeds yet. Create one below.</p>
+              )}
+            </div>
+
+            {/* New Output Feed */}
+            {newFeedName !== null && (
+              <div className="mb-4">
+                <button
+                  onClick={() => setNewFeedName(newFeedName || `Output Feed ${feeds.length + 1}`)}
+                  className="flex w-full items-center gap-2 rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-slate-600 dark:hover:border-indigo-500 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Output Feed
+                </button>
+                {newFeedName && (
+                  <input
+                    type="text"
+                    value={newFeedName}
+                    onChange={(e) => setNewFeedName(e.target.value)}
+                    placeholder="Feed name..."
+                    className="mcc-input mt-2 w-full rounded border px-3 py-2 text-sm"
+                    autoFocus
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Continue button */}
+            <button
+              onClick={async () => {
+                setAddingToFeed(true);
+                try {
+                  let feedId = selectedFeedId;
+                  if (!feedId && newFeedName) {
+                    const newFeed = await createFeed({ name: newFeedName });
+                    feedId = newFeed.id;
+                  }
+                  if (!feedId) return;
+                  await apiRequest(`/creative/output-feeds/${feedId}/add-template`, {
+                    method: "POST",
+                    body: JSON.stringify({ template_id: templateId }),
+                  });
+                  setAddedToFeed(true);
+                  setShowFeedModal(false);
+                } catch (err) {
+                  console.error("Failed to add to feed:", err);
+                  alert("Failed to add to feed. Please try again.");
+                } finally {
+                  setAddingToFeed(false);
+                }
+              }}
+              disabled={addingToFeed || (!selectedFeedId && !newFeedName)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {addingToFeed && <Loader2 className="h-4 w-4 animate-spin" />}
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
