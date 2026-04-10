@@ -213,3 +213,63 @@ def get_feed_stats(output_feed_id: str, user: AuthUser = Depends(get_current_use
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(existing["subaccount_id"]))
     return output_feed_service.get_feed_stats(output_feed_id)
+
+
+# ---------------------------------------------------------------------------
+# Multi-format bulk generation
+# ---------------------------------------------------------------------------
+
+class MultiFormatRenderRequest(BaseModel):
+    template_ids: list[str] = Field(min_length=1, max_length=20)
+    products: list[dict] = Field(default_factory=list)
+    webhook_url: str | None = None
+
+
+@router.post("/{output_feed_id}/render-multi-format", status_code=status.HTTP_202_ACCEPTED)
+def start_multi_format_render(
+    output_feed_id: str,
+    payload: MultiFormatRenderRequest,
+    background_tasks: BackgroundTasks,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Render products across multiple templates (format group) in one batch."""
+    try:
+        existing = output_feed_service.get_output_feed(output_feed_id)
+    except OutputFeedNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing["subaccount_id"]))
+
+    job = output_feed_service.start_render_job(
+        output_feed_id=output_feed_id,
+        template_id=payload.template_ids[0],
+        total_products=len(payload.products) * len(payload.template_ids),
+    )
+
+    def _run():
+        from app.services.enriched_catalog.multi_format_renderer import multi_format_render_service
+        try:
+            multi_format_render_service.render_multi_format(
+                output_feed_id=output_feed_id,
+                template_ids=payload.template_ids,
+                products=payload.products,
+                webhook_url=payload.webhook_url,
+            )
+            output_feed_service.update_output_feed(output_feed_id, {"status": "published"})
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Multi-format render failed for feed %s", output_feed_id)
+            try:
+                output_feed_service.update_output_feed(output_feed_id, {"status": "failed"})
+            except Exception:
+                pass
+
+    background_tasks.add_task(_run)
+    return {
+        "status": "accepted",
+        "output_feed_id": output_feed_id,
+        "template_count": len(payload.template_ids),
+        "product_count": len(payload.products),
+        "total_renders": len(payload.products) * len(payload.template_ids),
+        "webhook_url": payload.webhook_url,
+        "job": job,
+    }
