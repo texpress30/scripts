@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Save, Loader2, Eye, RefreshCw, Wand2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Eye, RefreshCw, Wand2, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCreativeTemplate, useFormatSiblings, useCreativeTemplates } from "@/lib/hooks/useCreativeTemplates";
 import { useCanvasEditor } from "@/lib/hooks/useCanvasEditor";
@@ -74,6 +74,7 @@ export default function TemplateEditorPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("source_feed");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [currentProductIndex, setCurrentProductIndex] = useState(0);
+  const [zoom, setZoom] = useState(100);
 
   const {
     canvasWidth, canvasHeight, backgroundColor,
@@ -351,6 +352,8 @@ export default function TemplateEditorPage() {
           onDelete={() => canvasRef.current?.deleteSelected()}
           onBringForward={() => canvasRef.current?.bringForward()}
           onSendBackward={() => canvasRef.current?.sendBackward()}
+          onUndo={() => canvasRef.current?.undo()}
+          onRedo={() => canvasRef.current?.redo()}
           hasSelection={selectedObject !== null}
         />
         {brandPresets.length > 0 && (
@@ -373,9 +376,21 @@ export default function TemplateEditorPage() {
           {renderSidebarContent()}
         </EditorSidebar>
 
-        {/* Center: Canvas + Format switcher */}
+        {/* Center: Canvas + Format switcher + Status bar */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex flex-1 items-center justify-center overflow-auto bg-slate-200 p-8 dark:bg-slate-900">
+          <div className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-200 p-8 dark:bg-slate-900">
+            {/* Canvas Color label */}
+            <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded bg-white/80 px-3 py-1 text-xs text-slate-600 backdrop-blur dark:bg-slate-800/80 dark:text-slate-400">
+              Canvas Color
+              <input
+                type="color"
+                value={backgroundColor}
+                onChange={(e) => updateBackgroundColor(e.target.value)}
+                className="h-5 w-6 cursor-pointer rounded border"
+              />
+              <span className="ml-4 text-slate-400">{canvasWidth} x {canvasHeight}</span>
+            </div>
+
             <CanvasEditor
               ref={canvasRef}
               width={canvasWidth}
@@ -385,6 +400,50 @@ export default function TemplateEditorPage() {
               onSelectionChange={handleSelectionChange}
               onModified={handleModified}
             />
+
+            {/* Empty state hint */}
+            {canvasObjects.length === 0 && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="rounded-lg bg-white/90 px-6 py-4 text-center shadow dark:bg-slate-800/90">
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Add Layers</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    Drag elements from your library or click the toolbar to add them to the canvas
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom status bar */}
+          <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-1.5 dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+              <span>{totalProducts} SKUs</span>
+              <span>{canvasObjects.length} layer{canvasObjects.length !== 1 ? "s" : ""}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => { canvasRef.current?.zoomOut(); setZoom(Math.round((canvasRef.current?.getZoom() ?? 1) * 100)); }}
+                className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                title="Zoom Out"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+              </button>
+              <span className="w-10 text-center text-xs text-slate-500 dark:text-slate-400">{zoom}%</span>
+              <button
+                onClick={() => { canvasRef.current?.zoomIn(); setZoom(Math.round((canvasRef.current?.getZoom() ?? 1) * 100)); }}
+                className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                title="Zoom In"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => { canvasRef.current?.zoomReset(); setZoom(100); }}
+                className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                title="Reset Zoom"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Format switcher bar */}
