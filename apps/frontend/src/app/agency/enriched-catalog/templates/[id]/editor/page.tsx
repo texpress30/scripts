@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Save, Loader2, Eye, RefreshCw, Wand2, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Eye, RefreshCw, Wand2, ZoomIn, ZoomOut, Maximize2, Shuffle } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCreativeTemplate, useFormatSiblings, useCreativeTemplates } from "@/lib/hooks/useCreativeTemplates";
 import { useCanvasEditor } from "@/lib/hooks/useCanvasEditor";
@@ -222,10 +222,28 @@ export default function TemplateEditorPage() {
   };
 
   // Source Feed: click a field to add as dynamic element
-  const handleSourceFieldClick = (fieldKey: string, value: string) => {
-    const binding = `{{${fieldKey}}}`;
-    if (fieldKey.includes("image")) {
-      canvasRef.current?.addImageFromURL(value, binding);
+  const handleSourceFieldClick = async (fieldKey: string, value: string) => {
+    // Handle remove background request
+    const isRemoveBg = fieldKey.endsWith("__nobg");
+    const actualKey = isRemoveBg ? fieldKey.replace("__nobg", "") : fieldKey;
+    const binding = `{{${actualKey}}}`;
+
+    if (actualKey.includes("image")) {
+      if (isRemoveBg && value && value.startsWith("http")) {
+        try {
+          const res = await apiRequest("/creative/remove-background", {
+            method: "POST",
+            body: JSON.stringify({ image_url: value }),
+          });
+          const data = res as { url?: string };
+          canvasRef.current?.addImageFromURL(data.url || value, binding);
+        } catch (err) {
+          console.warn("Remove background failed, using original image:", err);
+          canvasRef.current?.addImageFromURL(value, binding);
+        }
+      } else {
+        canvasRef.current?.addImageFromURL(value, binding);
+      }
     } else {
       canvasRef.current?.addDynamicField(binding);
     }
@@ -329,6 +347,24 @@ export default function TemplateEditorPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Shuffle + SKU count */}
+          <button
+            onClick={() => {
+              if (totalProducts <= 1) return;
+              let next = currentProductIndex;
+              while (next === currentProductIndex) next = Math.floor(Math.random() * totalProducts);
+              setCurrentProductIndex(next);
+            }}
+            disabled={totalProducts <= 1}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-400 dark:hover:bg-slate-700"
+            title="Shuffle through different product rows in the source feed"
+          >
+            <Shuffle className="h-3.5 w-3.5" />
+            {totalProducts} SKUs
+          </button>
+
+          <div className="h-5 w-px bg-slate-200 dark:bg-slate-600" />
+
           <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
             <input type="number" value={canvasWidth} onChange={(e) => updateCanvasSize(Number(e.target.value), canvasHeight)} className="mcc-input w-16 rounded border px-1.5 py-1 text-xs" />
             <span>x</span>
@@ -426,7 +462,6 @@ export default function TemplateEditorPage() {
           {/* Bottom status bar */}
           <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-1.5 dark:border-slate-700 dark:bg-slate-800">
             <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-              <span>{totalProducts} SKUs</span>
               <span>{canvasObjects.length} layer{canvasObjects.length !== 1 ? "s" : ""}</span>
             </div>
             <div className="flex items-center gap-1">
