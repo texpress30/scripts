@@ -35,6 +35,7 @@ interface FabricObjectJSON {
     elementType?: string;
     dynamicBinding?: string;
     shapeType?: string;
+    imageSrc?: string;
   };
   [key: string]: unknown;
 }
@@ -88,7 +89,7 @@ export function fabricToCanvasElements(fabricJSON: FabricCanvasJSON): CanvasElem
         break;
 
       case "image":
-        base.content = obj.src || "";
+        base.content = obj.src || obj.data?.imageSrc || "";
         if (obj.data?.dynamicBinding) {
           base.dynamic_binding = obj.data.dynamicBinding;
         }

@@ -89,9 +89,8 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
 
       const addGuideLine = (x1: number, y1: number, x2: number, y2: number) => {
         const line = new Line([x1, y1, x2, y2], {
-          stroke: "#f59e0b",
-          strokeWidth: 1,
-          strokeDashArray: [4, 3],
+          stroke: "#ef4444",
+          strokeWidth: 2,
           selectable: false,
           evented: false,
           excludeFromExport: true,
@@ -324,6 +323,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
               elementId: crypto.randomUUID(),
               elementType: "image",
               dynamicBinding: binding,
+              imageSrc: url,
             },
           });
           fabricImg.scaleToWidth(w);
@@ -342,6 +342,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
                 elementId: crypto.randomUUID(),
                 elementType: "image",
                 dynamicBinding: binding,
+                imageSrc: url,
               },
             });
             fabricImg.scaleToWidth(Math.min(300, imgEl.naturalWidth));
