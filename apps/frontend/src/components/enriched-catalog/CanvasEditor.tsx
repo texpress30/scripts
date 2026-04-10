@@ -29,12 +29,13 @@ interface CanvasEditorProps {
   height: number;
   backgroundColor: string;
   elements: CanvasElement[];
+  editorRef?: React.MutableRefObject<CanvasEditorHandle | null>;
   onSelectionChange?: (obj: FabricObject | null) => void;
   onModified?: () => void;
 }
 
 export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
-  function CanvasEditor({ width, height, backgroundColor, elements, onSelectionChange, onModified }, ref) {
+  function CanvasEditor({ width, height, backgroundColor, elements, editorRef, onSelectionChange, onModified }, ref) {
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const fabricRef = useRef<Canvas | null>(null);
     const initializedRef = useRef(false);
@@ -116,7 +117,8 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
       canvas.renderAll();
     }, []);
 
-    useImperativeHandle(ref, () => ({
+    useImperativeHandle(ref, () => {
+      const handle: CanvasEditorHandle = {
       getElements: () => {
         const canvas = fabricRef.current;
         if (!canvas) return [];
@@ -361,7 +363,10 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         canvas.renderAll();
       },
       getZoom: () => fabricRef.current?.getZoom() ?? 1,
-    }));
+      };
+      if (editorRef) editorRef.current = handle;
+      return handle;
+    });
 
     return (
       <div className="inline-block rounded border border-slate-300 shadow-sm dark:border-slate-600">

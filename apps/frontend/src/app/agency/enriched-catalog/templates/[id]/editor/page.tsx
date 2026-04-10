@@ -411,6 +411,7 @@ export default function TemplateEditorPage() {
               >
                 <CanvasEditor
                   ref={canvasRef}
+                  editorRef={canvasRef}
                   width={canvasWidth}
                   height={canvasHeight}
                   backgroundColor={backgroundColor}
