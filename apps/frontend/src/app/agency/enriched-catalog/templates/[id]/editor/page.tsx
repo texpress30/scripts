@@ -74,7 +74,8 @@ export default function TemplateEditorPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("source_feed");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [currentProductIndex, setCurrentProductIndex] = useState(0);
-  const [zoom, setZoom] = useState(100);
+  const [zoom, setZoom] = useState<number | null>(null);
+  const canvasAreaRef = useRef<HTMLDivElement>(null);
 
   const {
     canvasWidth, canvasHeight, backgroundColor,
@@ -95,6 +96,19 @@ export default function TemplateEditorPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template?.id]);
+
+  // Auto-fit canvas to available viewport on load and when dimensions change
+  useEffect(() => {
+    const container = canvasAreaRef.current;
+    if (!container || !canvasWidth || !canvasHeight) return;
+    const padding = 96; // 48px each side
+    const availW = container.clientWidth - padding;
+    const availH = container.clientHeight - padding;
+    if (availW <= 0 || availH <= 0) return;
+    const fitZoom = Math.min(availW / canvasWidth, availH / canvasHeight);
+    const fitPercent = Math.max(10, Math.min(300, Math.round(fitZoom * 100)));
+    setZoom(fitPercent);
+  }, [canvasWidth, canvasHeight]);
 
   const refreshObjectList = useCallback(() => {
     const canvas = canvasRef.current?.getCanvas();
@@ -378,7 +392,7 @@ export default function TemplateEditorPage() {
 
         {/* Center: Canvas + Format switcher + Status bar */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-300/70 dark:bg-slate-900" style={{ backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
+          <div ref={canvasAreaRef} className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-300/70 dark:bg-slate-900" style={{ backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
             {/* Scaled canvas wrapper for CSS-based zoom */}
             <div
               className="flex items-center justify-center"
@@ -390,7 +404,7 @@ export default function TemplateEditorPage() {
             >
               <div
                 style={{
-                  transform: `scale(${zoom / 100})`,
+                  transform: `scale(${(zoom ?? 100) / 100})`,
                   transformOrigin: "center center",
                   transition: "transform 0.15s ease-out",
                 }}
@@ -428,15 +442,15 @@ export default function TemplateEditorPage() {
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setZoom((prev) => Math.max(10, Math.round(prev / 1.2)))}
+                onClick={() => setZoom((prev) => Math.max(10, Math.round((prev ?? 100) / 1.2)))}
                 className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                 title="Zoom Out"
               >
                 <ZoomOut className="h-3.5 w-3.5" />
               </button>
-              <span className="w-10 text-center text-xs text-slate-500 dark:text-slate-400">{zoom}%</span>
+              <span className="w-10 text-center text-xs text-slate-500 dark:text-slate-400">{zoom ?? 100}%</span>
               <button
-                onClick={() => setZoom((prev) => Math.min(300, Math.round(prev * 1.2)))}
+                onClick={() => setZoom((prev) => Math.min(300, Math.round((prev ?? 100) * 1.2)))}
                 className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                 title="Zoom In"
               >
