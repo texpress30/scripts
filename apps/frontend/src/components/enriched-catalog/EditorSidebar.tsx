@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2, Upload, RefreshCw, SlidersHorizontal, Check } from "lucide-react";
+import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2, Upload, RefreshCw, SlidersHorizontal, Check, Shuffle, Eraser } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type SidebarTab = "source_feed" | "image_assets" | "graphic_assets" | "library" | "layers";
@@ -163,27 +163,47 @@ export function SourceFeedPanel({
     );
   }
 
+  const handleShuffle = () => {
+    if (totalProducts <= 1) return;
+    let next = currentProductIndex;
+    while (next === currentProductIndex) {
+      next = Math.floor(Math.random() * totalProducts);
+    }
+    onProductChange(next);
+  };
+
   return (
     <div className="p-2">
-      {/* Product navigator */}
-      <div className="mb-2 flex items-center justify-between rounded bg-slate-50 px-2 py-1.5 dark:bg-slate-900">
+      {/* Shuffle hint */}
+      <div className="mb-2 flex items-center gap-2 rounded bg-slate-50 px-2 py-1.5 dark:bg-slate-900">
         <button
-          onClick={() => onProductChange(Math.max(0, currentProductIndex - 1))}
-          disabled={currentProductIndex === 0}
-          className="rounded p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-30"
+          onClick={handleShuffle}
+          disabled={totalProducts <= 1}
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
+          title="Shuffle through different product rows in the source feed"
         >
-          <ChevronLeft className="h-4 w-4" />
+          <Shuffle className="h-3.5 w-3.5" />
+          Shuffle
         </button>
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          {currentProductIndex + 1} / {totalProducts}
-        </span>
-        <button
-          onClick={() => onProductChange(Math.min(totalProducts - 1, currentProductIndex + 1))}
-          disabled={currentProductIndex >= totalProducts - 1}
-          className="rounded p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-30"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={() => onProductChange(Math.max(0, currentProductIndex - 1))}
+            disabled={currentProductIndex === 0}
+            className="rounded p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-30"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">
+            {currentProductIndex + 1}/{totalProducts}
+          </span>
+          <button
+            onClick={() => onProductChange(Math.min(totalProducts - 1, currentProductIndex + 1))}
+            disabled={currentProductIndex >= totalProducts - 1}
+            className="rounded p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-30"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Search + Filter */}
@@ -324,19 +344,41 @@ export function SourceFeedPanel({
           {imageColumns.map((col) => {
             const val = String(product[col.key] ?? "");
             return (
-              <button
-                key={col.key}
-                onClick={() => onFieldClick(col.key, val)}
-                className="mb-1.5 w-full text-left"
-                title={`Click to add {{${col.key}}} to canvas`}
-              >
+              <div key={col.key} className="mb-2">
                 <p className="text-[10px] font-medium text-teal-600 dark:text-teal-400">{col.key}</p>
                 {val && val.startsWith("http") ? (
-                  <img src={val} alt={col.key} className="mt-1 h-20 w-full rounded border object-contain bg-slate-50 dark:bg-slate-900" />
+                  <div className="group relative mt-1">
+                    <button
+                      onClick={() => onFieldClick(col.key, val)}
+                      className="w-full text-left"
+                      title={`Click to add {{${col.key}}} to canvas`}
+                    >
+                      <img src={val} alt={col.key} className="h-24 w-full rounded border object-contain bg-slate-50 dark:bg-slate-900" />
+                    </button>
+                    <div className="absolute bottom-1 right-1 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFieldClick(col.key + "__nobg", val);
+                        }}
+                        className="flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium text-slate-600 shadow-sm backdrop-blur hover:bg-white dark:bg-slate-800/90 dark:text-slate-300 dark:hover:bg-slate-800"
+                        title="Remove background and add to canvas"
+                      >
+                        <Eraser className="h-3 w-3" />
+                        Remove BG
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <p className="truncate text-[10px] text-slate-500">{val || "—"}</p>
+                  <button
+                    onClick={() => onFieldClick(col.key, val)}
+                    className="w-full text-left"
+                    title={`Click to add {{${col.key}}} to canvas`}
+                  >
+                    <p className="truncate text-[10px] text-slate-500">{val || "—"}</p>
+                  </button>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
