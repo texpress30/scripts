@@ -170,17 +170,9 @@ export default function TemplateEditorPage() {
     }
   };
 
-  const handlePreview = async () => {
-    const product = products[currentProductIndex] ?? {};
-    try {
-      await apiRequest(`/creative/templates/${templateId}/preview`, {
-        method: "POST",
-        body: JSON.stringify(product),
-      });
-      alert("Preview generated with current product data.");
-    } catch (err) {
-      console.error("Preview failed:", err);
-    }
+  const handlePreview = () => {
+    if (hasUnsavedChanges && !confirm("You have unsaved changes. Go to preview without saving?")) return;
+    router.push(`/agency/enriched-catalog/templates/${templateId}/preview`);
   };
 
   const handleSwitchFormat = (targetId: string) => {
