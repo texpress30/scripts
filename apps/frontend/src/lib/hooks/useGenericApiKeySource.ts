@@ -24,7 +24,6 @@ export type GenericApiKeyPlatformKey =
   | "prestashop"
   | "opencart"
   | "shopware"
-  | "lightspeed"
   | "volusion"
   | "cart_storefront";
 
@@ -56,13 +55,11 @@ export const GENERIC_API_KEY_PLATFORMS: Record<
   opencart: {
     key: "opencart",
     displayName: "OpenCart",
-    apiKeyLabel: "API Key",
-    apiSecretLabel: "API Username",
-    hasApiSecret: true,
-    apiKeyPlaceholder: "ex: your-opencart-api-key",
-    apiSecretPlaceholder: "ex: api_user",
+    apiKeyLabel: "Store Key",
+    hasApiSecret: false,
+    apiKeyPlaceholder: "ex: your-opencart-store-key",
     helpText:
-      "Configurează din OpenCart Admin → System → Users → API. Creează un utilizator nou cu acces de tip 'API' și copiază API Key + Username.",
+      "Solicită clientului Store Key-ul din OpenCart. Clientul trebuie să instaleze conectorul în OpenCart Admin → Extensions → Extension Installer, apoi să-l activeze din Extensions → Modules. Store Key-ul apare în pagina de editare a conectorului.",
   },
   shopware: {
     key: "shopware",
@@ -74,17 +71,6 @@ export const GENERIC_API_KEY_PLATFORMS: Record<
     apiSecretPlaceholder: "ex: SW1...",
     helpText:
       "Creează din Shopware Admin → Settings → System → Integrations → Add integration. Acordă permisiunile pentru produse și categorii apoi copiază Access Key + Secret Key.",
-  },
-  lightspeed: {
-    key: "lightspeed",
-    displayName: "Lightspeed",
-    apiKeyLabel: "API Key",
-    apiSecretLabel: "API Secret",
-    hasApiSecret: true,
-    apiKeyPlaceholder: "ex: your-api-key",
-    apiSecretPlaceholder: "ex: your-api-secret",
-    helpText:
-      "Generează din Lightspeed eCom Admin → Apps → API Access → Create new API key. Lightspeed afișează cheia o singură dată — salveaz-o imediat.",
   },
   volusion: {
     key: "volusion",
@@ -98,13 +84,11 @@ export const GENERIC_API_KEY_PLATFORMS: Record<
   cart_storefront: {
     key: "cart_storefront",
     displayName: "Cart Storefront",
-    apiKeyLabel: "API Token",
-    apiSecretLabel: "API Secret",
-    hasApiSecret: true,
-    apiKeyPlaceholder: "ex: your-cart-api-token",
-    apiSecretPlaceholder: "ex: your-cart-api-secret",
+    apiKeyLabel: "Authorization Token",
+    hasApiSecret: false,
+    apiKeyPlaceholder: "ex: your-authorization-token",
     helpText:
-      "Generează tokenul din Cart.com Admin → Settings → API → Storefront API Tokens. Acordă permisiunile pentru catalog și produse, apoi copiază API Token + Secret.",
+      "Solicită clientului tokenul din Cart.com Admin → Tools → Apps & Addons → API Token Manager. Clientul trebuie să creeze o aplicație cu Authentication Flow: Single Token Flow, cu permisiuni Catalog Permissions → View catalog data. Apoi din API Token Manager → Access Tokens, copiază tokenul generat.",
   },
 };
 

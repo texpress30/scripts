@@ -27,6 +27,10 @@ import {
   GenericApiKeySourceForm,
   type GenericApiKeyFormData,
 } from "@/components/feed-management/forms/GenericApiKeySourceForm";
+import {
+  LightspeedSourceForm,
+  type LightspeedFormData,
+} from "@/components/feed-management/forms/LightspeedSourceForm";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import {
   createMagentoSourceApi,
@@ -38,19 +42,20 @@ import {
   createGenericApiKeySource,
   type GenericApiKeyPlatformKey,
 } from "@/lib/hooks/useGenericApiKeySource";
+import { createLightspeedSource } from "@/lib/hooks/useLightspeedSource";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 
 const FILE_TYPES: FeedSourceType[] = ["csv", "json", "xml", "google_sheets"];
 const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce"];
-// Six "URL + API key" e-commerce platforms served by the parametrised
+// Five "URL + API key" e-commerce platforms served by the parametrised
 // generic-API-key router on the backend (PrestaShop, OpenCart,
-// Shopware, Lightspeed, Volusion, Cart Storefront). All wired into the
-// wizard via the same ``GenericApiKeySourceForm`` + ``handleCreateGenericApiKey``.
+// Shopware, Volusion, Cart Storefront). Lightspeed has its own
+// dedicated form since it uses Shop ID / Language / Region instead of
+// API credentials.
 const GENERIC_API_KEY_TYPES: ReadonlySet<FeedSourceType> = new Set([
   "prestashop",
   "opencart",
   "shopware",
-  "lightspeed",
   "volusion",
   "cart_storefront",
 ]);
@@ -165,6 +170,33 @@ export default function NewSourcePage() {
         isConflict
           ? "Acest magazin Shopify este deja revendicat. Detașează sursa existentă mai întâi."
           : message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreateLightspeed(data: LightspeedFormData) {
+    if (!selectedId) {
+      setError("Selectează un client înainte de a crea sursa.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await createLightspeedSource(selectedId, {
+        source_name: data.source_name,
+        store_url: data.store_url,
+        shop_id: data.shop_id,
+        shop_language: data.shop_language,
+        shop_region: data.shop_region,
+        catalog_type: selectedCatalog,
+        catalog_variant: selectedSubtype ?? "physical_products",
+      });
+      router.push("/agency/feed-management/sources");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Eroare la crearea sursei Lightspeed.",
       );
     } finally {
       setBusy(false);
@@ -446,6 +478,12 @@ export default function NewSourcePage() {
               ) : selectedType === "bigcommerce" ? (
                 <BigCommerceClaimForm
                   onClaim={(data) => void handleClaimBigCommerce(data)}
+                  onCancel={handleBack}
+                  busy={busy}
+                />
+              ) : selectedType === "lightspeed" ? (
+                <LightspeedSourceForm
+                  onSubmit={(data) => void handleCreateLightspeed(data)}
                   onCancel={handleBack}
                   busy={busy}
                 />

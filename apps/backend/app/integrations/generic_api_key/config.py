@@ -68,9 +68,8 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
         key="opencart",
         display_name="OpenCart",
         feed_source_type=FeedSourceType.opencart,
-        has_api_secret=True,
-        api_key_label="API Key",
-        api_secret_label="API Username",
+        has_api_secret=False,
+        api_key_label="Store Key",
     ),
     "shopware": PlatformDefinition(
         key="shopware",
@@ -79,14 +78,6 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
         has_api_secret=True,
         api_key_label="Integration Access Key",
         api_secret_label="Integration Secret Key",
-    ),
-    "lightspeed": PlatformDefinition(
-        key="lightspeed",
-        display_name="Lightspeed",
-        feed_source_type=FeedSourceType.lightspeed,
-        has_api_secret=True,
-        api_key_label="API Key",
-        api_secret_label="API Secret",
     ),
     "volusion": PlatformDefinition(
         key="volusion",
@@ -99,9 +90,8 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
         key="cart_storefront",
         display_name="Cart Storefront",
         feed_source_type=FeedSourceType.cart_storefront,
-        has_api_secret=True,
-        api_key_label="API Token",
-        api_secret_label="API Secret",
+        has_api_secret=False,
+        api_key_label="Authorization Token",
     ),
 }
 
