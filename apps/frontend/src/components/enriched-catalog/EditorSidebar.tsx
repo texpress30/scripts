@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2, Upload, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type SidebarTab = "source_feed" | "image_assets" | "graphic_assets" | "library" | "layers";
@@ -245,29 +245,94 @@ export function ImageAssetsPanel() {
 }
 
 export function GraphicAssetsPanel() {
-  const shapes = [
-    { label: "Rectangle", color: "#e2e8f0" },
-    { label: "Circle", color: "#e2e8f0" },
-    { label: "Badge", color: "#ef4444" },
-    { label: "Banner", color: "#6366f1" },
-    { label: "Divider", color: "#94a3b8" },
-  ];
+  const [searchGraphics, setSearchGraphics] = useState("");
+  const [activeGraphicTab, setActiveGraphicTab] = useState<"all" | "tags">("all");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="p-3">
-      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-        Drag graphic elements to the canvas.
-      </p>
-      <div className="grid grid-cols-2 gap-2">
-        {shapes.map((shape) => (
-          <div
-            key={shape.label}
-            className="flex h-16 cursor-pointer items-center justify-center rounded border border-slate-200 text-xs text-slate-500 hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-600 dark:hover:border-indigo-600"
-            style={{ backgroundColor: shape.color + "20" }}
-          >
-            {shape.label}
-          </div>
-        ))}
+    <div className="flex h-full flex-col p-3">
+      {/* All / Tags tabs */}
+      <div className="mb-3 flex rounded-md border border-slate-200 dark:border-slate-600">
+        <button
+          onClick={() => setActiveGraphicTab("all")}
+          className={cn(
+            "flex-1 rounded-l-md px-3 py-1.5 text-xs font-medium transition",
+            activeGraphicTab === "all"
+              ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+              : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700",
+          )}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setActiveGraphicTab("tags")}
+          className={cn(
+            "flex-1 rounded-r-md px-3 py-1.5 text-xs font-medium transition",
+            activeGraphicTab === "tags"
+              ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+              : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700",
+          )}
+        >
+          Tags
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-3">
+        <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
+        <input
+          type="text"
+          value={searchGraphics}
+          onChange={(e) => setSearchGraphics(e.target.value)}
+          placeholder="Search"
+          className="mcc-input w-full rounded border py-1.5 pl-7 pr-2 text-xs"
+        />
+      </div>
+
+      {/* Upload button */}
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        className="wm-btn-primary mb-4 flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-white"
+      >
+        <Upload className="h-3.5 w-3.5" /> Upload Graphics
+      </button>
+      <input ref={fileInputRef} type="file" accept=".svg,.png,.jpg,.jpeg,.webp" multiple className="hidden" />
+
+      {/* Empty state */}
+      <div className="flex flex-1 flex-col items-center justify-center text-center">
+        <div className="mb-3 text-slate-300 dark:text-slate-600">
+          <Shapes className="mx-auto h-16 w-16" />
+        </div>
+        <p className="text-[11px] text-slate-400 dark:text-slate-500">
+          Graphic assets are SVG files used for fleshing out your designs. Drag graphics from your library to the canvas to edit color and size.
+        </p>
+      </div>
+
+      {/* Bottom: Browse ready-to-use Assets */}
+      <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-700">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Browse ready-to-use Assets
+          </p>
+          <button className="rounded p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+            <RefreshCw className="h-3 w-3" />
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: "Highlight", emoji: "🔆" },
+            { label: "Texture", emoji: "🌿" },
+            { label: "Illustration", emoji: "🎨" },
+          ].map((asset) => (
+            <button
+              key={asset.label}
+              className="flex flex-col items-center gap-1 rounded-lg border border-slate-200 p-2 text-center hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-600 dark:hover:border-indigo-600 dark:hover:bg-indigo-900/20"
+            >
+              <span className="text-2xl">{asset.emoji}</span>
+              <span className="text-[9px] text-slate-500 dark:text-slate-400">{asset.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

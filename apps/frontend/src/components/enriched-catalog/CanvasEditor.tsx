@@ -12,6 +12,7 @@ export interface CanvasEditorHandle {
   addDynamicField: (binding: string) => void;
   addShape: (shapeType: "rectangle" | "ellipse") => void;
   addImagePlaceholder: (binding?: string) => void;
+  addImageFromURL: (url: string, binding: string) => void;
   deleteSelected: () => void;
   bringForward: () => void;
   sendBackward: () => void;
@@ -207,6 +208,82 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         canvas.setActiveObject(placeholder);
         canvas.renderAll();
         onModified?.();
+      },
+      addImageFromURL: (url: string, binding: string) => {
+        const canvas = fabricRef.current;
+        if (!canvas) return;
+        if (!url || !url.startsWith("http")) {
+          // Fallback to placeholder if no valid URL
+          const placeholder = new Rect({
+            left: 50,
+            top: 50,
+            width: 200,
+            height: 200,
+            fill: "#cbd5e1",
+            stroke: "#94a3b8",
+            strokeWidth: 2,
+            strokeDashArray: [8, 4],
+            data: {
+              elementId: crypto.randomUUID(),
+              elementType: "image",
+              dynamicBinding: binding,
+            },
+          });
+          canvas.add(placeholder);
+          canvas.setActiveObject(placeholder);
+          canvas.renderAll();
+          onModified?.();
+          return;
+        }
+        const imgEl = document.createElement("img");
+        imgEl.crossOrigin = "anonymous";
+        imgEl.onload = () => {
+          const maxDim = 300;
+          let w = imgEl.naturalWidth;
+          let h = imgEl.naturalHeight;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const fabricImg = new FabricImage(imgEl, {
+            left: 50,
+            top: 50,
+            data: {
+              elementId: crypto.randomUUID(),
+              elementType: "image",
+              dynamicBinding: binding,
+            },
+          });
+          fabricImg.scaleToWidth(w);
+          canvas.add(fabricImg);
+          canvas.setActiveObject(fabricImg);
+          canvas.renderAll();
+          onModified?.();
+        };
+        imgEl.onerror = () => {
+          // Fallback to placeholder on error
+          const placeholder = new Rect({
+            left: 50,
+            top: 50,
+            width: 200,
+            height: 200,
+            fill: "#cbd5e1",
+            stroke: "#94a3b8",
+            strokeWidth: 2,
+            strokeDashArray: [8, 4],
+            data: {
+              elementId: crypto.randomUUID(),
+              elementType: "image",
+              dynamicBinding: binding,
+            },
+          });
+          canvas.add(placeholder);
+          canvas.setActiveObject(placeholder);
+          canvas.renderAll();
+          onModified?.();
+        };
+        imgEl.src = url;
       },
       deleteSelected: () => {
         const canvas = fabricRef.current;
