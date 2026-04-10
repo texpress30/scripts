@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2, Upload, RefreshCw } from "lucide-react";
+import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2, Upload, RefreshCw, SlidersHorizontal, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type SidebarTab = "source_feed" | "image_assets" | "graphic_assets" | "library" | "layers";
@@ -92,11 +92,26 @@ export function SourceFeedPanel({
   products, columns, isLoading, currentProductIndex, onProductChange, totalProducts, onFieldClick,
 }: SourceFeedPanelProps) {
   const [search, setSearch] = useState("");
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const product = products[currentProductIndex] ?? {};
 
-  const filteredColumns = columns.filter((col) =>
-    !search || col.key.toLowerCase().includes(search.toLowerCase()) || col.label.toLowerCase().includes(search.toLowerCase()),
-  );
+  const hasActiveFilter = selectedFields.size > 0;
+
+  const toggleField = (key: string) => {
+    setSelectedFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const filteredColumns = columns.filter((col) => {
+    const matchesSearch = !search || col.key.toLowerCase().includes(search.toLowerCase()) || col.label.toLowerCase().includes(search.toLowerCase());
+    const matchesFilter = !hasActiveFilter || selectedFields.has(col.key);
+    return matchesSearch && matchesFilter;
+  });
 
   // Group columns by type
   const imageColumns = filteredColumns.filter((c) => c.type === "image" || c.type === "url" && c.key.includes("image"));
@@ -142,16 +157,68 @@ export function SourceFeedPanel({
         </button>
       </div>
 
-      {/* Search */}
-      <div className="relative mb-3">
-        <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search fields..."
-          className="mcc-input w-full rounded border py-1.5 pl-7 pr-2 text-xs"
-        />
+      {/* Search + Filter */}
+      <div className="relative mb-3 flex items-center gap-1.5">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search fields..."
+            className="mcc-input w-full rounded border py-1.5 pl-7 pr-2 text-xs"
+          />
+        </div>
+        <div className="relative">
+          <button
+            onClick={() => setShowFilterMenu(!showFilterMenu)}
+            className={cn(
+              "flex h-[30px] w-[30px] items-center justify-center rounded border transition",
+              hasActiveFilter
+                ? "border-indigo-400 bg-indigo-50 text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400"
+                : "border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600 dark:border-slate-600 dark:hover:border-slate-500 dark:hover:text-slate-300",
+            )}
+            title="Filter fields"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+          </button>
+          {showFilterMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowFilterMenu(false)} />
+              <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-52 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700">
+                <div className="flex items-center justify-between border-b border-slate-100 px-3 py-1.5 dark:border-slate-600">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Filter Fields</span>
+                  {hasActiveFilter && (
+                    <button
+                      onClick={() => setSelectedFields(new Set())}
+                      className="text-[10px] text-indigo-500 hover:text-indigo-700 dark:text-indigo-400"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                {columns.map((col) => (
+                  <button
+                    key={col.key}
+                    onClick={() => toggleField(col.key)}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-600"
+                  >
+                    <div className={cn(
+                      "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                      selectedFields.has(col.key)
+                        ? "border-indigo-500 bg-indigo-500 text-white"
+                        : "border-slate-300 dark:border-slate-500",
+                    )}>
+                      {selectedFields.has(col.key) && <Check className="h-2.5 w-2.5" />}
+                    </div>
+                    <span className="truncate">{col.key}</span>
+                    <span className="ml-auto shrink-0 text-[9px] text-slate-400">{col.type}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Image fields */}
