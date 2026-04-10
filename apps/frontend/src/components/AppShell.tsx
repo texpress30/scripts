@@ -15,6 +15,7 @@ import {
   Maximize2,
   Minimize2,
   Moon,
+  Image as ImageIcon,
   Palette,
   Rss,
   Search,
@@ -38,7 +39,7 @@ type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
 const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations"] as const;
 type SubaccountModuleKey = (typeof SUBACCOUNT_MODULE_ORDER)[number];
-const AGENCY_MAIN_MODULE_ORDER = ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "feed_management", "agency_audit", "creative"] as const;
+const AGENCY_MAIN_MODULE_ORDER = ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "feed_management", "enriched_catalog", "agency_audit", "creative"] as const;
 type AgencyMainModuleKey = (typeof AGENCY_MAIN_MODULE_ORDER)[number];
 const AGENCY_SETTINGS_MODULE_ORDER = [
   "settings_profile",
@@ -105,6 +106,7 @@ export function getNavItems(pathname: string): NavItem[] {
     { href: "/agency/clients", label: "Agency Clients", icon: Users, moduleKey: "agency_clients" },
     { href: "/agency-accounts", label: "Agency Accounts", icon: Bell, moduleKey: "agency_accounts" },
     { href: "/agency/feed-management/sources", label: "Feed Management", icon: Rss, moduleKey: "feed_management" },
+    { href: "/agency/enriched-catalog/templates", label: "Enriched Catalog", icon: ImageIcon, moduleKey: "enriched_catalog" },
     { href: "/agency/audit", label: "Agency Audit", icon: Sparkles, moduleKey: "agency_audit" },
     { href: "/creative", label: "Creativ", icon: Palette, moduleKey: "creative" },
   ];
@@ -385,6 +387,7 @@ export function resolveAgencyRouteRedirect(params: {
     ["/agency-accounts", "agency_accounts"],
     ["/agency/integrations", "integrations"],
     ["/agency/feed-management", "feed_management"],
+    ["/agency/enriched-catalog", "enriched_catalog"],
     ["/agency/audit", "agency_audit"],
     ["/creative", "creative"],
   ] as const;
@@ -397,6 +400,7 @@ export function resolveAgencyRouteRedirect(params: {
     if (fallbackMain === "agency_accounts") return "/agency-accounts";
     if (fallbackMain === "integrations") return "/agency/integrations";
     if (fallbackMain === "feed_management") return "/agency/feed-management/sources";
+    if (fallbackMain === "enriched_catalog") return "/agency/enriched-catalog/templates";
     if (fallbackMain === "agency_audit") return "/agency/audit";
     if (fallbackMain === "creative") return "/creative";
     const firstSetting = settingsItems.find((item) => !item.moduleKey || allowed.has(item.moduleKey));
@@ -412,6 +416,7 @@ export function resolveAgencyRouteRedirect(params: {
     if (fallbackMain === "agency_accounts") return "/agency-accounts";
     if (fallbackMain === "integrations") return "/agency/integrations";
     if (fallbackMain === "feed_management") return "/agency/feed-management/sources";
+    if (fallbackMain === "enriched_catalog") return "/agency/enriched-catalog/templates";
     if (fallbackMain === "agency_audit") return "/agency/audit";
     if (fallbackMain === "creative") return "/creative";
     return "/agency/dashboard";
@@ -427,6 +432,7 @@ export function resolveAgencyRouteRedirect(params: {
     if (fallbackMain === "agency_accounts") return "/agency-accounts";
     if (fallbackMain === "integrations") return "/agency/integrations";
     if (fallbackMain === "feed_management") return "/agency/feed-management/sources";
+    if (fallbackMain === "enriched_catalog") return "/agency/enriched-catalog/templates";
     if (fallbackMain === "agency_audit") return "/agency/audit";
     if (fallbackMain === "creative") return "/creative";
     return "/agency/dashboard";
@@ -716,7 +722,7 @@ export function AppShell({
         if (!ignore) {
           setAgencyMyAccess({
             role: sessionInfo.role,
-            module_keys: ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "feed_management", "agency_audit", "creative", "settings", ...AGENCY_SETTINGS_MODULE_ORDER],
+            module_keys: ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "feed_management", "enriched_catalog", "agency_audit", "creative", "settings", ...AGENCY_SETTINGS_MODULE_ORDER],
             source_scope: "fallback",
             access_scope: "agency",
             unrestricted_modules: true,
