@@ -1,19 +1,137 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, ExternalLink, Copy, Check } from "lucide-react";
+import { ArrowLeft, Loader2, Copy, Check } from "lucide-react";
+import { Canvas, Rect, Ellipse, Textbox, FabricImage } from "fabric";
 import { useCreativeTemplate } from "@/lib/hooks/useCreativeTemplates";
+import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useChannelProducts } from "@/lib/hooks/useChannelProducts";
 import { useChannels } from "@/lib/hooks/useMasterFields";
-import { apiRequest } from "@/lib/api";
 
 interface RenderedPreview {
   product_index: number;
   image_url: string;
-  product_data: Record<string, unknown>;
+}
+
+/**
+ * Render a template with product data on an offscreen Fabric.js canvas.
+ * Returns a data URL of the rendered image.
+ */
+async function renderTemplateForProduct(
+  elements: CanvasElement[],
+  canvasWidth: number,
+  canvasHeight: number,
+  backgroundColor: string,
+  product: Record<string, unknown>,
+): Promise<string> {
+  // Create offscreen canvas element
+  const canvasEl = document.createElement("canvas");
+  canvasEl.width = canvasWidth;
+  canvasEl.height = canvasHeight;
+
+  const canvas = new Canvas(canvasEl, {
+    width: canvasWidth,
+    height: canvasHeight,
+    backgroundColor,
+  });
+
+  for (const el of elements) {
+    // Replace dynamic bindings with product values
+    let content = el.content || "";
+    const binding = el.dynamic_binding;
+    if (binding) {
+      const fieldKey = binding.replace(/\{\{|\}\}/g, "");
+      const productValue = String(product[fieldKey] ?? binding);
+      content = productValue;
+    }
+
+    try {
+      switch (el.type) {
+        case "text":
+        case "dynamic_field": {
+          const textbox = new Textbox(content, {
+            left: el.position_x,
+            top: el.position_y,
+            width: el.width || 200,
+            fontSize: (el.style.font_size as number) || 16,
+            fill: (el.style.color as string) || "#000000",
+            fontFamily: (el.style.font_family as string) || "Arial",
+          });
+          canvas.add(textbox);
+          break;
+        }
+        case "image": {
+          const imgUrl = binding
+            ? String(product[binding.replace(/\{\{|\}\}/g, "")] ?? content)
+            : content;
+          if (imgUrl && imgUrl.startsWith("http")) {
+            try {
+              const img = await FabricImage.fromURL(imgUrl, { crossOrigin: "anonymous" });
+              img.set({ left: el.position_x, top: el.position_y });
+              if (el.width && el.height) {
+                img.scaleToWidth(el.width);
+              }
+              canvas.add(img);
+            } catch {
+              // Try without CORS
+              try {
+                const imgEl = document.createElement("img");
+                await new Promise<void>((resolve, reject) => {
+                  imgEl.onload = () => resolve();
+                  imgEl.onerror = () => reject();
+                  imgEl.src = imgUrl;
+                });
+                const fabricImg = new FabricImage(imgEl, {
+                  left: el.position_x,
+                  top: el.position_y,
+                });
+                if (el.width) fabricImg.scaleToWidth(el.width);
+                canvas.add(fabricImg);
+              } catch {
+                // Skip failed images
+              }
+            }
+          }
+          break;
+        }
+        case "shape": {
+          const shapeType = (el.style.shape_type as string) || el.content || "rectangle";
+          const fill = (el.style.fill_color as string) || "#CCCCCC";
+          if (shapeType === "ellipse" || shapeType === "circle") {
+            canvas.add(new Ellipse({
+              left: el.position_x,
+              top: el.position_y,
+              rx: (el.width || 100) / 2,
+              ry: (el.height || 100) / 2,
+              fill,
+            }));
+          } else {
+            canvas.add(new Rect({
+              left: el.position_x,
+              top: el.position_y,
+              width: el.width || 200,
+              height: el.height || 100,
+              fill,
+            }));
+          }
+          break;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to render element:", err);
+    }
+  }
+
+  canvas.renderAll();
+
+  // Export as data URL
+  const dataUrl = canvasEl.toDataURL("image/png");
+  canvas.dispose();
+
+  return dataUrl;
 }
 
 export default function PreviewCreativesPage() {
@@ -36,49 +154,41 @@ export default function PreviewCreativesPage() {
   const [previews, setPreviews] = useState<RenderedPreview[]>([]);
   const [renderedCount, setRenderedCount] = useState(0);
   const [copied, setCopied] = useState(false);
-
-  const renderPreviews = useCallback(async () => {
-    if (!products.length || !templateId) return;
-    setRendering(true);
-    setProgress(0);
-    setPreviews([]);
-    setRenderedCount(0);
-
-    const maxPreviews = Math.min(products.length, 48);
-    const results: RenderedPreview[] = [];
-
-    for (let i = 0; i < maxPreviews; i++) {
-      try {
-        const res = await apiRequest<{ image_url: string }>(`/creative/templates/${templateId}/render`, {
-          method: "POST",
-          body: JSON.stringify(products[i]),
-        });
-        results.push({
-          product_index: i,
-          image_url: res.image_url,
-          product_data: products[i],
-        });
-      } catch {
-        // Use a placeholder for failed renders
-        results.push({
-          product_index: i,
-          image_url: "",
-          product_data: products[i],
-        });
-      }
-      setRenderedCount(results.length);
-      setProgress(Math.round(((i + 1) / maxPreviews) * 100));
-      setPreviews([...results]);
-    }
-
-    setRendering(false);
-  }, [products, templateId]);
+  const renderingRef = useRef(false);
 
   useEffect(() => {
-    if (products.length > 0) {
-      renderPreviews();
-    }
-  }, [products.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!template || !products.length || renderingRef.current) return;
+    renderingRef.current = true;
+
+    const doRender = async () => {
+      setRendering(true);
+      setProgress(0);
+      setPreviews([]);
+      setRenderedCount(0);
+
+      const maxPreviews = Math.min(products.length, 48);
+      const results: RenderedPreview[] = [];
+
+      for (let i = 0; i < maxPreviews; i++) {
+        const dataUrl = await renderTemplateForProduct(
+          template.elements,
+          template.canvas_width,
+          template.canvas_height,
+          template.background_color,
+          products[i],
+        );
+
+        results.push({ product_index: i, image_url: dataUrl });
+        setRenderedCount(results.length);
+        setProgress(Math.round(((i + 1) / maxPreviews) * 100));
+        setPreviews([...results]);
+      }
+
+      setRendering(false);
+    };
+
+    doRender();
+  }, [template, products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCopyFeedUrl = () => {
     const feedUrl = `${window.location.origin}/api/feeds/${subaccountId}/enriched.csv`;
@@ -145,17 +255,11 @@ export default function PreviewCreativesPage() {
                   key={idx}
                   className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:shadow-md dark:border-slate-700 dark:bg-slate-800"
                 >
-                  {preview.image_url ? (
-                    <img
-                      src={preview.image_url}
-                      alt={`Preview ${idx + 1}`}
-                      className="aspect-square w-full object-contain"
-                    />
-                  ) : (
-                    <div className="flex aspect-square w-full items-center justify-center bg-slate-100 dark:bg-slate-700">
-                      <p className="text-xs text-slate-400">Failed</p>
-                    </div>
-                  )}
+                  <img
+                    src={preview.image_url}
+                    alt={`Preview ${idx + 1}`}
+                    className="w-full object-contain"
+                  />
                 </div>
               ))}
             </div>
