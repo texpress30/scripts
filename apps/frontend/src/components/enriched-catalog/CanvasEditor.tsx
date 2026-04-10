@@ -209,8 +209,9 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         if (!canvas) return [];
         // Manually extract elements to avoid Fabric.js serialization issues
         // (e.g. tainted images losing src in toJSON)
-        const objects = canvas.getObjects().filter((obj) => !obj.data?.isGuideLine);
-        return objects.map((obj): CanvasElement => {
+        type ObjWithData = FabricObject & { data?: Record<string, string | undefined>; fill?: string; text?: string; fontSize?: number; fontFamily?: string; src?: string; _element?: HTMLImageElement; rx?: number; ry?: number };
+        const objects = (canvas.getObjects() as ObjWithData[]).filter((obj) => !obj.data?.isGuideLine);
+        return objects.map((obj: ObjWithData): CanvasElement => {
           const scaleX = obj.scaleX ?? 1;
           const scaleY = obj.scaleY ?? 1;
           const elType = obj.data?.elementType || "shape";
@@ -230,28 +231,24 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           };
 
           if (elType === "text" || elType === "dynamic_field") {
-            const textObj = obj as unknown as { text?: string; fontSize?: number; fontFamily?: string; fill?: string };
-            base.content = textObj.text || "";
+            base.content = obj.text || "";
             base.style = {
-              color: typeof textObj.fill === "string" ? textObj.fill : "#000000",
-              font_size: textObj.fontSize || 16,
-              font_family: textObj.fontFamily || "Arial",
+              color: typeof obj.fill === "string" ? obj.fill : "#000000",
+              font_size: obj.fontSize || 16,
+              font_family: obj.fontFamily || "Arial",
             };
           } else if (elType === "image") {
-            // Use stored imageSrc from data, or try to get src from FabricImage
-            const imgObj = obj as unknown as { src?: string; _element?: HTMLImageElement };
-            base.content = obj.data?.imageSrc || imgObj.src || imgObj._element?.src || "";
+            base.content = obj.data?.imageSrc || obj.src || obj._element?.src || "";
           } else if (elType === "shape") {
             const shapeType = obj.data?.shapeType || "rectangle";
             base.style = {
-              fill_color: typeof (obj as unknown as { fill?: string }).fill === "string" ? (obj as unknown as { fill: string }).fill : "#CCCCCC",
+              fill_color: typeof obj.fill === "string" ? obj.fill : "#CCCCCC",
               shape_type: shapeType,
             };
             base.content = shapeType;
             if (shapeType === "ellipse" || shapeType === "circle") {
-              const ellObj = obj as unknown as { rx?: number; ry?: number };
-              base.width = (ellObj.rx ?? 0) * 2 * scaleX;
-              base.height = (ellObj.ry ?? 0) * 2 * scaleY;
+              base.width = (obj.rx ?? 0) * 2 * scaleX;
+              base.height = (obj.ry ?? 0) * 2 * scaleY;
             }
           }
 
