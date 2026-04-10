@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Loader2 } from "lucide-react";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
-import { useCreativeTemplates } from "@/lib/hooks/useCreativeTemplates";
-import { TemplateCard } from "@/components/enriched-catalog/TemplateCard";
+import { useCreativeTemplates, groupTemplatesByFormat } from "@/lib/hooks/useCreativeTemplates";
+import { TemplateGroupCard } from "@/components/enriched-catalog/TemplateCard";
 
 const SIZE_PRESETS = [
   { key: "square", label: "Square", suffix: "1080x1080", width: 1080, height: 1080 },
@@ -21,6 +21,8 @@ export default function TemplatesPage() {
   const [newName, setNewName] = useState("");
   const [selectedSizes, setSelectedSizes] = useState<Set<number>>(new Set([0, 1, 2]));
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const groups = groupTemplatesByFormat(templates);
 
   const toggleSize = (idx: number) => {
     setSelectedSizes((prev) => {
@@ -39,6 +41,7 @@ export default function TemplatesPage() {
     setCreateError(null);
 
     const sizes = [...selectedSizes].sort();
+    const formatGroupId = crypto.randomUUID();
     try {
       let firstId: string | null = null;
       for (const idx of sizes) {
@@ -48,6 +51,8 @@ export default function TemplatesPage() {
           name: `${newName.trim()}${suffix}`,
           canvas_width: preset.width,
           canvas_height: preset.height,
+          format_group_id: sizes.length > 1 ? formatGroupId : undefined,
+          format_label: sizes.length > 1 ? preset.label : undefined,
         });
         if (!firstId) firstId = created.id;
       }
@@ -111,12 +116,12 @@ export default function TemplatesPage() {
         </button>
       </div>
 
-      {/* Template grid */}
+      {/* Template grid — grouped by format */}
       {isLoading ? (
         <div className="flex h-64 items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
         </div>
-      ) : templates.length === 0 ? (
+      ) : groups.length === 0 ? (
         <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-slate-200 dark:border-slate-700">
           <p className="text-sm text-slate-500 dark:text-slate-400">No templates yet.</p>
           <button
@@ -128,10 +133,11 @@ export default function TemplatesPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {templates.map((t) => (
-            <TemplateCard
-              key={t.id}
-              template={t}
+          {groups.map((g) => (
+            <TemplateGroupCard
+              key={g.groupId}
+              groupName={g.groupName}
+              templates={g.templates}
               onEdit={handleEdit}
               onDuplicate={handleDuplicate}
               onDelete={handleDelete}
@@ -158,10 +164,10 @@ export default function TemplatesPage() {
             />
 
             <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              Canvas Sizes
+              Formats
               <span className="ml-1 text-xs font-normal text-slate-400">(select one or more)</span>
             </label>
-            <div className="mb-6 flex flex-col gap-2">
+            <div className="mb-4 flex flex-col gap-2">
               {SIZE_PRESETS.map((preset, idx) => (
                 <label
                   key={idx}
@@ -184,8 +190,8 @@ export default function TemplatesPage() {
             </div>
 
             {selectedSizes.size > 1 && (
-              <p className="mb-4 text-xs text-indigo-600 dark:text-indigo-400">
-                {selectedSizes.size} templates will be created with the same name and different sizes.
+              <p className="mb-4 rounded-md bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400">
+                {selectedSizes.size} formats will be created as a linked group. Edit one design, switch between formats in the editor.
               </p>
             )}
 
@@ -209,7 +215,7 @@ export default function TemplatesPage() {
               >
                 {isCreating && <Loader2 className="h-4 w-4 animate-spin" />}
                 {selectedSizes.size > 1
-                  ? `Create ${selectedSizes.size} Templates`
+                  ? `Create ${selectedSizes.size} Formats`
                   : "Create & Open Editor"}
               </button>
             </div>

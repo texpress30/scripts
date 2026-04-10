@@ -4,7 +4,7 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Save, Loader2, Eye } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCreativeTemplate } from "@/lib/hooks/useCreativeTemplates";
+import { useCreativeTemplate, useFormatSiblings } from "@/lib/hooks/useCreativeTemplates";
 import { useCanvasEditor } from "@/lib/hooks/useCanvasEditor";
 import { apiRequest } from "@/lib/api";
 import type { CanvasEditorHandle } from "@/components/enriched-catalog/CanvasEditor";
@@ -22,6 +22,14 @@ import { CanvasToolbar } from "@/components/enriched-catalog/CanvasToolbar";
 import { LayerPanel } from "@/components/enriched-catalog/LayerPanel";
 import { PropertyPanel } from "@/components/enriched-catalog/PropertyPanel";
 
+function formatDimLabel(w: number, h: number, label?: string | null): string {
+  if (label) return label;
+  if (w === 1080 && h === 1080) return "Square";
+  if (w === 1200 && h === 628) return "Landscape";
+  if (w === 1080 && h === 1920) return "Stories";
+  return `${w}x${h}`;
+}
+
 export default function TemplateEditorPage() {
   const params = useParams();
   const router = useRouter();
@@ -29,6 +37,7 @@ export default function TemplateEditorPage() {
   const canvasRef = useRef<CanvasEditorHandle>(null);
 
   const { data: template, isLoading: templateLoading } = useCreativeTemplate(templateId);
+  const { data: siblings } = useFormatSiblings(templateId);
   const [saving, setSaving] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [canvasObjects, setCanvasObjects] = useState<FabricObject[]>([]);
@@ -129,6 +138,15 @@ export default function TemplateEditorPage() {
     }
   };
 
+  const handleSwitchFormat = async (targetId: string) => {
+    if (targetId === templateId) return;
+    if (hasUnsavedChanges) {
+      const discard = confirm("You have unsaved changes. Switch format without saving?");
+      if (!discard) return;
+    }
+    router.push(`/agency/enriched-catalog/templates/${targetId}/editor`);
+  };
+
   const handleLayerSelect = (index: number) => {
     const canvas = canvasRef.current?.getCanvas();
     if (!canvas) return;
@@ -179,6 +197,8 @@ export default function TemplateEditorPage() {
       </div>
     );
   }
+
+  const hasFormatGroup = siblings && siblings.length > 1;
 
   return (
     <div className="flex h-screen flex-col bg-slate-100 dark:bg-slate-900">
@@ -274,16 +294,43 @@ export default function TemplateEditorPage() {
         </div>
 
         {/* Canvas area */}
-        <div className="flex flex-1 items-center justify-center overflow-auto bg-slate-200 p-8 dark:bg-slate-900">
-          <CanvasEditor
-            ref={canvasRef}
-            width={canvasWidth}
-            height={canvasHeight}
-            backgroundColor={backgroundColor}
-            elements={template.elements}
-            onSelectionChange={handleSelectionChange}
-            onModified={handleModified}
-          />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex flex-1 items-center justify-center overflow-auto bg-slate-200 p-8 dark:bg-slate-900">
+            <CanvasEditor
+              ref={canvasRef}
+              width={canvasWidth}
+              height={canvasHeight}
+              backgroundColor={backgroundColor}
+              elements={template.elements}
+              onSelectionChange={handleSelectionChange}
+              onModified={handleModified}
+            />
+          </div>
+
+          {/* Format switcher bar — only shown when template belongs to a format group */}
+          {hasFormatGroup && (
+            <div className="flex items-center justify-center gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-800">
+              <span className="mr-2 text-xs font-medium text-slate-500 dark:text-slate-400">Formats:</span>
+              {siblings.map((sibling) => {
+                const isActive = sibling.id === templateId;
+                const label = formatDimLabel(sibling.canvas_width, sibling.canvas_height, sibling.format_label);
+                return (
+                  <button
+                    key={sibling.id}
+                    onClick={() => handleSwitchFormat(sibling.id)}
+                    className={`flex flex-col items-center rounded-lg border px-4 py-2 text-xs transition ${
+                      isActive
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/20 dark:text-indigo-400"
+                        : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    <span className="font-medium">{label}</span>
+                    <span className="text-[10px] text-slate-400">{sibling.canvas_width}x{sibling.canvas_height}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Right panel: Properties */}

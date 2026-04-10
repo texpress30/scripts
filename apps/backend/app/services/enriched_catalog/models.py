@@ -33,6 +33,8 @@ class CreativeTemplate(BaseModel):
     canvas_height: int = 1080
     elements: list[CanvasElement] = Field(default_factory=list)
     background_color: str = "#FFFFFF"
+    format_group_id: str | None = None
+    format_label: str | None = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -43,6 +45,8 @@ class CreativeTemplateCreate(BaseModel):
     canvas_height: int = 1080
     elements: list[CanvasElement] = Field(default_factory=list)
     background_color: str = "#FFFFFF"
+    format_group_id: str | None = None
+    format_label: str | None = None
 
 
 class CreativeTemplateUpdate(BaseModel):

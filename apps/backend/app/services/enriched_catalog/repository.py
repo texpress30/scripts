@@ -56,6 +56,8 @@ class CreativeTemplateRepository:
             "canvas_height": int(data.get("canvas_height") or 1080),
             "elements": list(data.get("elements") or []),
             "background_color": str(data.get("background_color") or "#FFFFFF"),
+            "format_group_id": data.get("format_group_id") or None,
+            "format_label": data.get("format_label") or None,
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }
@@ -84,9 +86,17 @@ class CreativeTemplateRepository:
         )
         return [self._normalize(item) for item in cursor if isinstance(item, dict)]
 
+    def get_by_format_group(self, format_group_id: str) -> list[dict[str, Any]]:
+        cursor = (
+            self._collection()
+            .find({"format_group_id": str(format_group_id)})
+            .sort([("canvas_width", 1), ("canvas_height", 1)])
+        )
+        return [self._normalize(item) for item in cursor if isinstance(item, dict)]
+
     def update(self, template_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         set_payload: dict[str, Any] = {"updated_at": _utcnow().isoformat()}
-        for key in ("name", "canvas_width", "canvas_height", "elements", "background_color"):
+        for key in ("name", "canvas_width", "canvas_height", "elements", "background_color", "format_group_id", "format_label"):
             if key in data and data[key] is not None:
                 set_payload[key] = data[key]
 
@@ -103,7 +113,7 @@ class CreativeTemplateRepository:
         result = self._collection().delete_one({"id": str(template_id)})
         return (result.deleted_count or 0) > 0
 
-    def duplicate(self, template_id: str, new_name: str) -> dict[str, Any] | None:
+    def duplicate(self, template_id: str, new_name: str, *, new_format_group_id: str | None = None) -> dict[str, Any] | None:
         original = self.get_by_id(template_id)
         if original is None:
             return None
@@ -112,6 +122,7 @@ class CreativeTemplateRepository:
             **original,
             "id": _new_id(),
             "name": str(new_name),
+            "format_group_id": new_format_group_id if new_format_group_id is not None else original.get("format_group_id"),
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }

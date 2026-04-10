@@ -94,7 +94,7 @@ def preview_template(template_id: str, payload: PreviewTemplateRequest, user: Au
         existing = template_service.get_template(template_id)
     except TemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(existing.get("subaccount_id", 0)))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(existing.get("subaccount_id", 0)))
     return template_service.preview_template(template_id, payload.product_data)
 
 
@@ -104,6 +104,19 @@ def validate_bindings(template_id: str, payload: ValidateBindingsRequest, user: 
         existing = template_service.get_template(template_id)
     except TemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(existing.get("subaccount_id", 0)))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(existing.get("subaccount_id", 0)))
     errors = template_service.validate_dynamic_bindings(template_id, payload.available_fields)
     return {"valid": len(errors) == 0, "errors": errors}
+
+
+@router.get("/{template_id}/format-siblings")
+def get_format_siblings(template_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, list[dict]]:
+    try:
+        template = template_service.get_template(template_id)
+    except TemplateNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(template.get("subaccount_id", 0)))
+    group_id = template.get("format_group_id")
+    if not group_id:
+        return {"items": [template]}
+    return {"items": creative_template_repository.get_by_format_group(group_id)}

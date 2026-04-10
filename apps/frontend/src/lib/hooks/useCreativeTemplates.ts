@@ -22,6 +22,8 @@ export interface CreativeTemplate {
   canvas_height: number;
   elements: CanvasElement[];
   background_color: string;
+  format_group_id: string | null;
+  format_label: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +34,8 @@ export interface CreateTemplatePayload {
   canvas_height?: number;
   elements?: CanvasElement[];
   background_color?: string;
+  format_group_id?: string;
+  format_label?: string;
 }
 
 export interface UpdateTemplatePayload {
@@ -143,4 +147,56 @@ export function useCreativeTemplate(templateId: string | null) {
     queryFn: () => fetchTemplate(templateId!),
     enabled: !!templateId,
   });
+}
+
+const FORMAT_SIBLINGS_KEY = (templateId: string) => ["format-siblings", templateId] as const;
+
+async function fetchFormatSiblings(templateId: string): Promise<CreativeTemplate[]> {
+  const data = await apiRequest<{ items: CreativeTemplate[] }>(
+    `/creative/templates/${templateId}/format-siblings`,
+    { cache: "no-store" },
+  );
+  return data.items ?? [];
+}
+
+export function useFormatSiblings(templateId: string | null) {
+  return useQuery({
+    queryKey: FORMAT_SIBLINGS_KEY(templateId ?? ""),
+    queryFn: () => fetchFormatSiblings(templateId!),
+    enabled: !!templateId,
+  });
+}
+
+/** Group flat templates list by format_group_id. Ungrouped templates become solo groups. */
+export function groupTemplatesByFormat(templates: CreativeTemplate[]): { groupId: string; groupName: string; templates: CreativeTemplate[] }[] {
+  const grouped = new Map<string, CreativeTemplate[]>();
+  const soloTemplates: CreativeTemplate[] = [];
+
+  for (const t of templates) {
+    if (t.format_group_id) {
+      const existing = grouped.get(t.format_group_id);
+      if (existing) {
+        existing.push(t);
+      } else {
+        grouped.set(t.format_group_id, [t]);
+      }
+    } else {
+      soloTemplates.push(t);
+    }
+  }
+
+  const result: { groupId: string; groupName: string; templates: CreativeTemplate[] }[] = [];
+
+  for (const [groupId, groupTemplates] of grouped) {
+    // Derive group name from the first template (strip format suffix)
+    const firstName = groupTemplates[0].name;
+    const groupName = firstName.replace(/\s*-\s*(Square|Landscape|Stories)$/i, "") || firstName;
+    result.push({ groupId, groupName, templates: groupTemplates });
+  }
+
+  for (const t of soloTemplates) {
+    result.push({ groupId: t.id, groupName: t.name, templates: [t] });
+  }
+
+  return result;
 }
