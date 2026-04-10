@@ -11,8 +11,8 @@ Covers:
 * ``app.integrations.generic_api_key.router.build_router`` — full CRUD
   cycle for one platform, exercised through the FastAPI test client
   with monkey-patched repo + service. The platform is parametrised so
-  one test class covers all six platforms by re-running the same suite
-  per platform via ``subTest``.
+  one test class covers all five generic platforms by re-running the
+  same suite per platform via ``subTest``.
 """
 
 from __future__ import annotations
@@ -55,12 +55,13 @@ def _set_env() -> None:
 
 
 class PlatformDefinitionsTests(unittest.TestCase):
-    def test_six_platforms_registered(self) -> None:
+    def test_five_platforms_registered(self) -> None:
+        # Lightspeed moved to a dedicated module — it uses Shop ID /
+        # Language / Region instead of API credentials.
         self.assertEqual(
             sorted(PLATFORM_DEFINITIONS.keys()),
             [
                 "cart_storefront",
-                "lightspeed",
                 "opencart",
                 "prestashop",
                 "shopware",
@@ -86,10 +87,9 @@ class PlatformDefinitionsTests(unittest.TestCase):
     def test_secret_flag_split(self) -> None:
         self.assertFalse(get_platform("prestashop").has_api_secret)
         self.assertFalse(get_platform("volusion").has_api_secret)
+        self.assertFalse(get_platform("opencart").has_api_secret)
+        self.assertFalse(get_platform("cart_storefront").has_api_secret)
         self.assertTrue(get_platform("shopware").has_api_secret)
-        self.assertTrue(get_platform("opencart").has_api_secret)
-        self.assertTrue(get_platform("lightspeed").has_api_secret)
-        self.assertTrue(get_platform("cart_storefront").has_api_secret)
 
 
 class ValidateStoreUrlTests(unittest.TestCase):
@@ -344,7 +344,7 @@ class ProbeStoreUrlTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# router.py — full CRUD cycle (parametrised across all 6 platforms)
+# router.py — full CRUD cycle (parametrised across all 5 generic platforms)
 # ---------------------------------------------------------------------------
 
 
