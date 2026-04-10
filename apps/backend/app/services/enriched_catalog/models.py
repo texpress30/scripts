@@ -121,3 +121,35 @@ class TreatmentResponse(BaseModel):
     is_default: bool
     created_at: str
     updated_at: str
+
+
+# ---------------------------------------------------------------------------
+# Brand presets
+# ---------------------------------------------------------------------------
+
+class BrandPreset(BaseModel):
+    id: str = ""
+    subaccount_id: int = 0
+    name: str = ""
+    colors: list[str] = Field(default_factory=list)
+    fonts: list[str] = Field(default_factory=list)
+    logo_url: str | None = None
+    is_default: bool = False
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class BrandPresetCreate(BaseModel):
+    name: str
+    colors: list[str] = Field(default_factory=list)
+    fonts: list[str] = Field(default_factory=list)
+    logo_url: str | None = None
+    is_default: bool = False
+
+
+class BrandPresetUpdate(BaseModel):
+    name: str | None = None
+    colors: list[str] | None = None
+    fonts: list[str] | None = None
+    logo_url: str | None = None
+    is_default: bool | None = None
