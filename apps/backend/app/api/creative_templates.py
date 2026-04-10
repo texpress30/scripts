@@ -27,7 +27,7 @@ class ValidateBindingsRequest(BaseModel):
 
 @router.get("")
 def list_templates(subaccount_id: int = Query(...), user: AuthUser = Depends(get_current_user)) -> dict[str, list[dict]]:
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=subaccount_id)
     items = creative_template_repository.get_by_subaccount(subaccount_id)
     return {"items": items}
 
@@ -38,13 +38,13 @@ def get_template(template_id: str, user: AuthUser = Depends(get_current_user)) -
         template = template_service.get_template(template_id)
     except TemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(template.get("subaccount_id", 0)))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(template.get("subaccount_id", 0)))
     return template
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_template(payload: CreativeTemplateCreate, subaccount_id: int = Query(...), user: AuthUser = Depends(get_current_user)) -> dict:
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=subaccount_id)
     return template_service.create_template(subaccount_id, payload.model_dump())
 
 
@@ -54,7 +54,7 @@ def update_template(template_id: str, payload: CreativeTemplateUpdate, user: Aut
         existing = template_service.get_template(template_id)
     except TemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing.get("subaccount_id", 0)))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing.get("subaccount_id", 0)))
     update_data = {k: v for k, v in payload.model_dump().items() if v is not None}
     if "elements" in update_data:
         update_data["elements"] = [el.model_dump() if hasattr(el, "model_dump") else el for el in (payload.elements or [])]
@@ -70,7 +70,7 @@ def delete_template(template_id: str, user: AuthUser = Depends(get_current_user)
         existing = template_service.get_template(template_id)
     except TemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing.get("subaccount_id", 0)))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing.get("subaccount_id", 0)))
     creative_template_repository.delete(template_id)
     return {"status": "ok", "id": template_id}
 
@@ -81,7 +81,7 @@ def duplicate_template(template_id: str, payload: DuplicateTemplateRequest, user
         existing = template_service.get_template(template_id)
     except TemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing.get("subaccount_id", 0)))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing.get("subaccount_id", 0)))
     try:
         return template_service.duplicate_template(template_id, payload.new_name)
     except TemplateNotFoundError as exc:

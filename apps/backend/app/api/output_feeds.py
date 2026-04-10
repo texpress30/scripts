@@ -36,7 +36,7 @@ class ScheduleRefreshRequest(BaseModel):
 
 @router.get("")
 def list_output_feeds(subaccount_id: int = Query(...), user: AuthUser = Depends(get_current_user)) -> dict[str, list[dict]]:
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=subaccount_id)
     return {"items": output_feed_service.list_output_feeds(subaccount_id)}
 
 
@@ -46,14 +46,14 @@ def get_output_feed(output_feed_id: str, user: AuthUser = Depends(get_current_us
         feed = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(feed["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(feed["subaccount_id"]))
     feed["treatments"] = treatment_repository.get_by_output_feed(output_feed_id)
     return feed
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_output_feed(payload: CreateOutputFeedRequest, subaccount_id: int = Query(...), user: AuthUser = Depends(get_current_user)) -> dict:
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=subaccount_id)
     return output_feed_service.create_output_feed(
         subaccount_id=subaccount_id,
         name=payload.name,
@@ -69,7 +69,7 @@ def update_output_feed(output_feed_id: str, payload: UpdateOutputFeedRequest, us
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing["subaccount_id"]))
     return output_feed_service.update_output_feed(output_feed_id, {k: v for k, v in payload.model_dump().items() if v is not None})
 
 
@@ -79,7 +79,7 @@ def delete_output_feed(output_feed_id: str, user: AuthUser = Depends(get_current
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing["subaccount_id"]))
     output_feed_service.delete_output_feed(output_feed_id)
     return {"status": "ok", "id": output_feed_id}
 
@@ -95,7 +95,7 @@ def start_render(
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing["subaccount_id"]))
 
     job = output_feed_service.start_render_job(
         output_feed_id=output_feed_id,
@@ -115,7 +115,7 @@ def get_render_status(output_feed_id: str, user: AuthUser = Depends(get_current_
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(existing["subaccount_id"]))
     job = output_feed_service.get_render_status(output_feed_id)
     if job is None:
         return {"status": "no_jobs", "message": "No render jobs found for this output feed"}
@@ -128,7 +128,7 @@ def get_enriched_feed_url(output_feed_id: str, user: AuthUser = Depends(get_curr
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(existing["subaccount_id"]))
     url = output_feed_service.get_enriched_feed_url(output_feed_id)
     if url is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed is not published yet or URL is not available")
@@ -150,7 +150,7 @@ def generate_feed(
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing["subaccount_id"]))
 
     def _run_generation():
         try:
@@ -170,7 +170,7 @@ def get_public_url(output_feed_id: str, user: AuthUser = Depends(get_current_use
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(existing["subaccount_id"]))
     url = output_feed_service.get_public_url(output_feed_id)
     return {"public_url": url, "output_feed_id": output_feed_id}
 
@@ -182,7 +182,7 @@ def regenerate_token(output_feed_id: str, user: AuthUser = Depends(get_current_u
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing["subaccount_id"]))
     new_token = output_feed_service.regenerate_token(output_feed_id)
     new_url = output_feed_service.get_public_url(output_feed_id)
     return {"token": new_token, "public_url": new_url, "output_feed_id": output_feed_id}
@@ -199,7 +199,7 @@ def set_refresh_schedule(
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(existing["subaccount_id"]))
     updated = output_feed_service.schedule_refresh(output_feed_id, payload.interval_hours)
     return {"output_feed_id": output_feed_id, "refresh_interval_hours": updated.get("refresh_interval_hours")}
 
@@ -211,5 +211,5 @@ def get_feed_stats(output_feed_id: str, user: AuthUser = Depends(get_current_use
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(existing["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(existing["subaccount_id"]))
     return output_feed_service.get_feed_stats(output_feed_id)
