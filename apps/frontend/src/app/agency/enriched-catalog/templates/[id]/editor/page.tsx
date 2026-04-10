@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Save, Loader2, Eye, RefreshCw } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Eye, RefreshCw, Wand2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCreativeTemplate, useFormatSiblings } from "@/lib/hooks/useCreativeTemplates";
 import { useCanvasEditor } from "@/lib/hooks/useCanvasEditor";
@@ -48,6 +48,8 @@ export default function TemplateEditorPage() {
   const [syncing, setSyncing] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [styleSyncEnabled, setStyleSyncEnabled] = useState(true);
+  const [adapting, setAdapting] = useState(false);
+  const [showAdaptMenu, setShowAdaptMenu] = useState(false);
   const [canvasObjects, setCanvasObjects] = useState<FabricObject[]>([]);
   const [selectedObjectIndex, setSelectedObjectIndex] = useState<number | null>(null);
 
@@ -192,6 +194,28 @@ export default function TemplateEditorPage() {
 
   const handleApplyBrandBackground = (color: string) => {
     updateBackgroundColor(color);
+  };
+
+  const handleAdaptLayout = async (sourceTemplateId: string) => {
+    setAdapting(true);
+    setShowAdaptMenu(false);
+    try {
+      await apiRequest(`/creative/templates/${templateId}/adapt-layout`, {
+        method: "POST",
+        body: JSON.stringify({
+          source_template_id: sourceTemplateId,
+          target_width: canvasWidth,
+          target_height: canvasHeight,
+        }),
+      });
+      // Reload the page to get the adapted elements
+      window.location.reload();
+    } catch (err) {
+      console.error("Adapt layout failed:", err);
+      alert("Failed to adapt layout. Please try again.");
+    } finally {
+      setAdapting(false);
+    }
   };
 
   const handleLayerSelect = (index: number) => {
@@ -406,6 +430,40 @@ export default function TemplateEditorPage() {
                   </button>
                 );
               })}
+
+              {/* Adapt layout button */}
+              <div className="relative ml-2">
+                <button
+                  onClick={() => setShowAdaptMenu(!showAdaptMenu)}
+                  disabled={adapting}
+                  className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-600 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/30"
+                  title="Copy and adapt layout from another format"
+                >
+                  {adapting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                  Adapt From...
+                </button>
+                {showAdaptMenu && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowAdaptMenu(false)} />
+                    <div className="absolute bottom-full left-0 z-20 mb-1 w-48 rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700">
+                      <p className="px-3 py-1 text-xs text-slate-400">Copy layout from:</p>
+                      {(siblings ?? [])
+                        .filter((s) => s.id !== templateId)
+                        .map((sibling) => (
+                          <button
+                            key={sibling.id}
+                            onClick={() => handleAdaptLayout(sibling.id)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-600"
+                          >
+                            <Wand2 className="h-3 w-3 text-amber-500" />
+                            {formatDimLabel(sibling.canvas_width, sibling.canvas_height, sibling.format_label)}
+                            <span className="ml-auto text-xs text-slate-400">{sibling.canvas_width}x{sibling.canvas_height}</span>
+                          </button>
+                        ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>

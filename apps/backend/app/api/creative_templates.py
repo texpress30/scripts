@@ -142,3 +142,48 @@ def sync_styles(template_id: str, user: AuthUser = Depends(get_current_user)) ->
         source_elements=elements,
     )
     return {"synced": synced, "source_template_id": template_id}
+
+
+class AdaptLayoutRequest(BaseModel):
+    source_template_id: str
+    target_width: int = Field(ge=1, le=4096)
+    target_height: int = Field(ge=1, le=4096)
+
+
+@router.post("/{template_id}/adapt-layout")
+def adapt_layout(template_id: str, payload: AdaptLayoutRequest, user: AuthUser = Depends(get_current_user)) -> dict:
+    """Adapt elements from a source template to this template's (or custom) target dimensions."""
+    try:
+        target_template = template_service.get_template(template_id)
+    except TemplateNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(target_template.get("subaccount_id", 0)))
+
+    try:
+        source_template = template_service.get_template(payload.source_template_id)
+    except TemplateNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Source template not found: {payload.source_template_id}") from exc
+
+    from app.services.enriched_catalog.layout_adapter import adapt_elements
+
+    result = adapt_elements(
+        source_elements=list(source_template.get("elements") or []),
+        source_width=int(source_template.get("canvas_width") or 1080),
+        source_height=int(source_template.get("canvas_height") or 1080),
+        target_width=payload.target_width,
+        target_height=payload.target_height,
+        background_color=str(source_template.get("background_color") or "#FFFFFF"),
+    )
+
+    # Apply adapted elements to the target template
+    creative_template_repository.update(template_id, {
+        "elements": result["elements"],
+        "background_color": result["background_color"],
+    })
+
+    return {
+        "template_id": template_id,
+        "source_template_id": payload.source_template_id,
+        "scale_factor": result["scale_factor"],
+        "elements_count": len(result["elements"]),
+    }
