@@ -350,8 +350,10 @@ export function SourceFeedPanel({
                   <div className="group relative mt-1">
                     <button
                       onClick={() => onFieldClick(col.key, val)}
-                      className="w-full text-left"
-                      title={`Click to add {{${col.key}}} to canvas`}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.setData("application/x-feed-field", JSON.stringify({ key: col.key, value: val })); e.dataTransfer.effectAllowed = "copy"; }}
+                      className="w-full cursor-grab text-left active:cursor-grabbing"
+                      title={`Click or drag to add {{${col.key}}} to canvas`}
                     >
                       <img src={val} alt={col.key} className="h-24 w-full rounded border object-contain bg-slate-50 dark:bg-slate-900" />
                     </button>
@@ -393,8 +395,10 @@ export function SourceFeedPanel({
               <button
                 key={col.key}
                 onClick={() => onFieldClick(col.key, String(product[col.key] ?? ""))}
-                className="rounded border border-slate-200 p-2 text-left hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-600 dark:hover:border-indigo-600 dark:hover:bg-indigo-900/20"
-                title={`Click to add {{${col.key}}} to canvas`}
+                draggable
+                onDragStart={(e) => { e.dataTransfer.setData("application/x-feed-field", JSON.stringify({ key: col.key, value: String(product[col.key] ?? "") })); e.dataTransfer.effectAllowed = "copy"; }}
+                className="cursor-grab rounded border border-slate-200 p-2 text-left hover:border-indigo-300 hover:bg-indigo-50 active:cursor-grabbing dark:border-slate-600 dark:hover:border-indigo-600 dark:hover:bg-indigo-900/20"
+                title={`Click or drag to add {{${col.key}}} to canvas`}
               >
                 <p className="text-[10px] font-medium text-teal-600 dark:text-teal-400">{col.key}</p>
                 <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -415,8 +419,10 @@ export function SourceFeedPanel({
               <button
                 key={col.key}
                 onClick={() => onFieldClick(col.key, String(product[col.key] ?? ""))}
-                className="rounded border border-slate-200 p-2 text-left hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-600 dark:hover:border-indigo-600 dark:hover:bg-indigo-900/20"
-                title={`Click to add {{${col.key}}} to canvas`}
+                draggable
+                onDragStart={(e) => { e.dataTransfer.setData("application/x-feed-field", JSON.stringify({ key: col.key, value: String(product[col.key] ?? "") })); e.dataTransfer.effectAllowed = "copy"; }}
+                className="cursor-grab rounded border border-slate-200 p-2 text-left hover:border-indigo-300 hover:bg-indigo-50 active:cursor-grabbing dark:border-slate-600 dark:hover:border-indigo-600 dark:hover:bg-indigo-900/20"
+                title={`Click or drag to add {{${col.key}}} to canvas`}
               >
                 <p className="text-[10px] font-medium text-teal-600 dark:text-teal-400">{col.key}</p>
                 <p className="line-clamp-2 text-[10px] text-slate-600 dark:text-slate-400">

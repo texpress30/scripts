@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, forwardRef, useMemo } from "react";
-import { Canvas, Rect, Ellipse, Textbox, FabricImage, Point, type FabricObject } from "fabric";
+import { Canvas, Rect, Ellipse, Textbox, FabricImage, Line, Point, type FabricObject } from "fabric";
 import { canvasElementsToFabricObjects, fabricToCanvasElements } from "@/lib/canvas-schema-bridge";
 import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
 
@@ -77,6 +77,74 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         saveUndoState();
         onModified?.();
       });
+
+      // Snapping guide lines
+      const SNAP_THRESHOLD = 5;
+      const guideLines: Line[] = [];
+
+      const clearGuides = () => {
+        guideLines.forEach((line) => canvas.remove(line));
+        guideLines.length = 0;
+      };
+
+      const addGuideLine = (x1: number, y1: number, x2: number, y2: number) => {
+        const line = new Line([x1, y1, x2, y2], {
+          stroke: "#f59e0b",
+          strokeWidth: 1,
+          strokeDashArray: [4, 3],
+          selectable: false,
+          evented: false,
+          excludeFromExport: true,
+          data: { isGuideLine: true },
+        });
+        canvas.add(line);
+        guideLines.push(line);
+      };
+
+      canvas.on("object:moving", (e) => {
+        const obj = e.target;
+        if (!obj) return;
+        clearGuides();
+
+        const bound = obj.getBoundingRect();
+        const objCenterX = bound.left + bound.width / 2;
+        const objCenterY = bound.top + bound.height / 2;
+        const canvasCenterX = width / 2;
+        const canvasCenterY = height / 2;
+
+        // Snap to canvas center X
+        if (Math.abs(objCenterX - canvasCenterX) < SNAP_THRESHOLD) {
+          obj.set("left", (obj.left ?? 0) + (canvasCenterX - objCenterX));
+          addGuideLine(canvasCenterX, 0, canvasCenterX, height);
+        }
+        // Snap to canvas center Y
+        if (Math.abs(objCenterY - canvasCenterY) < SNAP_THRESHOLD) {
+          obj.set("top", (obj.top ?? 0) + (canvasCenterY - objCenterY));
+          addGuideLine(0, canvasCenterY, width, canvasCenterY);
+        }
+        // Snap to left/right edges
+        if (Math.abs(bound.left) < SNAP_THRESHOLD) {
+          obj.set("left", (obj.left ?? 0) - bound.left);
+          addGuideLine(0, 0, 0, height);
+        } else if (Math.abs(bound.left + bound.width - width) < SNAP_THRESHOLD) {
+          obj.set("left", (obj.left ?? 0) + (width - bound.left - bound.width));
+          addGuideLine(width, 0, width, height);
+        }
+        // Snap to top/bottom edges
+        if (Math.abs(bound.top) < SNAP_THRESHOLD) {
+          obj.set("top", (obj.top ?? 0) - bound.top);
+          addGuideLine(0, 0, width, 0);
+        } else if (Math.abs(bound.top + bound.height - height) < SNAP_THRESHOLD) {
+          obj.set("top", (obj.top ?? 0) + (height - bound.top - bound.height));
+          addGuideLine(0, height, width, height);
+        }
+
+        obj.setCoords();
+        canvas.renderAll();
+      });
+
+      canvas.on("object:modified", () => clearGuides());
+      canvas.on("mouse:up", () => { clearGuides(); canvas.renderAll(); });
 
       fabricRef.current = canvas;
 
@@ -240,18 +308,16 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           onModified?.();
           return;
         }
-        const imgEl = document.createElement("img");
-        imgEl.crossOrigin = "anonymous";
-        imgEl.onload = () => {
+        FabricImage.fromURL(url, { crossOrigin: "anonymous" }).then((fabricImg) => {
           const maxDim = 300;
-          let w = imgEl.naturalWidth;
-          let h = imgEl.naturalHeight;
+          let w = fabricImg.width ?? 200;
+          let h = fabricImg.height ?? 200;
           if (w > maxDim || h > maxDim) {
             const ratio = Math.min(maxDim / w, maxDim / h);
             w = Math.round(w * ratio);
             h = Math.round(h * ratio);
           }
-          const fabricImg = new FabricImage(imgEl, {
+          fabricImg.set({
             left: 50,
             top: 50,
             data: {
@@ -265,30 +331,49 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           canvas.setActiveObject(fabricImg);
           canvas.renderAll();
           onModified?.();
-        };
-        imgEl.onerror = () => {
-          // Fallback to placeholder on error
-          const placeholder = new Rect({
-            left: 50,
-            top: 50,
-            width: 200,
-            height: 200,
-            fill: "#cbd5e1",
-            stroke: "#94a3b8",
-            strokeWidth: 2,
-            strokeDashArray: [8, 4],
-            data: {
-              elementId: crypto.randomUUID(),
-              elementType: "image",
-              dynamicBinding: binding,
-            },
-          });
-          canvas.add(placeholder);
-          canvas.setActiveObject(placeholder);
-          canvas.renderAll();
-          onModified?.();
-        };
-        imgEl.src = url;
+        }).catch(() => {
+          // Try again without CORS (allows display but not pixel access)
+          const imgEl = document.createElement("img");
+          imgEl.onload = () => {
+            const fabricImg = new FabricImage(imgEl, {
+              left: 50,
+              top: 50,
+              data: {
+                elementId: crypto.randomUUID(),
+                elementType: "image",
+                dynamicBinding: binding,
+              },
+            });
+            fabricImg.scaleToWidth(Math.min(300, imgEl.naturalWidth));
+            canvas.add(fabricImg);
+            canvas.setActiveObject(fabricImg);
+            canvas.renderAll();
+            onModified?.();
+          };
+          imgEl.onerror = () => {
+            // Final fallback: placeholder
+            const placeholder = new Rect({
+              left: 50,
+              top: 50,
+              width: 200,
+              height: 200,
+              fill: "#cbd5e1",
+              stroke: "#94a3b8",
+              strokeWidth: 2,
+              strokeDashArray: [8, 4],
+              data: {
+                elementId: crypto.randomUUID(),
+                elementType: "image",
+                dynamicBinding: binding,
+              },
+            });
+            canvas.add(placeholder);
+            canvas.setActiveObject(placeholder);
+            canvas.renderAll();
+            onModified?.();
+          };
+          imgEl.src = url;
+        });
       },
       deleteSelected: () => {
         const canvas = fabricRef.current;
