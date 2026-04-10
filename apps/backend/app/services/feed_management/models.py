@@ -36,6 +36,8 @@ class FeedSourceType(str, enum.Enum):
     lightspeed = "lightspeed"
     volusion = "volusion"
     cart_storefront = "cart_storefront"
+    gomag = "gomag"
+    contentspeed = "contentspeed"
     csv = "csv"
     json = "json"
     xml = "xml"
@@ -67,6 +69,8 @@ SYNC_UNSUPPORTED_SOURCE_TYPES: frozenset[FeedSourceType] = frozenset(
         FeedSourceType.lightspeed,
         FeedSourceType.volusion,
         FeedSourceType.cart_storefront,
+        FeedSourceType.gomag,
+        FeedSourceType.contentspeed,
     }
 )
 

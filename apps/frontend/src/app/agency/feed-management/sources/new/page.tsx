@@ -61,6 +61,8 @@ const GENERIC_API_KEY_TYPES: ReadonlySet<FeedSourceType> = new Set([
   "opencart",
   "volusion",
   "cart_storefront",
+  "gomag",
+  "contentspeed",
 ]);
 
 type Step = "source_type" | "catalog_type" | "configure";

@@ -79,6 +79,20 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
         api_key_label="API Login",
         api_secret_label="API Encrypted Password",
     ),
+    "gomag": PlatformDefinition(
+        key="gomag",
+        display_name="GoMag",
+        feed_source_type=FeedSourceType.gomag,
+        has_api_secret=False,
+        api_key_label="API Key",
+    ),
+    "contentspeed": PlatformDefinition(
+        key="contentspeed",
+        display_name="ContentSpeed",
+        feed_source_type=FeedSourceType.contentspeed,
+        has_api_secret=False,
+        api_key_label="API Key",
+    ),
     "cart_storefront": PlatformDefinition(
         key="cart_storefront",
         display_name="Cart Storefront",
