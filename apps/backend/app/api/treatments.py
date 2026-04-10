@@ -22,7 +22,7 @@ def list_treatments(output_feed_id: str, user: AuthUser = Depends(get_current_us
         feed = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:read", subaccount_id=int(feed["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:list", subaccount_id=int(feed["subaccount_id"]))
     return {"items": treatment_repository.get_by_output_feed(output_feed_id)}
 
 
@@ -32,7 +32,7 @@ def create_treatment(output_feed_id: str, payload: TreatmentCreate, user: AuthUs
         feed = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(feed["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(feed["subaccount_id"]))
     data = payload.model_dump()
     data["output_feed_id"] = output_feed_id
     data["filters"] = [f.model_dump() if hasattr(f, "model_dump") else f for f in (payload.filters or [])]
@@ -48,7 +48,7 @@ def update_treatment(treatment_id: str, payload: TreatmentUpdate, user: AuthUser
         feed = output_feed_service.get_output_feed(existing["output_feed_id"])
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(feed["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(feed["subaccount_id"]))
     update_data = {k: v for k, v in payload.model_dump().items() if v is not None}
     if "filters" in update_data:
         update_data["filters"] = [f.model_dump() if hasattr(f, "model_dump") else f for f in (payload.filters or [])]
@@ -67,7 +67,7 @@ def delete_treatment(treatment_id: str, user: AuthUser = Depends(get_current_use
         feed = output_feed_service.get_output_feed(existing["output_feed_id"])
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(feed["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(feed["subaccount_id"]))
     treatment_repository.delete(treatment_id)
     return {"status": "ok", "id": treatment_id}
 
@@ -78,6 +78,6 @@ def reorder_treatments(output_feed_id: str, payload: ReorderTreatmentsRequest, u
         feed = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(feed["subaccount_id"]))
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(feed["subaccount_id"]))
     treatment_repository.reorder_priority(output_feed_id, payload.treatment_ids)
     return {"status": "ok", "items": treatment_repository.get_by_output_feed(output_feed_id)}
