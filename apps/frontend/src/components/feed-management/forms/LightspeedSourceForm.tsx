@@ -289,9 +289,9 @@ export function LightspeedSourceForm({
 
       {/* Sync note */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-        <strong>Notă:</strong> Conectorul complet pentru Lightspeed este în
-        dezvoltare. Pentru moment poți salva sursa și configurația —
-        sincronizarea automată a produselor va fi disponibilă în curând.
+        <strong>Notă:</strong> Sincronizarea automată a produselor pentru
+        Lightspeed este în dezvoltare. Pentru moment poți salva sursa și
+        configurația — importul automat va fi disponibil în curând.
       </div>
 
       {/* Buttons */}
