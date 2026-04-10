@@ -93,10 +93,39 @@ export function SourceFeedPanel({
 }: SourceFeedPanelProps) {
   const [search, setSearch] = useState("");
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
+  const [selectedFields, setSelectedFields] = useState<Set<string>>(() => new Set(columns.map((c) => c.key)));
   const product = products[currentProductIndex] ?? {};
 
-  const hasActiveFilter = selectedFields.size > 0;
+  // Keep selectedFields in sync when columns change (e.g. new feed loaded)
+  const columnsKeyRef = columns.map((c) => c.key).join(",");
+  const [prevColumnsKey, setPrevColumnsKey] = useState(columnsKeyRef);
+  if (columnsKeyRef !== prevColumnsKey) {
+    setPrevColumnsKey(columnsKeyRef);
+    setSelectedFields(new Set(columns.map((c) => c.key)));
+  }
+
+  // Group columns by category for the filter
+  const imageColKeys = columns.filter((c) => c.type === "image" || c.type === "url" && c.key.includes("image")).map((c) => c.key);
+  const priceColKeys = columns.filter((c) => c.type === "price" || c.key.includes("price")).map((c) => c.key);
+  const otherColKeys = columns.filter((c) => !imageColKeys.includes(c.key) && !priceColKeys.includes(c.key)).map((c) => c.key);
+
+  const allSelected = selectedFields.size === columns.length;
+  const groupAllSelected = (keys: string[]) => keys.length > 0 && keys.every((k) => selectedFields.has(k));
+  const groupNoneSelected = (keys: string[]) => keys.length > 0 && keys.every((k) => !selectedFields.has(k));
+
+  const toggleAll = () => {
+    if (allSelected) setSelectedFields(new Set());
+    else setSelectedFields(new Set(columns.map((c) => c.key)));
+  };
+
+  const toggleGroup = (keys: string[]) => {
+    setSelectedFields((prev) => {
+      const next = new Set(prev);
+      const allIn = keys.every((k) => next.has(k));
+      keys.forEach((k) => { if (allIn) next.delete(k); else next.add(k); });
+      return next;
+    });
+  };
 
   const toggleField = (key: string) => {
     setSelectedFields((prev) => {
@@ -109,7 +138,7 @@ export function SourceFeedPanel({
 
   const filteredColumns = columns.filter((col) => {
     const matchesSearch = !search || col.key.toLowerCase().includes(search.toLowerCase()) || col.label.toLowerCase().includes(search.toLowerCase());
-    const matchesFilter = !hasActiveFilter || selectedFields.has(col.key);
+    const matchesFilter = selectedFields.has(col.key);
     return matchesSearch && matchesFilter;
   });
 
@@ -174,7 +203,7 @@ export function SourceFeedPanel({
             onClick={() => setShowFilterMenu(!showFilterMenu)}
             className={cn(
               "flex h-[30px] w-[30px] items-center justify-center rounded border transition",
-              hasActiveFilter
+              !allSelected
                 ? "border-indigo-400 bg-indigo-50 text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400"
                 : "border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600 dark:border-slate-600 dark:hover:border-slate-500 dark:hover:text-slate-300",
             )}
@@ -185,36 +214,103 @@ export function SourceFeedPanel({
           {showFilterMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowFilterMenu(false)} />
-              <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-52 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700">
-                <div className="flex items-center justify-between border-b border-slate-100 px-3 py-1.5 dark:border-slate-600">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Filter Fields</span>
-                  {hasActiveFilter && (
+              <div className="absolute right-0 top-full z-20 mt-1 max-h-72 w-52 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700">
+                {/* All Fields */}
+                <button
+                  onClick={toggleAll}
+                  className="flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-600"
+                >
+                  <div className={cn(
+                    "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                    allSelected ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-300 dark:border-slate-500",
+                  )}>
+                    {allSelected && <Check className="h-2.5 w-2.5" />}
+                  </div>
+                  <span className="h-2 w-2 rounded-full bg-indigo-500" />
+                  All Fields
+                  <span className="ml-auto text-[9px] text-slate-400">{selectedFields.size}/{columns.length}</span>
+                </button>
+
+                {/* Images group */}
+                {imageColKeys.length > 0 && (
+                  <>
                     <button
-                      onClick={() => setSelectedFields(new Set())}
-                      className="text-[10px] text-indigo-500 hover:text-indigo-700 dark:text-indigo-400"
+                      onClick={() => toggleGroup(imageColKeys)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-600"
                     >
-                      Clear all
+                      <div className={cn(
+                        "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                        groupAllSelected(imageColKeys) ? "border-emerald-500 bg-emerald-500 text-white" : groupNoneSelected(imageColKeys) ? "border-slate-300 dark:border-slate-500" : "border-emerald-500 bg-emerald-200 dark:bg-emerald-800",
+                      )}>
+                        {groupAllSelected(imageColKeys) && <Check className="h-2.5 w-2.5" />}
+                      </div>
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      Images
                     </button>
-                  )}
-                </div>
-                {columns.map((col) => (
-                  <button
-                    key={col.key}
-                    onClick={() => toggleField(col.key)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-600"
-                  >
-                    <div className={cn(
-                      "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
-                      selectedFields.has(col.key)
-                        ? "border-indigo-500 bg-indigo-500 text-white"
-                        : "border-slate-300 dark:border-slate-500",
-                    )}>
-                      {selectedFields.has(col.key) && <Check className="h-2.5 w-2.5" />}
-                    </div>
-                    <span className="truncate">{col.key}</span>
-                    <span className="ml-auto shrink-0 text-[9px] text-slate-400">{col.type}</span>
-                  </button>
-                ))}
+                    {imageColKeys.map((key) => (
+                      <button key={key} onClick={() => toggleField(key)} className="flex w-full items-center gap-2 pl-7 pr-3 py-1 text-left text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-600">
+                        <div className={cn("flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border", selectedFields.has(key) ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-300 dark:border-slate-500")}>
+                          {selectedFields.has(key) && <Check className="h-2.5 w-2.5" />}
+                        </div>
+                        <span className="truncate">{key}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* Price group */}
+                {priceColKeys.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => toggleGroup(priceColKeys)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-600"
+                    >
+                      <div className={cn(
+                        "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                        groupAllSelected(priceColKeys) ? "border-amber-500 bg-amber-500 text-white" : groupNoneSelected(priceColKeys) ? "border-slate-300 dark:border-slate-500" : "border-amber-500 bg-amber-200 dark:bg-amber-800",
+                      )}>
+                        {groupAllSelected(priceColKeys) && <Check className="h-2.5 w-2.5" />}
+                      </div>
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      Price
+                    </button>
+                    {priceColKeys.map((key) => (
+                      <button key={key} onClick={() => toggleField(key)} className="flex w-full items-center gap-2 pl-7 pr-3 py-1 text-left text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-600">
+                        <div className={cn("flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border", selectedFields.has(key) ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-300 dark:border-slate-500")}>
+                          {selectedFields.has(key) && <Check className="h-2.5 w-2.5" />}
+                        </div>
+                        <span className="truncate">{key}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* Attributes / Other group */}
+                {otherColKeys.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => toggleGroup(otherColKeys)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-600"
+                    >
+                      <div className={cn(
+                        "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                        groupAllSelected(otherColKeys) ? "border-violet-500 bg-violet-500 text-white" : groupNoneSelected(otherColKeys) ? "border-slate-300 dark:border-slate-500" : "border-violet-500 bg-violet-200 dark:bg-violet-800",
+                      )}>
+                        {groupAllSelected(otherColKeys) && <Check className="h-2.5 w-2.5" />}
+                      </div>
+                      <span className="h-2 w-2 rounded-full bg-violet-500" />
+                      Attributes
+                    </button>
+                    {otherColKeys.map((key) => (
+                      <button key={key} onClick={() => toggleField(key)} className="flex w-full items-center gap-2 pl-7 pr-3 py-1 text-left text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-600">
+                        <div className={cn("flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border", selectedFields.has(key) ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-300 dark:border-slate-500")}>
+                          {selectedFields.has(key) && <Check className="h-2.5 w-2.5" />}
+                        </div>
+                        <span className="truncate">{key}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             </>
           )}
