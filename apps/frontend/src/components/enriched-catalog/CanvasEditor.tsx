@@ -62,7 +62,22 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         height,
         backgroundColor,
         selection: true,
+        selectionBorderColor: "#6366f1",
+        selectionLineWidth: 2,
+        selectionColor: "rgba(99, 102, 241, 0.1)",
       });
+
+      // Make selection controls more visible for all objects
+      FabricObject.prototype.set({
+        borderColor: "#6366f1",
+        cornerColor: "#6366f1",
+        cornerStrokeColor: "#ffffff",
+        cornerSize: 10,
+        cornerStyle: "circle",
+        borderScaleFactor: 2,
+        transparentCorners: false,
+        padding: 4,
+      } as Partial<FabricObject>);
 
       canvas.on("selection:created", (e) => {
         onSelectionChange?.(e.selected?.[0] ?? null);
@@ -455,12 +470,10 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }), []);
 
-    // Assign handle to editorRef prop (bypasses next/dynamic ref issue)
-    useEffect(() => {
-      if (editorRef) editorRef.current = handle;
-      if (typeof ref === "function") ref(handle);
-      else if (ref) (ref as React.MutableRefObject<CanvasEditorHandle | null>).current = handle;
-    }, [handle, editorRef, ref]);
+    // Assign handle synchronously to editorRef (bypasses next/dynamic ref issue)
+    if (editorRef) editorRef.current = handle;
+    if (typeof ref === "function") ref(handle);
+    else if (ref) (ref as React.MutableRefObject<CanvasEditorHandle | null>).current = handle;
 
     return (
       <div className="inline-block rounded border border-slate-300 shadow-sm dark:border-slate-600">

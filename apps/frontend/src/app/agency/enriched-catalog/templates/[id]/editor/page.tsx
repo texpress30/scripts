@@ -380,7 +380,7 @@ export default function TemplateEditorPage() {
             <Eye className="h-4 w-4" /> Preview
           </button>
 
-          <button onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="wm-btn-primary flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving} className="wm-btn-primary flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving && syncing ? "Syncing..." : "Save"}
           </button>
