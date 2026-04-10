@@ -120,3 +120,25 @@ def get_format_siblings(template_id: str, user: AuthUser = Depends(get_current_u
     if not group_id:
         return {"items": [template]}
     return {"items": creative_template_repository.get_by_format_group(group_id)}
+
+
+@router.post("/{template_id}/sync-styles")
+def sync_styles(template_id: str, user: AuthUser = Depends(get_current_user)) -> dict:
+    """Propagate style properties from this template to all siblings in its format group."""
+    try:
+        template = template_service.get_template(template_id)
+    except TemplateNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(template.get("subaccount_id", 0)))
+    group_id = template.get("format_group_id")
+    if not group_id:
+        return {"synced": 0, "message": "Template is not part of a format group"}
+    elements = list(template.get("elements") or [])
+    background_color = str(template.get("background_color") or "#FFFFFF")
+    synced = creative_template_repository.sync_styles_to_siblings(
+        source_template_id=template_id,
+        format_group_id=group_id,
+        background_color=background_color,
+        source_elements=elements,
+    )
+    return {"synced": synced, "source_template_id": template_id}

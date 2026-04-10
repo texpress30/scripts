@@ -31,6 +31,7 @@ interface FabricObjectJSON {
   radius?: number;
   // Custom data stored on the fabric object
   data?: {
+    elementId?: string;
     elementType?: string;
     dynamicBinding?: string;
     shapeType?: string;
@@ -55,6 +56,7 @@ export function fabricToCanvasElements(fabricJSON: FabricCanvasJSON): CanvasElem
     const height = (obj.height || 0) * scaleY;
 
     const base: CanvasElement = {
+      element_id: obj.data?.elementId || crypto.randomUUID(),
       type: elementType as CanvasElement["type"],
       position_x: obj.left || 0,
       position_y: obj.top || 0,
@@ -129,7 +131,7 @@ export function canvasElementsToFabricObjects(elements: CanvasElement[]): Record
           fill: (el.style.color as string) || "#000000",
           fontSize: (el.style.font_size as number) || 16,
           fontFamily: (el.style.font_family as string) || "Arial",
-          data: { elementType: "text" },
+          data: { elementId: el.element_id, elementType: "text" },
         };
 
       case "dynamic_field":
@@ -144,6 +146,7 @@ export function canvasElementsToFabricObjects(elements: CanvasElement[]): Record
           fontSize: (el.style.font_size as number) || 16,
           fontFamily: (el.style.font_family as string) || "Arial",
           data: {
+            elementId: el.element_id,
             elementType: "dynamic_field",
             dynamicBinding: el.dynamic_binding || "",
           },
@@ -158,6 +161,7 @@ export function canvasElementsToFabricObjects(elements: CanvasElement[]): Record
           height: el.height || 200,
           src: el.content || "",
           data: {
+            elementId: el.element_id,
             elementType: "image",
             dynamicBinding: el.dynamic_binding || undefined,
           },
@@ -174,7 +178,7 @@ export function canvasElementsToFabricObjects(elements: CanvasElement[]): Record
             rx: (el.width || 100) / 2,
             ry: (el.height || 100) / 2,
             fill,
-            data: { elementType: "shape", shapeType: "ellipse" },
+            data: { elementId: el.element_id, elementType: "shape", shapeType: "ellipse" },
           };
         }
         return {
@@ -184,7 +188,7 @@ export function canvasElementsToFabricObjects(elements: CanvasElement[]): Record
           width: el.width || 200,
           height: el.height || 100,
           fill,
-          data: { elementType: "shape", shapeType: "rectangle" },
+          data: { elementId: el.element_id, elementType: "shape", shapeType: "rectangle" },
         };
       }
 
@@ -196,7 +200,7 @@ export function canvasElementsToFabricObjects(elements: CanvasElement[]): Record
           width: el.width || 100,
           height: el.height || 100,
           fill: "#CCCCCC",
-          data: { elementType: "shape", shapeType: "rectangle" },
+          data: { elementId: el.element_id, elementType: "shape", shapeType: "rectangle" },
         };
     }
   });

@@ -58,6 +58,7 @@ class CreativeTemplateRepository:
             "background_color": str(data.get("background_color") or "#FFFFFF"),
             "format_group_id": data.get("format_group_id") or None,
             "format_label": data.get("format_label") or None,
+            "style_sync_enabled": bool(data.get("style_sync_enabled", True)),
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }
@@ -86,6 +87,61 @@ class CreativeTemplateRepository:
         )
         return [self._normalize(item) for item in cursor if isinstance(item, dict)]
 
+    def sync_styles_to_siblings(
+        self,
+        source_template_id: str,
+        format_group_id: str,
+        background_color: str,
+        source_elements: list[dict[str, Any]],
+    ) -> int:
+        """Propagate style properties from source elements to all siblings in the format group.
+
+        Syncs: element type, style, content, dynamic_binding.
+        Preserves: position_x, position_y, width, height (layout stays per-format).
+        Matching: by element_id field on each element.
+        """
+        siblings = self.get_by_format_group(format_group_id)
+        source_by_id = {
+            str(el.get("element_id") or ""): el
+            for el in source_elements
+            if el.get("element_id")
+        }
+        updated_count = 0
+        now = _utcnow().isoformat()
+
+        for sibling in siblings:
+            if not isinstance(sibling, dict) or sibling.get("id") == source_template_id:
+                continue
+
+            sibling_elements = list(sibling.get("elements") or [])
+            changed = False
+            for i, el in enumerate(sibling_elements):
+                eid = str(el.get("element_id") or "") if isinstance(el, dict) else ""
+                if not eid or eid not in source_by_id:
+                    continue
+                src = source_by_id[eid]
+                # Sync style properties, preserve layout
+                if isinstance(el, dict):
+                    el["type"] = src.get("type", el.get("type"))
+                    el["style"] = src.get("style", el.get("style"))
+                    el["content"] = src.get("content", el.get("content"))
+                    el["dynamic_binding"] = src.get("dynamic_binding", el.get("dynamic_binding"))
+                    sibling_elements[i] = el
+                    changed = True
+
+            if changed or sibling.get("background_color") != background_color:
+                self._collection().update_one(
+                    {"id": sibling["id"]},
+                    {"$set": {
+                        "elements": sibling_elements,
+                        "background_color": background_color,
+                        "updated_at": now,
+                    }},
+                )
+                updated_count += 1
+
+        return updated_count
+
     def get_by_format_group(self, format_group_id: str) -> list[dict[str, Any]]:
         cursor = (
             self._collection()
@@ -96,7 +152,7 @@ class CreativeTemplateRepository:
 
     def update(self, template_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         set_payload: dict[str, Any] = {"updated_at": _utcnow().isoformat()}
-        for key in ("name", "canvas_width", "canvas_height", "elements", "background_color", "format_group_id", "format_label"):
+        for key in ("name", "canvas_width", "canvas_height", "elements", "background_color", "format_group_id", "format_label", "style_sync_enabled"):
             if key in data and data[key] is not None:
                 set_payload[key] = data[key]
 

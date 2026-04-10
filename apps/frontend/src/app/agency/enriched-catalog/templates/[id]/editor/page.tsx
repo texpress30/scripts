@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Save, Loader2, Eye } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Eye, RefreshCw } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCreativeTemplate, useFormatSiblings } from "@/lib/hooks/useCreativeTemplates";
 import { useCanvasEditor } from "@/lib/hooks/useCanvasEditor";
@@ -38,8 +38,11 @@ export default function TemplateEditorPage() {
 
   const { data: template, isLoading: templateLoading } = useCreativeTemplate(templateId);
   const { data: siblings } = useFormatSiblings(templateId);
+  const hasFormatGroup = (siblings?.length ?? 0) > 1;
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [styleSyncEnabled, setStyleSyncEnabled] = useState(true);
   const [canvasObjects, setCanvasObjects] = useState<FabricObject[]>([]);
   const [selectedObjectIndex, setSelectedObjectIndex] = useState<number | null>(null);
 
@@ -54,11 +57,12 @@ export default function TemplateEditorPage() {
     template?.background_color || "#FFFFFF",
   );
 
-  // Sync canvas size from loaded template
+  // Sync canvas size and style sync preference from loaded template
   useEffect(() => {
     if (template) {
       updateCanvasSize(template.canvas_width, template.canvas_height);
       updateBackgroundColor(template.background_color);
+      setStyleSyncEnabled(template.style_sync_enabled !== false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template?.id]);
@@ -103,6 +107,18 @@ export default function TemplateEditorPage() {
         body: JSON.stringify(payload),
       });
       markClean();
+
+      // Sync styles to siblings if enabled and part of a format group
+      if (styleSyncEnabled && hasFormatGroup) {
+        setSyncing(true);
+        try {
+          await apiRequest(`/creative/templates/${templateId}/sync-styles`, { method: "POST" });
+        } catch (syncErr) {
+          console.warn("Style sync failed:", syncErr);
+        } finally {
+          setSyncing(false);
+        }
+      }
     } catch (err) {
       console.error("Failed to save template:", err);
       alert("Failed to save template. Please try again.");
@@ -198,8 +214,6 @@ export default function TemplateEditorPage() {
     );
   }
 
-  const hasFormatGroup = siblings && siblings.length > 1;
-
   return (
     <div className="flex h-screen flex-col bg-slate-100 dark:bg-slate-900">
       {/* Top bar */}
@@ -244,6 +258,27 @@ export default function TemplateEditorPage() {
             title="Background Color"
           />
 
+          {/* Style Sync toggle — only visible for format groups */}
+          {hasFormatGroup && (
+            <label
+              className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition ${
+                styleSyncEnabled
+                  ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400"
+                  : "border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-400"
+              }`}
+              title="When enabled, saving syncs colors, fonts, and text content to all other formats in this group"
+            >
+              <input
+                type="checkbox"
+                checked={styleSyncEnabled}
+                onChange={(e) => setStyleSyncEnabled(e.target.checked)}
+                className="accent-indigo-600"
+              />
+              <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+              Sync Styles
+            </label>
+          )}
+
           {/* Preview */}
           <button
             onClick={handlePreview}
@@ -261,7 +296,7 @@ export default function TemplateEditorPage() {
             className="wm-btn-primary flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save
+            {saving && syncing ? "Syncing..." : "Save"}
           </button>
         </div>
       </div>
@@ -311,7 +346,7 @@ export default function TemplateEditorPage() {
           {hasFormatGroup && (
             <div className="flex items-center justify-center gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-800">
               <span className="mr-2 text-xs font-medium text-slate-500 dark:text-slate-400">Formats:</span>
-              {siblings.map((sibling) => {
+              {(siblings ?? []).map((sibling) => {
                 const isActive = sibling.id === templateId;
                 const label = formatDimLabel(sibling.canvas_width, sibling.canvas_height, sibling.format_label);
                 return (
