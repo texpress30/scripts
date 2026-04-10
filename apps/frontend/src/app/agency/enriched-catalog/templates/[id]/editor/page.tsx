@@ -4,26 +4,35 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Save, Loader2, Eye, RefreshCw, Wand2 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCreativeTemplate, useFormatSiblings } from "@/lib/hooks/useCreativeTemplates";
+import { useCreativeTemplate, useFormatSiblings, useCreativeTemplates } from "@/lib/hooks/useCreativeTemplates";
 import { useCanvasEditor } from "@/lib/hooks/useCanvasEditor";
 import { useBrandPresets } from "@/lib/hooks/useBrandPresets";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
+import { useFeedSources } from "@/lib/hooks/useFeedSources";
+import { useChannelProducts } from "@/lib/hooks/useChannelProducts";
+import { useChannels } from "@/lib/hooks/useMasterFields";
 import { apiRequest } from "@/lib/api";
 import type { CanvasEditorHandle } from "@/components/enriched-catalog/CanvasEditor";
 import type { UpdateTemplatePayload } from "@/lib/hooks/useCreativeTemplates";
 import type { FabricObject } from "fabric";
 
-// Dynamic import to avoid SSR issues with fabric.js
 const CanvasEditor = dynamic(
   () => import("@/components/enriched-catalog/CanvasEditor").then((m) => ({ default: m.CanvasEditor })),
   { ssr: false, loading: () => <div className="flex h-96 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div> },
 );
 
-// These don't use fabric directly, safe to import normally
 import { CanvasToolbar } from "@/components/enriched-catalog/CanvasToolbar";
-import { LayerPanel } from "@/components/enriched-catalog/LayerPanel";
 import { PropertyPanel } from "@/components/enriched-catalog/PropertyPanel";
 import { BrandPicker } from "@/components/enriched-catalog/BrandPicker";
+import {
+  EditorSidebar,
+  SourceFeedPanel,
+  ImageAssetsPanel,
+  GraphicAssetsPanel,
+  LibraryPanel,
+  type SidebarTab,
+} from "@/components/enriched-catalog/EditorSidebar";
+import { LayerPanel } from "@/components/enriched-catalog/LayerPanel";
 
 function formatDimLabel(w: number, h: number, label?: string | null): string {
   if (label) return label;
@@ -43,15 +52,28 @@ export default function TemplateEditorPage() {
   const { data: template, isLoading: templateLoading } = useCreativeTemplate(templateId);
   const { data: siblings } = useFormatSiblings(templateId);
   const { presets: brandPresets } = useBrandPresets(subaccountId);
+  const { templates: allTemplates } = useCreativeTemplates(subaccountId);
+
+  // Feed data for Source Feed panel
+  const { sources } = useFeedSources(subaccountId);
+  const firstSourceId = sources.length > 0 ? sources[0].id : null;
+  const { channels } = useChannels(firstSourceId);
+  const firstChannelId = (channels?.length ?? 0) > 0 ? channels![0].id : null;
+  const { products, columns, total: totalProducts, isLoading: productsLoading } = useChannelProducts(firstChannelId, 1, 50);
+
   const hasFormatGroup = (siblings?.length ?? 0) > 1;
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [styleSyncEnabled, setStyleSyncEnabled] = useState(true);
   const [adapting, setAdapting] = useState(false);
   const [showAdaptMenu, setShowAdaptMenu] = useState(false);
   const [canvasObjects, setCanvasObjects] = useState<FabricObject[]>([]);
   const [selectedObjectIndex, setSelectedObjectIndex] = useState<number | null>(null);
+
+  // Sidebar state
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("source_feed");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [currentProductIndex, setCurrentProductIndex] = useState(0);
 
   const {
     canvasWidth, canvasHeight, backgroundColor,
@@ -64,7 +86,6 @@ export default function TemplateEditorPage() {
     template?.background_color || "#FFFFFF",
   );
 
-  // Sync canvas size and style sync preference from loaded template
   useEffect(() => {
     if (template) {
       updateCanvasSize(template.canvas_width, template.canvas_height);
@@ -76,9 +97,7 @@ export default function TemplateEditorPage() {
 
   const refreshObjectList = useCallback(() => {
     const canvas = canvasRef.current?.getCanvas();
-    if (canvas) {
-      setCanvasObjects([...canvas.getObjects()]);
-    }
+    if (canvas) setCanvasObjects([...canvas.getObjects()]);
   }, []);
 
   const handleSelectionChange = useCallback((obj: FabricObject | null) => {
@@ -115,7 +134,6 @@ export default function TemplateEditorPage() {
       });
       markClean();
 
-      // Sync styles to siblings if enabled and part of a format group
       if (styleSyncEnabled && hasFormatGroup) {
         setSyncing(true);
         try {
@@ -135,50 +153,46 @@ export default function TemplateEditorPage() {
   };
 
   const handlePreview = async () => {
-    setPreviewLoading(true);
+    const product = products[currentProductIndex] ?? {};
     try {
-      const result = await apiRequest<{ template_id: string; rendered_elements: unknown[] }>(
-        `/creative/templates/${templateId}/preview`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            title: "Sample Product",
-            price: "$29.99",
-            sale_price: "$19.99",
-            brand: "Brand Name",
-            description: "This is a sample product description",
-            image_link: "https://via.placeholder.com/400",
-            category: "Clothing",
-            availability: "in stock",
-          }),
-        },
-      );
-      alert(`Preview generated! ${(result.rendered_elements || []).length} elements rendered.`);
+      await apiRequest(`/creative/templates/${templateId}/preview`, {
+        method: "POST",
+        body: JSON.stringify(product),
+      });
+      alert("Preview generated with current product data.");
     } catch (err) {
       console.error("Preview failed:", err);
-    } finally {
-      setPreviewLoading(false);
     }
   };
 
-  const handleSwitchFormat = async (targetId: string) => {
+  const handleSwitchFormat = (targetId: string) => {
     if (targetId === templateId) return;
-    if (hasUnsavedChanges) {
-      const discard = confirm("You have unsaved changes. Switch format without saving?");
-      if (!discard) return;
-    }
+    if (hasUnsavedChanges && !confirm("You have unsaved changes. Switch format without saving?")) return;
     router.push(`/agency/enriched-catalog/templates/${targetId}/editor`);
+  };
+
+  const handleAdaptLayout = async (sourceTemplateId: string) => {
+    setAdapting(true);
+    setShowAdaptMenu(false);
+    try {
+      await apiRequest(`/creative/templates/${templateId}/adapt-layout`, {
+        method: "POST",
+        body: JSON.stringify({ source_template_id: sourceTemplateId, target_width: canvasWidth, target_height: canvasHeight }),
+      });
+      window.location.reload();
+    } catch (err) {
+      console.error("Adapt layout failed:", err);
+      alert("Failed to adapt layout.");
+    } finally {
+      setAdapting(false);
+    }
   };
 
   const handleApplyBrandColor = (color: string) => {
     const canvas = canvasRef.current?.getCanvas();
     if (!canvas) return;
     const active = canvas.getActiveObject();
-    if (active) {
-      active.set("fill", color);
-      canvas.renderAll();
-      markDirty();
-    }
+    if (active) { active.set("fill", color); canvas.renderAll(); markDirty(); }
   };
 
   const handleApplyBrandFont = (font: string) => {
@@ -192,29 +206,13 @@ export default function TemplateEditorPage() {
     }
   };
 
-  const handleApplyBrandBackground = (color: string) => {
-    updateBackgroundColor(color);
-  };
-
-  const handleAdaptLayout = async (sourceTemplateId: string) => {
-    setAdapting(true);
-    setShowAdaptMenu(false);
-    try {
-      await apiRequest(`/creative/templates/${templateId}/adapt-layout`, {
-        method: "POST",
-        body: JSON.stringify({
-          source_template_id: sourceTemplateId,
-          target_width: canvasWidth,
-          target_height: canvasHeight,
-        }),
-      });
-      // Reload the page to get the adapted elements
-      window.location.reload();
-    } catch (err) {
-      console.error("Adapt layout failed:", err);
-      alert("Failed to adapt layout. Please try again.");
-    } finally {
-      setAdapting(false);
+  // Source Feed: click a field to add as dynamic element
+  const handleSourceFieldClick = (fieldKey: string, _value: string) => {
+    const binding = `{{${fieldKey}}}`;
+    if (fieldKey.includes("image")) {
+      canvasRef.current?.addImagePlaceholder(binding);
+    } else {
+      canvasRef.current?.addDynamicField(binding);
     }
   };
 
@@ -254,20 +252,51 @@ export default function TemplateEditorPage() {
   };
 
   if (templateLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-slate-400" /></div>;
   }
 
   if (!template) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <p className="text-slate-500">Template not found.</p>
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center"><p className="text-slate-500">Template not found.</p></div>;
   }
+
+  // Render sidebar panel content based on active tab
+  const renderSidebarContent = () => {
+    switch (sidebarTab) {
+      case "source_feed":
+        return (
+          <SourceFeedPanel
+            products={products}
+            columns={columns}
+            isLoading={productsLoading}
+            currentProductIndex={currentProductIndex}
+            onProductChange={setCurrentProductIndex}
+            totalProducts={totalProducts}
+            onFieldClick={handleSourceFieldClick}
+          />
+        );
+      case "image_assets":
+        return <ImageAssetsPanel />;
+      case "graphic_assets":
+        return <GraphicAssetsPanel />;
+      case "library":
+        return (
+          <LibraryPanel
+            templates={allTemplates.map((t) => ({ id: t.id, name: t.name, canvas_width: t.canvas_width, canvas_height: t.canvas_height }))}
+            onSelect={(id) => router.push(`/agency/enriched-catalog/templates/${id}/editor`)}
+          />
+        );
+      case "layers":
+        return (
+          <LayerPanel
+            objects={canvasObjects}
+            selectedIndex={selectedObjectIndex}
+            onSelect={handleLayerSelect}
+            onToggleVisibility={handleLayerToggleVisibility}
+            onDelete={handleLayerDelete}
+          />
+        );
+    }
+  };
 
   return (
     <div className="flex h-screen flex-col bg-slate-100 dark:bg-slate-900">
@@ -281,75 +310,31 @@ export default function TemplateEditorPage() {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{template.name}</span>
-          {hasUnsavedChanges && (
-            <span className="text-xs text-amber-500">Unsaved changes</span>
-          )}
+          {hasUnsavedChanges && <span className="text-xs text-amber-500">Unsaved changes</span>}
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Canvas size controls */}
           <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-            <input
-              type="number"
-              value={canvasWidth}
-              onChange={(e) => updateCanvasSize(Number(e.target.value), canvasHeight)}
-              className="mcc-input w-16 rounded border px-1.5 py-1 text-xs"
-            />
+            <input type="number" value={canvasWidth} onChange={(e) => updateCanvasSize(Number(e.target.value), canvasHeight)} className="mcc-input w-16 rounded border px-1.5 py-1 text-xs" />
             <span>x</span>
-            <input
-              type="number"
-              value={canvasHeight}
-              onChange={(e) => updateCanvasSize(canvasWidth, Number(e.target.value))}
-              className="mcc-input w-16 rounded border px-1.5 py-1 text-xs"
-            />
+            <input type="number" value={canvasHeight} onChange={(e) => updateCanvasSize(canvasWidth, Number(e.target.value))} className="mcc-input w-16 rounded border px-1.5 py-1 text-xs" />
           </div>
 
-          {/* Background color */}
-          <input
-            type="color"
-            value={backgroundColor}
-            onChange={(e) => updateBackgroundColor(e.target.value)}
-            className="h-7 w-8 cursor-pointer rounded border"
-            title="Background Color"
-          />
+          <input type="color" value={backgroundColor} onChange={(e) => updateBackgroundColor(e.target.value)} className="h-7 w-8 cursor-pointer rounded border" title="Background Color" />
 
-          {/* Style Sync toggle — only visible for format groups */}
           {hasFormatGroup && (
-            <label
-              className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition ${
-                styleSyncEnabled
-                  ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400"
-                  : "border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-400"
-              }`}
-              title="When enabled, saving syncs colors, fonts, and text content to all other formats in this group"
-            >
-              <input
-                type="checkbox"
-                checked={styleSyncEnabled}
-                onChange={(e) => setStyleSyncEnabled(e.target.checked)}
-                className="accent-indigo-600"
-              />
+            <label className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition ${styleSyncEnabled ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400" : "border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-400"}`}>
+              <input type="checkbox" checked={styleSyncEnabled} onChange={(e) => setStyleSyncEnabled(e.target.checked)} className="accent-indigo-600" />
               <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
-              Sync Styles
+              Sync
             </label>
           )}
 
-          {/* Preview */}
-          <button
-            onClick={handlePreview}
-            disabled={previewLoading}
-            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
-          >
-            {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-            Preview
+          <button onClick={handlePreview} className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700">
+            <Eye className="h-4 w-4" /> Preview
           </button>
 
-          {/* Save */}
-          <button
-            onClick={handleSave}
-            disabled={saving || !hasUnsavedChanges}
-            className="wm-btn-primary flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-          >
+          <button onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="wm-btn-primary flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving && syncing ? "Syncing..." : "Save"}
           </button>
@@ -371,30 +356,24 @@ export default function TemplateEditorPage() {
         {brandPresets.length > 0 && (
           <>
             <div className="h-6 w-px bg-slate-200 dark:bg-slate-600" />
-            <BrandPicker
-              presets={brandPresets}
-              onApplyColor={handleApplyBrandColor}
-              onApplyFont={handleApplyBrandFont}
-              onApplyBackground={handleApplyBrandBackground}
-            />
+            <BrandPicker presets={brandPresets} onApplyColor={handleApplyBrandColor} onApplyFont={handleApplyBrandFont} onApplyBackground={updateBackgroundColor} />
           </>
         )}
       </div>
 
-      {/* Main area */}
+      {/* Main area: Sidebar + Canvas + Properties */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left panel: Layers */}
-        <div className="w-60 overflow-y-auto border-r border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-          <LayerPanel
-            objects={canvasObjects}
-            selectedIndex={selectedObjectIndex}
-            onSelect={handleLayerSelect}
-            onToggleVisibility={handleLayerToggleVisibility}
-            onDelete={handleLayerDelete}
-          />
-        </div>
+        {/* Left: Marpipe-style sidebar */}
+        <EditorSidebar
+          activeTab={sidebarTab}
+          onTabChange={setSidebarTab}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        >
+          {renderSidebarContent()}
+        </EditorSidebar>
 
-        {/* Canvas area */}
+        {/* Center: Canvas + Format switcher */}
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex flex-1 items-center justify-center overflow-auto bg-slate-200 p-8 dark:bg-slate-900">
             <CanvasEditor
@@ -408,7 +387,7 @@ export default function TemplateEditorPage() {
             />
           </div>
 
-          {/* Format switcher bar — only shown when template belongs to a format group */}
+          {/* Format switcher bar */}
           {hasFormatGroup && (
             <div className="flex items-center justify-center gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-800">
               <span className="mr-2 text-xs font-medium text-slate-500 dark:text-slate-400">Formats:</span>
@@ -416,29 +395,15 @@ export default function TemplateEditorPage() {
                 const isActive = sibling.id === templateId;
                 const label = formatDimLabel(sibling.canvas_width, sibling.canvas_height, sibling.format_label);
                 return (
-                  <button
-                    key={sibling.id}
-                    onClick={() => handleSwitchFormat(sibling.id)}
-                    className={`flex flex-col items-center rounded-lg border px-4 py-2 text-xs transition ${
-                      isActive
-                        ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/20 dark:text-indigo-400"
-                        : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
-                    }`}
-                  >
+                  <button key={sibling.id} onClick={() => handleSwitchFormat(sibling.id)} className={`flex flex-col items-center rounded-lg border px-4 py-2 text-xs transition ${isActive ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/20 dark:text-indigo-400" : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"}`}>
                     <span className="font-medium">{label}</span>
                     <span className="text-[10px] text-slate-400">{sibling.canvas_width}x{sibling.canvas_height}</span>
                   </button>
                 );
               })}
 
-              {/* Adapt layout button */}
               <div className="relative ml-2">
-                <button
-                  onClick={() => setShowAdaptMenu(!showAdaptMenu)}
-                  disabled={adapting}
-                  className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-600 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/30"
-                  title="Copy and adapt layout from another format"
-                >
+                <button onClick={() => setShowAdaptMenu(!showAdaptMenu)} disabled={adapting} className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
                   {adapting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                   Adapt From...
                 </button>
@@ -447,19 +412,12 @@ export default function TemplateEditorPage() {
                     <div className="fixed inset-0 z-10" onClick={() => setShowAdaptMenu(false)} />
                     <div className="absolute bottom-full left-0 z-20 mb-1 w-48 rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700">
                       <p className="px-3 py-1 text-xs text-slate-400">Copy layout from:</p>
-                      {(siblings ?? [])
-                        .filter((s) => s.id !== templateId)
-                        .map((sibling) => (
-                          <button
-                            key={sibling.id}
-                            onClick={() => handleAdaptLayout(sibling.id)}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-600"
-                          >
-                            <Wand2 className="h-3 w-3 text-amber-500" />
-                            {formatDimLabel(sibling.canvas_width, sibling.canvas_height, sibling.format_label)}
-                            <span className="ml-auto text-xs text-slate-400">{sibling.canvas_width}x{sibling.canvas_height}</span>
-                          </button>
-                        ))}
+                      {(siblings ?? []).filter((s) => s.id !== templateId).map((sibling) => (
+                        <button key={sibling.id} onClick={() => handleAdaptLayout(sibling.id)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-600">
+                          <Wand2 className="h-3 w-3 text-amber-500" />
+                          {formatDimLabel(sibling.canvas_width, sibling.canvas_height, sibling.format_label)}
+                        </button>
+                      ))}
                     </div>
                   </>
                 )}
@@ -468,15 +426,9 @@ export default function TemplateEditorPage() {
           )}
         </div>
 
-        {/* Right panel: Properties */}
-        <div className="w-68 overflow-y-auto border-l border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-          <PropertyPanel
-            selectedObject={selectedObject}
-            onUpdate={() => {
-              markDirty();
-              refreshObjectList();
-            }}
-          />
+        {/* Right: Properties */}
+        <div className="w-64 overflow-y-auto border-l border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <PropertyPanel selectedObject={selectedObject} onUpdate={() => { markDirty(); refreshObjectList(); }} />
         </div>
       </div>
     </div>
