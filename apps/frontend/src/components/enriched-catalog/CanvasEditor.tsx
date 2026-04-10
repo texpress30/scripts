@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, forwardRef, useMemo } from "react";
-import { Canvas, Rect, Ellipse, Textbox, FabricImage, Line, Point, type FabricObject } from "fabric";
+import { Canvas, Rect, Ellipse, Textbox, FabricImage, Line, Point, FabricObject } from "fabric";
 import { canvasElementsToFabricObjects, fabricToCanvasElements } from "@/lib/canvas-schema-bridge";
 import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
 
