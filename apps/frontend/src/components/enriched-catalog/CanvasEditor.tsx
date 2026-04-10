@@ -209,8 +209,14 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         if (!canvas) return [];
         // Manually extract elements to avoid Fabric.js serialization issues
         // (e.g. tainted images losing src in toJSON)
-        type ObjWithData = FabricObject & { data?: Record<string, string | undefined>; fill?: string; text?: string; fontSize?: number; fontFamily?: string; src?: string; _element?: HTMLImageElement; rx?: number; ry?: number };
-        const objects = (canvas.getObjects() as ObjWithData[]).filter((obj) => !obj.data?.isGuideLine);
+        type ObjWithData = FabricObject & { data?: Record<string, string | undefined>; fill?: string; text?: string; fontSize?: number; fontFamily?: string; src?: string; _element?: HTMLImageElement; rx?: number; ry?: number; strokeDashArray?: number[] };
+        const objects = (canvas.getObjects() as ObjWithData[]).filter((obj) => {
+          if (obj.data?.isGuideLine) return false;
+          // Skip placeholder rects (dashed border rects created as image fallbacks)
+          if (obj.data?.elementType === "image" && obj.type === "Rect") return false;
+          if (!obj.data?.elementType && obj.strokeDashArray?.length) return false;
+          return true;
+        });
         return objects.map((obj: ObjWithData): CanvasElement => {
           const scaleX = obj.scaleX ?? 1;
           const scaleY = obj.scaleY ?? 1;
@@ -253,6 +259,10 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           }
 
           return base;
+        }).filter((el) => {
+          // Remove image elements with no valid content (ghost placeholders)
+          if (el.type === "image" && (!el.content || !el.content.startsWith("http"))) return false;
+          return true;
         });
       },
       getCanvas: () => fabricRef.current,
@@ -565,7 +575,10 @@ async function createFabricObject(data: Record<string, unknown>): Promise<Fabric
         fill: (data.fill as string) || "#CCCCCC",
         data: data.data,
       });
-    case "image":
+    case "image": {
+      const src = data.src as string;
+      // Skip images with no valid src — prevents ghost placeholder rectangles
+      if (!src || !src.startsWith("http")) return null;
       try {
         const img = await FabricImage.fromURL(data.src as string);
         img.set({
@@ -579,19 +592,10 @@ async function createFabricObject(data: Record<string, unknown>): Promise<Fabric
         }
         return img;
       } catch {
-        // Fallback: placeholder rect for failed image loads
-        return new Rect({
-          left: data.left as number,
-          top: data.top as number,
-          width: (data.width as number) || 200,
-          height: (data.height as number) || 200,
-          fill: "#cbd5e1",
-          stroke: "#94a3b8",
-          strokeWidth: 2,
-          strokeDashArray: [8, 4],
-          data: data.data,
-        });
+        // Skip failed image loads — don't create ghost placeholder rects
+        return null;
       }
+    }
     default:
       return null;
   }
