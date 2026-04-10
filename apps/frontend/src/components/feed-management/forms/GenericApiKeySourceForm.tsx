@@ -282,9 +282,9 @@ export function GenericApiKeySourceForm({
       ) : null}
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-        <strong>Notă:</strong> Conectorul complet pentru {definition.displayName}{" "}
-        este în dezvoltare. Pentru moment poți salva sursa și credențialele —
-        sincronizarea automată a produselor va fi disponibilă în curând.
+        <strong>Notă:</strong> Sincronizarea automată a produselor pentru{" "}
+        {definition.displayName} este în dezvoltare. Pentru moment poți salva
+        sursa și configurația — importul automat va fi disponibil în curând.
       </div>
 
       <div className="flex flex-wrap items-center gap-3 pt-2">
