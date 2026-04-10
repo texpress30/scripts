@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Copy, Check } from "lucide-react";
-import { Canvas, Rect, Ellipse, Textbox, FabricImage } from "fabric";
+import { StaticCanvas, Rect, Ellipse, Textbox, FabricImage } from "fabric";
 import { useCreativeTemplate } from "@/lib/hooks/useCreativeTemplates";
 import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
@@ -27,12 +27,8 @@ async function renderTemplateForProduct(
   backgroundColor: string,
   product: Record<string, unknown>,
 ): Promise<string> {
-  // Create offscreen canvas element
-  const canvasEl = document.createElement("canvas");
-  canvasEl.width = canvasWidth;
-  canvasEl.height = canvasHeight;
-
-  const canvas = new Canvas(canvasEl, {
+  // Create offscreen static canvas (no DOM attachment needed)
+  const canvas = new StaticCanvas(undefined, {
     width: canvasWidth,
     height: canvasHeight,
     backgroundColor,
@@ -69,30 +65,38 @@ async function renderTemplateForProduct(
             : content;
           if (imgUrl && imgUrl.startsWith("http")) {
             try {
-              const img = await FabricImage.fromURL(imgUrl, { crossOrigin: "anonymous" });
-              img.set({ left: el.position_x, top: el.position_y });
-              if (el.width && el.height) {
-                img.scaleToWidth(el.width);
-              }
-              canvas.add(img);
-            } catch {
-              // Try without CORS
-              try {
-                const imgEl = document.createElement("img");
-                await new Promise<void>((resolve, reject) => {
+              // Load image with timeout to avoid hanging
+              const imgEl = document.createElement("img");
+              imgEl.crossOrigin = "anonymous";
+              await Promise.race([
+                new Promise<void>((resolve, reject) => {
                   imgEl.onload = () => resolve();
-                  imgEl.onerror = () => reject();
+                  imgEl.onerror = () => {
+                    // Retry without CORS
+                    imgEl.crossOrigin = "";
+                    imgEl.src = imgUrl;
+                    imgEl.onload = () => resolve();
+                    imgEl.onerror = () => reject();
+                  };
                   imgEl.src = imgUrl;
-                });
-                const fabricImg = new FabricImage(imgEl, {
-                  left: el.position_x,
-                  top: el.position_y,
-                });
-                if (el.width) fabricImg.scaleToWidth(el.width);
-                canvas.add(fabricImg);
-              } catch {
-                // Skip failed images
-              }
+                }),
+                new Promise<void>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+              ]);
+              const fabricImg = new FabricImage(imgEl, {
+                left: el.position_x,
+                top: el.position_y,
+              });
+              if (el.width) fabricImg.scaleToWidth(el.width);
+              canvas.add(fabricImg);
+            } catch {
+              // Skip failed/timed-out images — add placeholder rect
+              canvas.add(new Rect({
+                left: el.position_x,
+                top: el.position_y,
+                width: el.width || 200,
+                height: el.height || 200,
+                fill: "#e2e8f0",
+              }));
             }
           }
           break;
@@ -127,8 +131,8 @@ async function renderTemplateForProduct(
 
   canvas.renderAll();
 
-  // Export as data URL
-  const dataUrl = canvasEl.toDataURL("image/png");
+  // Export as data URL via StaticCanvas
+  const dataUrl = canvas.toDataURL({ format: "png", multiplier: 1 });
   canvas.dispose();
 
   return dataUrl;
@@ -170,18 +174,24 @@ export default function PreviewCreativesPage() {
       const results: RenderedPreview[] = [];
 
       for (let i = 0; i < maxPreviews; i++) {
-        const dataUrl = await renderTemplateForProduct(
-          template.elements,
-          template.canvas_width,
-          template.canvas_height,
-          template.background_color,
-          products[i],
-        );
-
-        results.push({ product_index: i, image_url: dataUrl });
+        try {
+          const dataUrl = await renderTemplateForProduct(
+            template.elements,
+            template.canvas_width,
+            template.canvas_height,
+            template.background_color,
+            products[i],
+          );
+          results.push({ product_index: i, image_url: dataUrl });
+        } catch (err) {
+          console.warn(`Failed to render product ${i}:`, err);
+          results.push({ product_index: i, image_url: "" });
+        }
         setRenderedCount(results.length);
         setProgress(Math.round(((i + 1) / maxPreviews) * 100));
         setPreviews([...results]);
+        // Yield to browser to update UI
+        await new Promise((r) => setTimeout(r, 0));
       }
 
       setRendering(false);
