@@ -3,5 +3,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+*.tsbuildinfo
 node_modules/
 apps/frontend/node_modules/
