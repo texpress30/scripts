@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Copy, Check } from "lucide-react";
-import { StaticCanvas, Rect, Ellipse, Textbox, FabricImage } from "fabric";
 import { useCreativeTemplate } from "@/lib/hooks/useCreativeTemplates";
 import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
@@ -16,8 +15,22 @@ interface RenderedPreview {
   image_url: string;
 }
 
+/** Load an image element with timeout. Returns null on failure. */
+function loadImage(src: string, timeoutMs = 6000): Promise<HTMLImageElement | null> {
+  return Promise.race([
+    new Promise<HTMLImageElement | null>((resolve) => {
+      const img = document.createElement("img");
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    }),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+  ]);
+}
+
 /**
- * Render a template with product data on an offscreen Fabric.js canvas.
+ * Render a template with product data using raw Canvas 2D API.
  * Returns a data URL of the rendered image.
  */
 async function renderTemplateForProduct(
@@ -27,90 +40,69 @@ async function renderTemplateForProduct(
   backgroundColor: string,
   product: Record<string, unknown>,
 ): Promise<string> {
-  // Create offscreen static canvas (no DOM attachment needed)
-  const canvas = new StaticCanvas(undefined, {
-    width: canvasWidth,
-    height: canvasHeight,
-    backgroundColor,
-  });
+  const canvasEl = document.createElement("canvas");
+  canvasEl.width = canvasWidth;
+  canvasEl.height = canvasHeight;
+  const ctx = canvasEl.getContext("2d")!;
+
+  // Background
+  ctx.fillStyle = backgroundColor;
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
   for (const el of elements) {
     // Replace dynamic bindings with product values
     let content = el.content || "";
     const binding = el.dynamic_binding;
     if (binding) {
-      const fieldKey = binding.replace(/\{\{|\}\}/g, "");
-      const productValue = String(product[fieldKey] ?? binding);
-      content = productValue;
+      const fieldKey = binding.replace(/\{\{|\}\}/g, "").trim();
+      content = String(product[fieldKey] ?? binding);
     }
 
     try {
       switch (el.type) {
         case "text":
         case "dynamic_field": {
-          const textbox = new Textbox(content, {
-            left: el.position_x,
-            top: el.position_y,
-            width: el.width || 200,
-            fontSize: (el.style.font_size as number) || 16,
-            fill: (el.style.color as string) || "#000000",
-            fontFamily: (el.style.font_family as string) || "Arial",
-          });
-          canvas.add(textbox);
+          const fontSize = (el.style.font_size as number) || 16;
+          const fontFamily = (el.style.font_family as string) || "Arial";
+          const color = (el.style.color as string) || "#000000";
+          ctx.font = `${fontSize}px ${fontFamily}`;
+          ctx.fillStyle = color;
+          ctx.textBaseline = "top";
+          // Word-wrap text within width
+          const maxWidth = el.width || canvasWidth - el.position_x;
+          const words = content.split(" ");
+          let line = "";
+          let y = el.position_y;
+          for (const word of words) {
+            const testLine = line ? `${line} ${word}` : word;
+            if (ctx.measureText(testLine).width > maxWidth && line) {
+              ctx.fillText(line, el.position_x, y);
+              line = word;
+              y += fontSize * 1.3;
+            } else {
+              line = testLine;
+            }
+          }
+          if (line) ctx.fillText(line, el.position_x, y);
           break;
         }
         case "image": {
           const imgUrl = binding
-            ? String(product[binding.replace(/\{\{|\}\}/g, "")] ?? content)
+            ? String(product[binding.replace(/\{\{|\}\}/g, "").trim()] ?? content)
             : content;
           if (imgUrl && imgUrl.startsWith("http")) {
-            try {
-              // Proxy through Next.js image optimizer to bypass CORS
-              const proxyUrl = `/_next/image?url=${encodeURIComponent(imgUrl)}&w=${Math.max(el.width || 400, 400)}&q=80`;
-              const imgEl = document.createElement("img");
-              imgEl.crossOrigin = "anonymous";
-              await Promise.race([
-                new Promise<void>((resolve, reject) => {
-                  imgEl.onload = () => resolve();
-                  imgEl.onerror = () => reject();
-                  imgEl.src = proxyUrl;
-                }),
-                new Promise<void>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
-              ]);
-              const fabricImg = new FabricImage(imgEl, {
-                left: el.position_x,
-                top: el.position_y,
-              });
-              if (el.width) fabricImg.scaleToWidth(el.width);
-              canvas.add(fabricImg);
-            } catch {
-              // Fallback: try direct load without CORS (may taint canvas)
-              try {
-                const imgEl2 = document.createElement("img");
-                await Promise.race([
-                  new Promise<void>((resolve, reject) => {
-                    imgEl2.onload = () => resolve();
-                    imgEl2.onerror = () => reject();
-                    imgEl2.src = imgUrl;
-                  }),
-                  new Promise<void>((_, reject) => setTimeout(() => reject(), 5000)),
-                ]);
-                const fabricImg = new FabricImage(imgEl2, {
-                  left: el.position_x,
-                  top: el.position_y,
-                });
-                if (el.width) fabricImg.scaleToWidth(el.width);
-                canvas.add(fabricImg);
-              } catch {
-                // Final fallback — placeholder rect
-                canvas.add(new Rect({
-                  left: el.position_x,
-                  top: el.position_y,
-                  width: el.width || 200,
-                  height: el.height || 200,
-                  fill: "#e2e8f0",
-                }));
-              }
+            // Try proxy first, then direct
+            const proxyUrl = `/_next/image?url=${encodeURIComponent(imgUrl)}&w=${Math.max(Math.round(el.width || 400), 256)}&q=80`;
+            let img = await loadImage(proxyUrl);
+            if (!img) img = await loadImage(imgUrl);
+            if (img) {
+              const w = el.width || img.naturalWidth;
+              const h = el.height || img.naturalHeight;
+              ctx.drawImage(img, el.position_x, el.position_y, w, h);
+            } else {
+              // Placeholder
+              ctx.fillStyle = "#e2e8f0";
+              ctx.fillRect(el.position_x, el.position_y, el.width || 200, el.height || 200);
             }
           }
           break;
@@ -118,22 +110,15 @@ async function renderTemplateForProduct(
         case "shape": {
           const shapeType = (el.style.shape_type as string) || el.content || "rectangle";
           const fill = (el.style.fill_color as string) || "#CCCCCC";
+          ctx.fillStyle = fill;
           if (shapeType === "ellipse" || shapeType === "circle") {
-            canvas.add(new Ellipse({
-              left: el.position_x,
-              top: el.position_y,
-              rx: (el.width || 100) / 2,
-              ry: (el.height || 100) / 2,
-              fill,
-            }));
+            const rx = (el.width || 100) / 2;
+            const ry = (el.height || 100) / 2;
+            ctx.beginPath();
+            ctx.ellipse(el.position_x + rx, el.position_y + ry, rx, ry, 0, 0, Math.PI * 2);
+            ctx.fill();
           } else {
-            canvas.add(new Rect({
-              left: el.position_x,
-              top: el.position_y,
-              width: el.width || 200,
-              height: el.height || 100,
-              fill,
-            }));
+            ctx.fillRect(el.position_x, el.position_y, el.width || 200, el.height || 100);
           }
           break;
         }
@@ -143,13 +128,12 @@ async function renderTemplateForProduct(
     }
   }
 
-  canvas.renderAll();
-
-  // Export as data URL via StaticCanvas
-  const dataUrl = canvas.toDataURL({ format: "png", multiplier: 1 });
-  canvas.dispose();
-
-  return dataUrl;
+  try {
+    return canvasEl.toDataURL("image/png");
+  } catch {
+    // Tainted canvas — retry without cross-origin images
+    return canvasEl.toDataURL("image/jpeg", 0.8);
+  }
 }
 
 export default function PreviewCreativesPage() {
