@@ -9,6 +9,7 @@ import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useChannelProducts } from "@/lib/hooks/useChannelProducts";
 import { useChannels } from "@/lib/hooks/useMasterFields";
+import { apiRequest } from "@/lib/api";
 
 interface RenderedPreview {
   product_index: number;
@@ -71,8 +72,7 @@ async function renderTemplateForProduct(
         case "dynamic_field": {
           const fontSize = (el.style.font_size as number) || 16;
           const fontFamily = (el.style.font_family as string) || "Arial";
-          // For dynamic fields, use black text in preview (editor uses indigo for visual distinction only)
-          const color = el.type === "dynamic_field" ? "#000000" : ((el.style.color as string) || "#000000");
+          const color = (el.style.color as string) || "#000000";
           ctx.font = `${fontSize}px ${fontFamily}`;
           ctx.fillStyle = color;
           ctx.textBaseline = "top";
@@ -99,11 +99,9 @@ async function renderTemplateForProduct(
             ? String(product[binding.replace(/\{\{|\}\}/g, "").trim()] ?? content)
             : content;
           if (imgUrl && imgUrl.startsWith("http")) {
-            // Fetch as blob via proxy (same-origin, no CORS taint)
-            const proxyUrl = `/_next/image?url=${encodeURIComponent(imgUrl)}&w=${Math.max(Math.round(el.width || 400), 256)}&q=80`;
-            let img = await loadImageAsBlob(proxyUrl);
-            // Fallback: fetch directly as blob
-            if (!img) img = await loadImageAsBlob(imgUrl);
+            // Fetch via server-side proxy (same-origin, no CORS taint)
+            const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(imgUrl)}`;
+            const img = await loadImageAsBlob(proxyUrl);
             if (img) {
               const w = el.width || img.naturalWidth;
               const h = el.height || img.naturalHeight;
@@ -165,6 +163,8 @@ export default function PreviewCreativesPage() {
   const [previews, setPreviews] = useState<RenderedPreview[]>([]);
   const [renderedCount, setRenderedCount] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [addingToFeed, setAddingToFeed] = useState(false);
+  const [addedToFeed, setAddedToFeed] = useState(false);
   const renderingRef = useRef(false);
 
   useEffect(() => {
@@ -305,8 +305,27 @@ export default function PreviewCreativesPage() {
           </div>
 
           {/* Add to Feed button */}
-          <button className="mb-6 w-full rounded-lg bg-emerald-500 py-2.5 text-sm font-medium text-white shadow hover:bg-emerald-600">
-            Add to Feed
+          <button
+            onClick={async () => {
+              setAddingToFeed(true);
+              try {
+                await apiRequest(`/creative/templates/${templateId}/publish-to-feed`, {
+                  method: "POST",
+                  body: JSON.stringify({ subaccount_id: subaccountId }),
+                });
+                setAddedToFeed(true);
+              } catch (err) {
+                console.error("Failed to add to feed:", err);
+                alert("Failed to add to feed. Please try again.");
+              } finally {
+                setAddingToFeed(false);
+              }
+            }}
+            disabled={addingToFeed || addedToFeed || rendering}
+            className="mb-6 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 py-2.5 text-sm font-medium text-white shadow hover:bg-emerald-600 disabled:opacity-50"
+          >
+            {addingToFeed ? <Loader2 className="h-4 w-4 animate-spin" /> : addedToFeed ? <Check className="h-4 w-4" /> : null}
+            {addedToFeed ? "Added to Feed" : "Add to Feed"}
           </button>
 
           {/* What is next */}
