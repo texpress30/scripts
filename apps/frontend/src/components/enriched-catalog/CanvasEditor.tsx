@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useRef, useCallback, forwardRef, useMemo } from "react";
 import { Canvas, Rect, Ellipse, Textbox, FabricImage, Point, type FabricObject } from "fabric";
 import { canvasElementsToFabricObjects, fabricToCanvasElements } from "@/lib/canvas-schema-bridge";
 import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
@@ -117,8 +117,11 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
       canvas.renderAll();
     }, []);
 
-    useImperativeHandle(ref, () => {
-      const handle: CanvasEditorHandle = {
+    // Build imperative handle and assign to both ref and editorRef prop
+    // NOTE: We use useMemo instead of useImperativeHandle because next/dynamic
+    // does not forward refs, so ref is always null and useImperativeHandle
+    // never executes its factory. We assign directly to editorRef instead.
+    const handle = useMemo<CanvasEditorHandle>(() => ({
       getElements: () => {
         const canvas = fabricRef.current;
         if (!canvas) return [];
@@ -363,10 +366,15 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         canvas.renderAll();
       },
       getZoom: () => fabricRef.current?.getZoom() ?? 1,
-      };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), []);
+
+    // Assign handle to editorRef prop (bypasses next/dynamic ref issue)
+    useEffect(() => {
       if (editorRef) editorRef.current = handle;
-      return handle;
-    });
+      if (typeof ref === "function") ref(handle);
+      else if (ref) (ref as React.MutableRefObject<CanvasEditorHandle | null>).current = handle;
+    }, [handle, editorRef, ref]);
 
     return (
       <div className="inline-block rounded border border-slate-300 shadow-sm dark:border-slate-600">
