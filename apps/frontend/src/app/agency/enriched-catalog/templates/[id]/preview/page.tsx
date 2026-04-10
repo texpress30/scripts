@@ -15,18 +15,25 @@ interface RenderedPreview {
   image_url: string;
 }
 
-/** Load an image element with timeout. Returns null on failure. */
-function loadImage(src: string, timeoutMs = 6000): Promise<HTMLImageElement | null> {
-  return Promise.race([
-    new Promise<HTMLImageElement | null>((resolve) => {
+/** Fetch image as blob and create same-origin object URL to bypass CORS. Returns null on failure. */
+async function loadImageAsBlob(url: string, timeoutMs = 8000): Promise<HTMLImageElement | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    return new Promise<HTMLImageElement | null>((resolve) => {
       const img = document.createElement("img");
-      img.crossOrigin = "anonymous";
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = src;
-    }),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
-  ]);
+      img.onload = () => { URL.revokeObjectURL(objectUrl); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(null); };
+      img.src = objectUrl;
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -64,7 +71,8 @@ async function renderTemplateForProduct(
         case "dynamic_field": {
           const fontSize = (el.style.font_size as number) || 16;
           const fontFamily = (el.style.font_family as string) || "Arial";
-          const color = (el.style.color as string) || "#000000";
+          // For dynamic fields, use black text in preview (editor uses indigo for visual distinction only)
+          const color = el.type === "dynamic_field" ? "#000000" : ((el.style.color as string) || "#000000");
           ctx.font = `${fontSize}px ${fontFamily}`;
           ctx.fillStyle = color;
           ctx.textBaseline = "top";
@@ -91,10 +99,11 @@ async function renderTemplateForProduct(
             ? String(product[binding.replace(/\{\{|\}\}/g, "").trim()] ?? content)
             : content;
           if (imgUrl && imgUrl.startsWith("http")) {
-            // Try proxy first, then direct
+            // Fetch as blob via proxy (same-origin, no CORS taint)
             const proxyUrl = `/_next/image?url=${encodeURIComponent(imgUrl)}&w=${Math.max(Math.round(el.width || 400), 256)}&q=80`;
-            let img = await loadImage(proxyUrl);
-            if (!img) img = await loadImage(imgUrl);
+            let img = await loadImageAsBlob(proxyUrl);
+            // Fallback: fetch directly as blob
+            if (!img) img = await loadImageAsBlob(imgUrl);
             if (img) {
               const w = el.width || img.naturalWidth;
               const h = el.height || img.naturalHeight;
