@@ -68,7 +68,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
       });
 
       // Make selection controls more visible for all objects
-      FabricObject.prototype.set({
+      Object.assign(FabricObject.ownDefaults, {
         borderColor: "#6366f1",
         cornerColor: "#6366f1",
         cornerStrokeColor: "#ffffff",
@@ -77,7 +77,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         borderScaleFactor: 2,
         transparentCorners: false,
         padding: 4,
-      } as Partial<FabricObject>);
+      });
 
       canvas.on("selection:created", (e) => {
         onSelectionChange?.(e.selected?.[0] ?? null);
@@ -207,8 +207,56 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
       getElements: () => {
         const canvas = fabricRef.current;
         if (!canvas) return [];
-        const json = (canvas as unknown as { toJSON: (props: string[]) => { version: string; objects: unknown[] } }).toJSON(["data"]);
-        return fabricToCanvasElements(json as Parameters<typeof fabricToCanvasElements>[0]);
+        // Manually extract elements to avoid Fabric.js serialization issues
+        // (e.g. tainted images losing src in toJSON)
+        const objects = canvas.getObjects().filter((obj) => !obj.data?.isGuideLine);
+        return objects.map((obj): CanvasElement => {
+          const scaleX = obj.scaleX ?? 1;
+          const scaleY = obj.scaleY ?? 1;
+          const elType = obj.data?.elementType || "shape";
+          const w = (obj.width ?? 0) * scaleX;
+          const h = (obj.height ?? 0) * scaleY;
+
+          const base: CanvasElement = {
+            element_id: obj.data?.elementId || crypto.randomUUID(),
+            type: elType as CanvasElement["type"],
+            position_x: obj.left ?? 0,
+            position_y: obj.top ?? 0,
+            width: w,
+            height: h,
+            style: {},
+            dynamic_binding: obj.data?.dynamicBinding || null,
+            content: "",
+          };
+
+          if (elType === "text" || elType === "dynamic_field") {
+            const textObj = obj as unknown as { text?: string; fontSize?: number; fontFamily?: string; fill?: string };
+            base.content = textObj.text || "";
+            base.style = {
+              color: typeof textObj.fill === "string" ? textObj.fill : "#000000",
+              font_size: textObj.fontSize || 16,
+              font_family: textObj.fontFamily || "Arial",
+            };
+          } else if (elType === "image") {
+            // Use stored imageSrc from data, or try to get src from FabricImage
+            const imgObj = obj as unknown as { src?: string; _element?: HTMLImageElement };
+            base.content = obj.data?.imageSrc || imgObj.src || imgObj._element?.src || "";
+          } else if (elType === "shape") {
+            const shapeType = obj.data?.shapeType || "rectangle";
+            base.style = {
+              fill_color: typeof (obj as unknown as { fill?: string }).fill === "string" ? (obj as unknown as { fill: string }).fill : "#CCCCCC",
+              shape_type: shapeType,
+            };
+            base.content = shapeType;
+            if (shapeType === "ellipse" || shapeType === "circle") {
+              const ellObj = obj as unknown as { rx?: number; ry?: number };
+              base.width = (ellObj.rx ?? 0) * 2 * scaleX;
+              base.height = (ellObj.ry ?? 0) * 2 * scaleY;
+            }
+          }
+
+          return base;
+        });
       },
       getCanvas: () => fabricRef.current,
       addText: (text = "Text") => {
