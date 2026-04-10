@@ -65,22 +65,17 @@ async function renderTemplateForProduct(
             : content;
           if (imgUrl && imgUrl.startsWith("http")) {
             try {
-              // Load image with timeout to avoid hanging
+              // Proxy through Next.js image optimizer to bypass CORS
+              const proxyUrl = `/_next/image?url=${encodeURIComponent(imgUrl)}&w=${Math.max(el.width || 400, 400)}&q=80`;
               const imgEl = document.createElement("img");
               imgEl.crossOrigin = "anonymous";
               await Promise.race([
                 new Promise<void>((resolve, reject) => {
                   imgEl.onload = () => resolve();
-                  imgEl.onerror = () => {
-                    // Retry without CORS
-                    imgEl.crossOrigin = "";
-                    imgEl.src = imgUrl;
-                    imgEl.onload = () => resolve();
-                    imgEl.onerror = () => reject();
-                  };
-                  imgEl.src = imgUrl;
+                  imgEl.onerror = () => reject();
+                  imgEl.src = proxyUrl;
                 }),
-                new Promise<void>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+                new Promise<void>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
               ]);
               const fabricImg = new FabricImage(imgEl, {
                 left: el.position_x,
@@ -89,14 +84,33 @@ async function renderTemplateForProduct(
               if (el.width) fabricImg.scaleToWidth(el.width);
               canvas.add(fabricImg);
             } catch {
-              // Skip failed/timed-out images — add placeholder rect
-              canvas.add(new Rect({
-                left: el.position_x,
-                top: el.position_y,
-                width: el.width || 200,
-                height: el.height || 200,
-                fill: "#e2e8f0",
-              }));
+              // Fallback: try direct load without CORS (may taint canvas)
+              try {
+                const imgEl2 = document.createElement("img");
+                await Promise.race([
+                  new Promise<void>((resolve, reject) => {
+                    imgEl2.onload = () => resolve();
+                    imgEl2.onerror = () => reject();
+                    imgEl2.src = imgUrl;
+                  }),
+                  new Promise<void>((_, reject) => setTimeout(() => reject(), 5000)),
+                ]);
+                const fabricImg = new FabricImage(imgEl2, {
+                  left: el.position_x,
+                  top: el.position_y,
+                });
+                if (el.width) fabricImg.scaleToWidth(el.width);
+                canvas.add(fabricImg);
+              } catch {
+                // Final fallback — placeholder rect
+                canvas.add(new Rect({
+                  left: el.position_x,
+                  top: el.position_y,
+                  width: el.width || 200,
+                  height: el.height || 200,
+                  fill: "#e2e8f0",
+                }));
+              }
             }
           }
           break;

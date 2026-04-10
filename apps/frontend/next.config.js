@@ -19,6 +19,12 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "**" },
+      { protocol: "http", hostname: "**" },
+    ],
+  },
   // Reverse-proxy rules for backend endpoints that aren't handled by the
   // generic ``/api/[...path]`` proxy route.
   //
