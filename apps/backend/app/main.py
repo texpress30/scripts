@@ -40,6 +40,7 @@ from app.api.integrations.magento import router as magento_integration_router
 from app.api.integrations.bigcommerce import router as bigcommerce_integration_router
 from app.integrations.generic_api_key.router import build_router as build_generic_api_key_router
 from app.integrations.lightspeed.router import router as lightspeed_integration_router
+from app.integrations.shopware.router import router as shopware_integration_router
 from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
@@ -159,16 +160,12 @@ app.include_router(magento_integration_router)
 app.include_router(bigcommerce_integration_router)
 app.include_router(woocommerce_router)
 
-# Generic API-key e-commerce platforms (PrestaShop / OpenCart / Shopware /
-# Volusion / Cart Storefront). Each platform mounts the same parametrised
-# CRUD router under ``/integrations/{platform}/sources``.
-# Adding a new platform = one new entry in
-# ``app.integrations.generic_api_key.config.PLATFORM_DEFINITIONS`` plus a
-# single mount line below.
+# Generic API-key e-commerce platforms (PrestaShop / OpenCart / Volusion /
+# Cart Storefront). Each platform mounts the same parametrised CRUD router
+# under ``/integrations/{platform}/sources``.
 for _generic_platform_key in (
     "prestashop",
     "opencart",
-    "shopware",
     "volusion",
     "cart_storefront",
 ):
@@ -177,6 +174,10 @@ for _generic_platform_key in (
 # Lightspeed has a dedicated router — it uses Shop ID / Language / Region
 # instead of API credentials.
 app.include_router(lightspeed_integration_router)
+
+# Shopware has a dedicated router — it uses Store Key + Bridge Endpoint +
+# API Access Key (3 fields) instead of the generic 2-field pattern.
+app.include_router(shopware_integration_router)
 
 # Enriched Catalog
 app.include_router(creative_templates_router)

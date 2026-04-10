@@ -62,7 +62,7 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
         display_name="PrestaShop",
         feed_source_type=FeedSourceType.prestashop,
         has_api_secret=False,
-        api_key_label="Webservice Key",
+        api_key_label="Authorization Token",
     ),
     "opencart": PlatformDefinition(
         key="opencart",
@@ -71,20 +71,13 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
         has_api_secret=False,
         api_key_label="Store Key",
     ),
-    "shopware": PlatformDefinition(
-        key="shopware",
-        display_name="Shopware",
-        feed_source_type=FeedSourceType.shopware,
-        has_api_secret=True,
-        api_key_label="Integration Access Key",
-        api_secret_label="Integration Secret Key",
-    ),
     "volusion": PlatformDefinition(
         key="volusion",
         display_name="Volusion",
         feed_source_type=FeedSourceType.volusion,
-        has_api_secret=False,
-        api_key_label="API Key",
+        has_api_secret=True,
+        api_key_label="API Login",
+        api_secret_label="API Encrypted Password",
     ),
     "cart_storefront": PlatformDefinition(
         key="cart_storefront",

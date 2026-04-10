@@ -11,7 +11,7 @@ Covers:
 * ``app.integrations.generic_api_key.router.build_router`` — full CRUD
   cycle for one platform, exercised through the FastAPI test client
   with monkey-patched repo + service. The platform is parametrised so
-  one test class covers all five generic platforms by re-running the
+  one test class covers all four generic platforms by re-running the
   same suite per platform via ``subTest``.
 """
 
@@ -55,16 +55,15 @@ def _set_env() -> None:
 
 
 class PlatformDefinitionsTests(unittest.TestCase):
-    def test_five_platforms_registered(self) -> None:
-        # Lightspeed moved to a dedicated module — it uses Shop ID /
-        # Language / Region instead of API credentials.
+    def test_four_platforms_registered(self) -> None:
+        # Lightspeed and Shopware moved to dedicated modules — they use
+        # platform-specific fields instead of the generic API key pattern.
         self.assertEqual(
             sorted(PLATFORM_DEFINITIONS.keys()),
             [
                 "cart_storefront",
                 "opencart",
                 "prestashop",
-                "shopware",
                 "volusion",
             ],
         )
@@ -78,7 +77,7 @@ class PlatformDefinitionsTests(unittest.TestCase):
 
     def test_get_platform_normalises_input(self) -> None:
         self.assertEqual(get_platform("PRESTASHOP").key, "prestashop")
-        self.assertEqual(get_platform("  Shopware  ").key, "shopware")
+        self.assertEqual(get_platform("  Volusion  ").key, "volusion")
 
     def test_get_platform_unknown_raises(self) -> None:
         with self.assertRaises(ValueError):
@@ -86,10 +85,9 @@ class PlatformDefinitionsTests(unittest.TestCase):
 
     def test_secret_flag_split(self) -> None:
         self.assertFalse(get_platform("prestashop").has_api_secret)
-        self.assertFalse(get_platform("volusion").has_api_secret)
+        self.assertTrue(get_platform("volusion").has_api_secret)
         self.assertFalse(get_platform("opencart").has_api_secret)
         self.assertFalse(get_platform("cart_storefront").has_api_secret)
-        self.assertTrue(get_platform("shopware").has_api_secret)
 
 
 class ValidateStoreUrlTests(unittest.TestCase):
@@ -207,15 +205,15 @@ class GenericApiKeyServiceTests(unittest.TestCase):
 
     def test_store_and_get_for_key_plus_secret_platform(self) -> None:
         gak_service.store_credentials(
-            platform="shopware",
+            platform="volusion",
             source_id=_SOURCE_ID,
-            api_key="SWIA-key",
-            api_secret="SW1-secret",
+            api_key="vol-login",
+            api_secret="vol-encrypted-pwd",
         )
         creds = gak_service.get_credentials(
-            platform="shopware", source_id=_SOURCE_ID
+            platform="volusion", source_id=_SOURCE_ID
         )
-        self.assertEqual(creds, {"api_key": "SWIA-key", "api_secret": "SW1-secret"})
+        self.assertEqual(creds, {"api_key": "vol-login", "api_secret": "vol-encrypted-pwd"})
 
     def test_store_rejects_missing_api_key(self) -> None:
         with self.assertRaises(ValueError) as ctx:
@@ -224,17 +222,17 @@ class GenericApiKeyServiceTests(unittest.TestCase):
                 source_id=_SOURCE_ID,
                 api_key="",
             )
-        self.assertIn("Webservice Key", str(ctx.exception))
+        self.assertIn("Authorization Token", str(ctx.exception))
 
     def test_store_rejects_missing_secret_for_secret_platform(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             gak_service.store_credentials(
-                platform="shopware",
+                platform="volusion",
                 source_id=_SOURCE_ID,
-                api_key="SWIA-key",
+                api_key="vol-login",
                 api_secret=None,
             )
-        self.assertIn("Integration Secret Key", str(ctx.exception))
+        self.assertIn("API Encrypted Password", str(ctx.exception))
 
     def test_store_rejects_missing_source_id(self) -> None:
         with self.assertRaises(ValueError):
@@ -248,10 +246,10 @@ class GenericApiKeyServiceTests(unittest.TestCase):
         )
 
     def test_get_returns_none_for_partial_secret_pair(self) -> None:
-        """Shopware needs both api_key + api_secret rows; api_key alone → None."""
-        self._stored[("shopware", "api_key", _SOURCE_ID)] = "SWIA-key"
+        """Volusion needs both api_key + api_secret rows; api_key alone → None."""
+        self._stored[("volusion", "api_key", _SOURCE_ID)] = "vol-login"
         self.assertIsNone(
-            gak_service.get_credentials(platform="shopware", source_id=_SOURCE_ID)
+            gak_service.get_credentials(platform="volusion", source_id=_SOURCE_ID)
         )
 
     def test_delete_is_idempotent(self) -> None:
@@ -266,12 +264,12 @@ class GenericApiKeyServiceTests(unittest.TestCase):
 
     def test_mask_credentials_hides_full_key(self) -> None:
         masked = gak_service.mask_credentials(
-            "shopware",
-            {"api_key": "SWIAOABCDEFGHIJKLMNOPQRSTUVWXYZ", "api_secret": "SW1XYZ"},
+            "volusion",
+            {"api_key": "vol-login-abcdefghijklmnopqrstuvwxyz", "api_secret": "vol-pwd"},
         )
         self.assertTrue(masked["has_credentials"])
         self.assertNotIn(
-            "SWIAOABCDEFGHIJKLMNOPQRSTUVWXYZ", masked["api_key_masked"]
+            "vol-login-abcdefghijklmnopqrstuvwxyz", masked["api_key_masked"]
         )
         # Last 4 chars only — defensive check, no full plaintext leak.
         self.assertTrue(masked["api_key_masked"].startswith("*"))
@@ -344,7 +342,7 @@ class ProbeStoreUrlTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# router.py — full CRUD cycle (parametrised across all 5 generic platforms)
+# router.py — full CRUD cycle (parametrised across all 4 generic platforms)
 # ---------------------------------------------------------------------------
 
 
@@ -562,8 +560,8 @@ class GenericApiKeyRouterCrudTests(unittest.TestCase):
 
     def test_create_rolls_back_source_when_credential_store_fails(self) -> None:
         deleted_ids: list[str] = []
-        router = self._build_router_for("shopware")
-        source = _make_source(source_type=FeedSourceType.shopware)
+        router = self._build_router_for("volusion")
+        source = _make_source(source_type=FeedSourceType.volusion)
 
         def _failing_store(**kwargs):
             raise RuntimeError("secrets store down")
@@ -594,10 +592,10 @@ class GenericApiKeyRouterCrudTests(unittest.TestCase):
         self.assertEqual(deleted_ids, [_SOURCE_ID])
 
     def test_create_rejects_missing_api_secret_for_secret_platform(self) -> None:
-        """Shopware requires both api_key + api_secret → 400 on missing secret."""
+        """Volusion requires both api_key + api_secret → 400 on missing secret."""
         deleted_ids: list[str] = []
-        router = self._build_router_for("shopware")
-        source = _make_source(source_type=FeedSourceType.shopware)
+        router = self._build_router_for("volusion")
+        source = _make_source(source_type=FeedSourceType.volusion)
 
         with patch.object(
             gak_router._source_repo, "create", return_value=source
@@ -612,7 +610,7 @@ class GenericApiKeyRouterCrudTests(unittest.TestCase):
                     payload=gak_router.GenericApiKeySourceCreate(
                         source_name="x",
                         store_url="https://store.example.com",
-                        api_key="SWIA-key",
+                        api_key="vol-login",
                         api_secret=None,
                     ),
                     subaccount_id=_SUBACCOUNT_ID,
@@ -642,9 +640,9 @@ class GenericApiKeyRouterCrudTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
 
     def test_get_returns_404_for_wrong_platform(self) -> None:
-        """A Shopware source isn't visible through the PrestaShop router."""
+        """A Volusion source isn't visible through the PrestaShop router."""
         router = self._build_router_for("prestashop")
-        wrong_type = _make_source(source_type=FeedSourceType.shopware)
+        wrong_type = _make_source(source_type=FeedSourceType.volusion)
 
         with patch.object(
             gak_router._source_repo, "get_by_id", return_value=wrong_type

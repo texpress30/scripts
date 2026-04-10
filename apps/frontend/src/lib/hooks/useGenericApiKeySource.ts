@@ -23,7 +23,6 @@ import { apiRequest, ApiRequestError } from "@/lib/api";
 export type GenericApiKeyPlatformKey =
   | "prestashop"
   | "opencart"
-  | "shopware"
   | "volusion"
   | "cart_storefront";
 
@@ -46,11 +45,11 @@ export const GENERIC_API_KEY_PLATFORMS: Record<
   prestashop: {
     key: "prestashop",
     displayName: "PrestaShop",
-    apiKeyLabel: "Webservice Key",
+    apiKeyLabel: "Authorization Token",
     hasApiSecret: false,
-    apiKeyPlaceholder: "ex: ABCDEFGHIJKLMNOPQRSTUVWXYZ1234",
+    apiKeyPlaceholder: "ex: your-prestashop-token",
     helpText:
-      "Generează cheia din PrestaShop Admin → Advanced Parameters → Webservice → Add new webservice key. Activează permisiunile pentru produse, categorii și combinations.",
+      "Solicită clientului Authorization Token-ul din PrestaShop. Clientul trebuie să instaleze modulul conector în PrestaShop Admin → Modules → Module Manager, apoi să-l configureze. Token-ul se găsește în pagina de configurare a modulului.",
   },
   opencart: {
     key: "opencart",
@@ -61,25 +60,16 @@ export const GENERIC_API_KEY_PLATFORMS: Record<
     helpText:
       "Solicită clientului Store Key-ul din OpenCart. Clientul trebuie să instaleze conectorul în OpenCart Admin → Extensions → Extension Installer, apoi să-l activeze din Extensions → Modules. Store Key-ul apare în pagina de editare a conectorului.",
   },
-  shopware: {
-    key: "shopware",
-    displayName: "Shopware",
-    apiKeyLabel: "Integration Access Key",
-    apiSecretLabel: "Integration Secret Key",
-    hasApiSecret: true,
-    apiKeyPlaceholder: "ex: SWIAXYZ...",
-    apiSecretPlaceholder: "ex: SW1...",
-    helpText:
-      "Creează din Shopware Admin → Settings → System → Integrations → Add integration. Acordă permisiunile pentru produse și categorii apoi copiază Access Key + Secret Key.",
-  },
   volusion: {
     key: "volusion",
     displayName: "Volusion",
-    apiKeyLabel: "API Key",
-    hasApiSecret: false,
-    apiKeyPlaceholder: "ex: your-volusion-api-key",
+    apiKeyLabel: "API Login",
+    apiSecretLabel: "API Encrypted Password",
+    hasApiSecret: true,
+    apiKeyPlaceholder: "ex: your-api-login",
+    apiSecretPlaceholder: "ex: your-encrypted-password",
     helpText:
-      "Găsește cheia în Volusion Admin → Inventory → Import/Export → Generic API URL. Copiază cheia URL encoded fără partea de domeniu.",
+      "Solicită clientului API Login și Encrypted Password din Volusion Admin → Inventory → Import/Export → Volusion API. Clientul trebuie să activeze 'Enable public XML for Featured Products' și 'Enable Public XML for All Products', apoi din Get Help → Volusion API Integration Help → Generic Products → Query String, copiază API Login și Encrypted Password.",
   },
   cart_storefront: {
     key: "cart_storefront",
