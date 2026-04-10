@@ -327,5 +327,90 @@ class TreatmentRepository:
         return normalized
 
 
+# ---------------------------------------------------------------------------
+# Brand Preset Repository
+# ---------------------------------------------------------------------------
+
+_BRAND_PRESETS_COLLECTION = "brand_presets"
+
+
+class BrandPresetRepository:
+    def _collection(self):
+        collection = get_mongo_collection(_BRAND_PRESETS_COLLECTION)
+        if collection is None:
+            raise RuntimeError(
+                "Mongo is not configured (MONGO_URI/MONGO_DATABASE are required "
+                "for brand preset repository usage)."
+            )
+        return collection
+
+    def initialize_indexes(self) -> None:
+        self._collection().create_index(
+            [("id", 1)],
+            unique=True,
+            name="ux_brand_presets_id",
+        )
+        self._collection().create_index(
+            [("subaccount_id", 1)],
+            name="ix_brand_presets_subaccount",
+        )
+
+    def create(self, subaccount_id: int, data: dict[str, Any]) -> dict[str, Any]:
+        now = _utcnow()
+        doc: dict[str, Any] = {
+            "id": _new_id(),
+            "subaccount_id": int(subaccount_id),
+            "name": str(data.get("name") or ""),
+            "colors": list(data.get("colors") or []),
+            "fonts": list(data.get("fonts") or []),
+            "logo_url": data.get("logo_url") or None,
+            "is_default": bool(data.get("is_default")),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+        self._collection().insert_one(dict(doc))
+        return doc
+
+    def get_by_id(self, preset_id: str) -> dict[str, Any] | None:
+        found = self._collection().find_one({"id": str(preset_id)})
+        return self._normalize(found)
+
+    def get_by_subaccount(self, subaccount_id: int, *, limit: int = 50) -> list[dict[str, Any]]:
+        cursor = (
+            self._collection()
+            .find({"subaccount_id": int(subaccount_id)})
+            .sort([("is_default", -1), ("updated_at", -1)])
+            .limit(max(0, int(limit)))
+        )
+        return [self._normalize(item) for item in cursor if isinstance(item, dict)]
+
+    def update(self, preset_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+        set_payload: dict[str, Any] = {"updated_at": _utcnow().isoformat()}
+        for key in ("name", "colors", "fonts", "logo_url", "is_default"):
+            if key in data and data[key] is not None:
+                set_payload[key] = data[key]
+
+        from pymongo import ReturnDocument
+
+        result = self._collection().find_one_and_update(
+            {"id": str(preset_id)},
+            {"$set": set_payload},
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._normalize(result)
+
+    def delete(self, preset_id: str) -> bool:
+        result = self._collection().delete_one({"id": str(preset_id)})
+        return (result.deleted_count or 0) > 0
+
+    def _normalize(self, payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        normalized = dict(payload)
+        normalized.pop("_id", None)
+        return normalized
+
+
 creative_template_repository = CreativeTemplateRepository()
 treatment_repository = TreatmentRepository()
+brand_preset_repository = BrandPresetRepository()

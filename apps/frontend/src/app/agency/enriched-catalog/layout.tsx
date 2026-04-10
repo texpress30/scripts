@@ -12,6 +12,7 @@ const TABS = [
   { href: "/agency/enriched-catalog/templates", label: "Templates" },
   { href: "/agency/enriched-catalog/output-feeds", label: "Output Feeds" },
   { href: "/agency/enriched-catalog/library", label: "Library" },
+  { href: "/agency/enriched-catalog/brands", label: "Brands" },
 ] as const;
 
 function EnrichedCatalogInner({ children }: { children: React.ReactNode }) {

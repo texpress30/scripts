@@ -57,6 +57,7 @@ from app.api.rules import router as rules_router
 from app.api.creative_templates import router as creative_templates_router
 from app.api.treatments import router as treatments_router
 from app.api.output_feeds import router as output_feeds_router
+from app.api.brand_presets import router as brand_presets_router
 from app.api.public_feeds import router as public_feeds_router
 from app.api.integrations.woocommerce import router as woocommerce_router
 from app.core.config import load_settings
@@ -185,6 +186,7 @@ app.include_router(shopware_integration_router)
 app.include_router(creative_templates_router)
 app.include_router(treatments_router)
 app.include_router(output_feeds_router)
+app.include_router(brand_presets_router)
 
 # Public Feeds (no auth — for Google/Meta crawlers)
 app.include_router(public_feeds_router)

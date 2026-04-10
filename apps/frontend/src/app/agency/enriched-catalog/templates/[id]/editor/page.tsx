@@ -6,6 +6,8 @@ import { ArrowLeft, Save, Loader2, Eye, RefreshCw } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCreativeTemplate, useFormatSiblings } from "@/lib/hooks/useCreativeTemplates";
 import { useCanvasEditor } from "@/lib/hooks/useCanvasEditor";
+import { useBrandPresets } from "@/lib/hooks/useBrandPresets";
+import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { apiRequest } from "@/lib/api";
 import type { CanvasEditorHandle } from "@/components/enriched-catalog/CanvasEditor";
 import type { UpdateTemplatePayload } from "@/lib/hooks/useCreativeTemplates";
@@ -21,6 +23,7 @@ const CanvasEditor = dynamic(
 import { CanvasToolbar } from "@/components/enriched-catalog/CanvasToolbar";
 import { LayerPanel } from "@/components/enriched-catalog/LayerPanel";
 import { PropertyPanel } from "@/components/enriched-catalog/PropertyPanel";
+import { BrandPicker } from "@/components/enriched-catalog/BrandPicker";
 
 function formatDimLabel(w: number, h: number, label?: string | null): string {
   if (label) return label;
@@ -36,8 +39,10 @@ export default function TemplateEditorPage() {
   const templateId = params.id as string;
   const canvasRef = useRef<CanvasEditorHandle>(null);
 
+  const { selectedId: subaccountId } = useFeedManagement();
   const { data: template, isLoading: templateLoading } = useCreativeTemplate(templateId);
   const { data: siblings } = useFormatSiblings(templateId);
+  const { presets: brandPresets } = useBrandPresets(subaccountId);
   const hasFormatGroup = (siblings?.length ?? 0) > 1;
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -161,6 +166,32 @@ export default function TemplateEditorPage() {
       if (!discard) return;
     }
     router.push(`/agency/enriched-catalog/templates/${targetId}/editor`);
+  };
+
+  const handleApplyBrandColor = (color: string) => {
+    const canvas = canvasRef.current?.getCanvas();
+    if (!canvas) return;
+    const active = canvas.getActiveObject();
+    if (active) {
+      active.set("fill", color);
+      canvas.renderAll();
+      markDirty();
+    }
+  };
+
+  const handleApplyBrandFont = (font: string) => {
+    const canvas = canvasRef.current?.getCanvas();
+    if (!canvas) return;
+    const active = canvas.getActiveObject();
+    if (active && "fontFamily" in active) {
+      (active as unknown as { fontFamily: string }).fontFamily = font;
+      canvas.renderAll();
+      markDirty();
+    }
+  };
+
+  const handleApplyBrandBackground = (color: string) => {
+    updateBackgroundColor(color);
   };
 
   const handleLayerSelect = (index: number) => {
@@ -302,7 +333,7 @@ export default function TemplateEditorPage() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex justify-center border-b border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-700 dark:bg-slate-850">
+      <div className="flex items-center justify-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-700 dark:bg-slate-850">
         <CanvasToolbar
           onAddText={() => canvasRef.current?.addText()}
           onAddDynamicField={(binding) => canvasRef.current?.addDynamicField(binding)}
@@ -313,6 +344,17 @@ export default function TemplateEditorPage() {
           onSendBackward={() => canvasRef.current?.sendBackward()}
           hasSelection={selectedObject !== null}
         />
+        {brandPresets.length > 0 && (
+          <>
+            <div className="h-6 w-px bg-slate-200 dark:bg-slate-600" />
+            <BrandPicker
+              presets={brandPresets}
+              onApplyColor={handleApplyBrandColor}
+              onApplyFont={handleApplyBrandFont}
+              onApplyBackground={handleApplyBrandBackground}
+            />
+          </>
+        )}
       </div>
 
       {/* Main area */}
