@@ -31,6 +31,10 @@ import {
   LightspeedSourceForm,
   type LightspeedFormData,
 } from "@/components/feed-management/forms/LightspeedSourceForm";
+import {
+  ShopwareSourceForm,
+  type ShopwareFormData,
+} from "@/components/feed-management/forms/ShopwareSourceForm";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import {
   createMagentoSourceApi,
@@ -43,19 +47,18 @@ import {
   type GenericApiKeyPlatformKey,
 } from "@/lib/hooks/useGenericApiKeySource";
 import { createLightspeedSource } from "@/lib/hooks/useLightspeedSource";
+import { createShopwareSource } from "@/lib/hooks/useShopwareSource";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 
 const FILE_TYPES: FeedSourceType[] = ["csv", "json", "xml", "google_sheets"];
 const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce"];
-// Five "URL + API key" e-commerce platforms served by the parametrised
+// Four "URL + API key" e-commerce platforms served by the parametrised
 // generic-API-key router on the backend (PrestaShop, OpenCart,
-// Shopware, Volusion, Cart Storefront). Lightspeed has its own
-// dedicated form since it uses Shop ID / Language / Region instead of
-// API credentials.
+// Volusion, Cart Storefront). Lightspeed and Shopware have their own
+// dedicated forms with platform-specific fields.
 const GENERIC_API_KEY_TYPES: ReadonlySet<FeedSourceType> = new Set([
   "prestashop",
   "opencart",
-  "shopware",
   "volusion",
   "cart_storefront",
 ]);
@@ -197,6 +200,33 @@ export default function NewSourcePage() {
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Eroare la crearea sursei Lightspeed.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreateShopware(data: ShopwareFormData) {
+    if (!selectedId) {
+      setError("Selectează un client înainte de a crea sursa.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await createShopwareSource(selectedId, {
+        source_name: data.source_name,
+        store_url: data.store_url,
+        store_key: data.store_key,
+        bridge_endpoint: data.bridge_endpoint,
+        api_access_key: data.api_access_key,
+        catalog_type: selectedCatalog,
+        catalog_variant: selectedSubtype ?? "physical_products",
+      });
+      router.push("/agency/feed-management/sources");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Eroare la crearea sursei Shopware.",
       );
     } finally {
       setBusy(false);
@@ -484,6 +514,12 @@ export default function NewSourcePage() {
               ) : selectedType === "lightspeed" ? (
                 <LightspeedSourceForm
                   onSubmit={(data) => void handleCreateLightspeed(data)}
+                  onCancel={handleBack}
+                  busy={busy}
+                />
+              ) : selectedType === "shopware" ? (
+                <ShopwareSourceForm
+                  onSubmit={(data) => void handleCreateShopware(data)}
                   onCancel={handleBack}
                   busy={busy}
                 />
