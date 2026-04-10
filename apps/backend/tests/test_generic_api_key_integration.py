@@ -11,7 +11,7 @@ Covers:
 * ``app.integrations.generic_api_key.router.build_router`` — full CRUD
   cycle for one platform, exercised through the FastAPI test client
   with monkey-patched repo + service. The platform is parametrised so
-  one test class covers all four generic platforms by re-running the
+  one test class covers all six generic platforms by re-running the
   same suite per platform via ``subTest``.
 """
 
@@ -55,13 +55,17 @@ def _set_env() -> None:
 
 
 class PlatformDefinitionsTests(unittest.TestCase):
-    def test_four_platforms_registered(self) -> None:
+    def test_six_platforms_registered(self) -> None:
         # Lightspeed and Shopware moved to dedicated modules — they use
         # platform-specific fields instead of the generic API key pattern.
+        # GoMag and ContentSpeed are Romanian platforms added to the generic
+        # framework.
         self.assertEqual(
             sorted(PLATFORM_DEFINITIONS.keys()),
             [
                 "cart_storefront",
+                "contentspeed",
+                "gomag",
                 "opencart",
                 "prestashop",
                 "volusion",
@@ -88,6 +92,8 @@ class PlatformDefinitionsTests(unittest.TestCase):
         self.assertTrue(get_platform("volusion").has_api_secret)
         self.assertFalse(get_platform("opencart").has_api_secret)
         self.assertFalse(get_platform("cart_storefront").has_api_secret)
+        self.assertFalse(get_platform("gomag").has_api_secret)
+        self.assertFalse(get_platform("contentspeed").has_api_secret)
 
 
 class ValidateStoreUrlTests(unittest.TestCase):
@@ -342,7 +348,7 @@ class ProbeStoreUrlTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# router.py — full CRUD cycle (parametrised across all 4 generic platforms)
+# router.py — full CRUD cycle (parametrised across all 6 generic platforms)
 # ---------------------------------------------------------------------------
 
 

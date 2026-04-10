@@ -24,7 +24,9 @@ export type GenericApiKeyPlatformKey =
   | "prestashop"
   | "opencart"
   | "volusion"
-  | "cart_storefront";
+  | "cart_storefront"
+  | "gomag"
+  | "contentspeed";
 
 export type GenericApiKeyPlatformDefinition = {
   key: GenericApiKeyPlatformKey;
@@ -79,6 +81,24 @@ export const GENERIC_API_KEY_PLATFORMS: Record<
     apiKeyPlaceholder: "ex: your-authorization-token",
     helpText:
       "Solicită clientului tokenul din Cart.com Admin → Tools → Apps & Addons → API Token Manager. Clientul trebuie să creeze o aplicație cu Authentication Flow: Single Token Flow, cu permisiuni Catalog Permissions → View catalog data. Apoi din API Token Manager → Access Tokens, copiază tokenul generat.",
+  },
+  gomag: {
+    key: "gomag",
+    displayName: "GoMag",
+    apiKeyLabel: "API Key",
+    hasApiSecret: false,
+    apiKeyPlaceholder: "ex: your-gomag-api-key",
+    helpText:
+      "Solicită clientului API Key-ul din panoul de administrare GoMag.",
+  },
+  contentspeed: {
+    key: "contentspeed",
+    displayName: "ContentSpeed",
+    apiKeyLabel: "API Key",
+    hasApiSecret: false,
+    apiKeyPlaceholder: "ex: your-contentspeed-api-key",
+    helpText:
+      "Solicită clientului API Key-ul din panoul de administrare ContentSpeed.",
   },
 };
 

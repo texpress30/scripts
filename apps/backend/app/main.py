@@ -168,6 +168,8 @@ for _generic_platform_key in (
     "opencart",
     "volusion",
     "cart_storefront",
+    "gomag",
+    "contentspeed",
 ):
     app.include_router(build_generic_api_key_router(_generic_platform_key))
 

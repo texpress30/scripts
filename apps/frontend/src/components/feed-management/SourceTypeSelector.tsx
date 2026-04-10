@@ -38,6 +38,8 @@ const ECOMMERCE_SOURCES: SourceTypeOption[] = [
   { type: "lightspeed", label: "Lightspeed", description: "Importă produse din Lightspeed eCom", icon: Zap, color: "text-yellow-600 dark:text-yellow-400" },
   { type: "volusion", label: "Volusion", description: "Conectare la Volusion prin API", icon: Truck, color: "text-red-600 dark:text-red-400" },
   { type: "cart_storefront", label: "Cart Storefront", description: "Importă produse din Cart.com", icon: Rocket, color: "text-fuchsia-600 dark:text-fuchsia-400" },
+  { type: "gomag", label: "GoMag", description: "Importă produse din GoMag", icon: ShoppingBag, color: "text-lime-600 dark:text-lime-400" },
+  { type: "contentspeed", label: "ContentSpeed", description: "Importă produse din ContentSpeed", icon: Zap, color: "text-sky-600 dark:text-sky-400" },
 ];
 
 const FILE_SOURCES: SourceTypeOption[] = [

@@ -9,6 +9,8 @@ export type FeedSourceType =
   | "lightspeed"
   | "volusion"
   | "cart_storefront"
+  | "gomag"
+  | "contentspeed"
   | "csv"
   | "json"
   | "xml"
