@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Type, Image, Square, Circle, Sparkles, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { Type, Image, Square, Circle, Sparkles, Trash2, ArrowUp, ArrowDown, Undo2, Redo2 } from "lucide-react";
 import { DynamicFieldPicker } from "./DynamicFieldPicker";
 
 interface CanvasToolbarProps {
@@ -12,6 +12,8 @@ interface CanvasToolbarProps {
   onDelete: () => void;
   onBringForward: () => void;
   onSendBackward: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   hasSelection: boolean;
 }
 
@@ -23,6 +25,8 @@ export function CanvasToolbar({
   onDelete,
   onBringForward,
   onSendBackward,
+  onUndo,
+  onRedo,
   hasSelection,
 }: CanvasToolbarProps) {
   const [showFieldPicker, setShowFieldPicker] = useState(false);
@@ -30,6 +34,24 @@ export function CanvasToolbar({
 
   return (
     <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-600 dark:bg-slate-800">
+      {/* Undo / Redo */}
+      <button
+        onClick={onUndo}
+        className="rounded p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+        title="Undo (Ctrl+Z)"
+      >
+        <Undo2 className="h-4 w-4" />
+      </button>
+      <button
+        onClick={onRedo}
+        className="rounded p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+        title="Redo (Ctrl+Y)"
+      >
+        <Redo2 className="h-4 w-4" />
+      </button>
+
+      <div className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-600" />
+
       {/* Add Text */}
       <button
         onClick={onAddText}

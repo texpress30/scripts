@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
-import { Canvas, Rect, Ellipse, Textbox, FabricImage, type FabricObject } from "fabric";
+import { Canvas, Rect, Ellipse, Textbox, FabricImage, Point, type FabricObject } from "fabric";
 import { canvasElementsToFabricObjects, fabricToCanvasElements } from "@/lib/canvas-schema-bridge";
 import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
 
@@ -15,6 +15,12 @@ export interface CanvasEditorHandle {
   deleteSelected: () => void;
   bringForward: () => void;
   sendBackward: () => void;
+  undo: () => void;
+  redo: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomReset: () => void;
+  getZoom: () => number;
 }
 
 interface CanvasEditorProps {
@@ -31,6 +37,18 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const fabricRef = useRef<Canvas | null>(null);
     const initializedRef = useRef(false);
+    const undoStackRef = useRef<string[]>([]);
+    const redoStackRef = useRef<string[]>([]);
+    const isUndoRedoRef = useRef(false);
+
+    const saveUndoState = useCallback(() => {
+      const canvas = fabricRef.current;
+      if (!canvas || isUndoRedoRef.current) return;
+      const json = JSON.stringify((canvas as unknown as { toJSON: (p: string[]) => unknown }).toJSON(["data"]));
+      undoStackRef.current.push(json);
+      if (undoStackRef.current.length > 50) undoStackRef.current.shift();
+      redoStackRef.current = [];
+    }, []);
 
     // Initialize canvas
     useEffect(() => {
@@ -54,6 +72,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         onSelectionChange?.(null);
       });
       canvas.on("object:modified", () => {
+        saveUndoState();
         onModified?.();
       });
 
@@ -218,6 +237,53 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           onModified?.();
         }
       },
+      undo: () => {
+        const canvas = fabricRef.current;
+        if (!canvas || undoStackRef.current.length === 0) return;
+        const currentState = JSON.stringify((canvas as unknown as { toJSON: (p: string[]) => unknown }).toJSON(["data"]));
+        redoStackRef.current.push(currentState);
+        const prevState = undoStackRef.current.pop()!;
+        isUndoRedoRef.current = true;
+        canvas.loadFromJSON(JSON.parse(prevState)).then(() => {
+          canvas.renderAll();
+          isUndoRedoRef.current = false;
+          onModified?.();
+        });
+      },
+      redo: () => {
+        const canvas = fabricRef.current;
+        if (!canvas || redoStackRef.current.length === 0) return;
+        const currentState = JSON.stringify((canvas as unknown as { toJSON: (p: string[]) => unknown }).toJSON(["data"]));
+        undoStackRef.current.push(currentState);
+        const nextState = redoStackRef.current.pop()!;
+        isUndoRedoRef.current = true;
+        canvas.loadFromJSON(JSON.parse(nextState)).then(() => {
+          canvas.renderAll();
+          isUndoRedoRef.current = false;
+          onModified?.();
+        });
+      },
+      zoomIn: () => {
+        const canvas = fabricRef.current;
+        if (!canvas) return;
+        const newZoom = Math.min(3, canvas.getZoom() * 1.2);
+        canvas.zoomToPoint(new Point(canvas.getWidth() / 2, canvas.getHeight() / 2), newZoom);
+        canvas.renderAll();
+      },
+      zoomOut: () => {
+        const canvas = fabricRef.current;
+        if (!canvas) return;
+        const newZoom = Math.max(0.1, canvas.getZoom() / 1.2);
+        canvas.zoomToPoint(new Point(canvas.getWidth() / 2, canvas.getHeight() / 2), newZoom);
+        canvas.renderAll();
+      },
+      zoomReset: () => {
+        const canvas = fabricRef.current;
+        if (!canvas) return;
+        canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        canvas.renderAll();
+      },
+      getZoom: () => fabricRef.current?.getZoom() ?? 1,
     }));
 
     return (
