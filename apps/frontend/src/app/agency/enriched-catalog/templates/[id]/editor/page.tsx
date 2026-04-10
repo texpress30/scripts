@@ -64,6 +64,7 @@ export default function TemplateEditorPage() {
   const hasFormatGroup = (siblings?.length ?? 0) > 1;
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [saveToast, setSaveToast] = useState<string | null>(null);
   const [styleSyncEnabled, setStyleSyncEnabled] = useState(true);
   const [adapting, setAdapting] = useState(false);
   const [showAdaptMenu, setShowAdaptMenu] = useState(false);
@@ -148,6 +149,8 @@ export default function TemplateEditorPage() {
         body: JSON.stringify(payload),
       });
       markClean();
+      setSaveToast("Template saved successfully");
+      setTimeout(() => setSaveToast(null), 3000);
 
       if (styleSyncEnabled && hasFormatGroup) {
         setSyncing(true);
@@ -428,7 +431,21 @@ export default function TemplateEditorPage() {
 
         {/* Center: Canvas + Format switcher + Status bar */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div ref={canvasAreaRef} className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-300/70 dark:bg-slate-900" style={{ backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
+          <div
+            ref={canvasAreaRef}
+            className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-300/70 dark:bg-slate-900"
+            style={{ backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}
+            onDragOver={(e) => { if (e.dataTransfer.types.includes("application/x-feed-field")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const raw = e.dataTransfer.getData("application/x-feed-field");
+              if (!raw) return;
+              try {
+                const { key, value } = JSON.parse(raw) as { key: string; value: string };
+                handleSourceFieldClick(key, value);
+              } catch { /* ignore invalid data */ }
+            }}
+          >
             {/* Scaled canvas wrapper for CSS-based zoom */}
             <div
               className="flex items-center justify-center"
@@ -534,6 +551,16 @@ export default function TemplateEditorPage() {
           <PropertyPanel selectedObject={selectedObject} onUpdate={() => { markDirty(); refreshObjectList(); }} />
         </div>
       </div>
+
+      {/* Save toast notification */}
+      {saveToast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+            {saveToast}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
