@@ -208,10 +208,10 @@ export default function TemplateEditorPage() {
   };
 
   // Source Feed: click a field to add as dynamic element
-  const handleSourceFieldClick = (fieldKey: string, _value: string) => {
+  const handleSourceFieldClick = (fieldKey: string, value: string) => {
     const binding = `{{${fieldKey}}}`;
     if (fieldKey.includes("image")) {
-      canvasRef.current?.addImagePlaceholder(binding);
+      canvasRef.current?.addImageFromURL(value, binding);
     } else {
       canvasRef.current?.addDynamicField(binding);
     }
@@ -378,40 +378,46 @@ export default function TemplateEditorPage() {
 
         {/* Center: Canvas + Format switcher + Status bar */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-200 p-8 dark:bg-slate-900">
-            {/* Canvas Color label */}
-            <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded bg-white/80 px-3 py-1 text-xs text-slate-600 backdrop-blur dark:bg-slate-800/80 dark:text-slate-400">
-              Canvas Color
-              <input
-                type="color"
-                value={backgroundColor}
-                onChange={(e) => updateBackgroundColor(e.target.value)}
-                className="h-5 w-6 cursor-pointer rounded border"
-              />
-              <span className="ml-4 text-slate-400">{canvasWidth} x {canvasHeight}</span>
-            </div>
+          <div className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-300/70 dark:bg-slate-900" style={{ backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
+            {/* Scaled canvas wrapper for CSS-based zoom */}
+            <div
+              className="flex items-center justify-center"
+              style={{
+                minWidth: "100%",
+                minHeight: "100%",
+                padding: "48px",
+              }}
+            >
+              <div
+                style={{
+                  transform: `scale(${zoom / 100})`,
+                  transformOrigin: "center center",
+                  transition: "transform 0.15s ease-out",
+                }}
+              >
+                <CanvasEditor
+                  ref={canvasRef}
+                  width={canvasWidth}
+                  height={canvasHeight}
+                  backgroundColor={backgroundColor}
+                  elements={template.elements}
+                  onSelectionChange={handleSelectionChange}
+                  onModified={handleModified}
+                />
 
-            <CanvasEditor
-              ref={canvasRef}
-              width={canvasWidth}
-              height={canvasHeight}
-              backgroundColor={backgroundColor}
-              elements={template.elements}
-              onSelectionChange={handleSelectionChange}
-              onModified={handleModified}
-            />
-
-            {/* Empty state hint */}
-            {canvasObjects.length === 0 && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="rounded-lg bg-white/90 px-6 py-4 text-center shadow dark:bg-slate-800/90">
-                  <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Add Layers</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">
-                    Drag elements from your library or click the toolbar to add them to the canvas
-                  </p>
-                </div>
+                {/* Empty state hint */}
+                {canvasObjects.length === 0 && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="rounded-lg bg-white/90 px-6 py-4 text-center shadow dark:bg-slate-800/90">
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Add Layers</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500">
+                        Drag elements from your library or click the toolbar to add them to the canvas
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
           {/* Bottom status bar */}
@@ -422,7 +428,7 @@ export default function TemplateEditorPage() {
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => { canvasRef.current?.zoomOut(); setZoom(Math.round((canvasRef.current?.getZoom() ?? 1) * 100)); }}
+                onClick={() => setZoom((prev) => Math.max(10, Math.round(prev / 1.2)))}
                 className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                 title="Zoom Out"
               >
@@ -430,14 +436,14 @@ export default function TemplateEditorPage() {
               </button>
               <span className="w-10 text-center text-xs text-slate-500 dark:text-slate-400">{zoom}%</span>
               <button
-                onClick={() => { canvasRef.current?.zoomIn(); setZoom(Math.round((canvasRef.current?.getZoom() ?? 1) * 100)); }}
+                onClick={() => setZoom((prev) => Math.min(300, Math.round(prev * 1.2)))}
                 className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                 title="Zoom In"
               >
                 <ZoomIn className="h-3.5 w-3.5" />
               </button>
               <button
-                onClick={() => { canvasRef.current?.zoomReset(); setZoom(100); }}
+                onClick={() => setZoom(100)}
                 className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                 title="Reset Zoom"
               >
