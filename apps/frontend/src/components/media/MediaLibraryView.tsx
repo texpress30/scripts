@@ -650,7 +650,7 @@ export function MediaLibraryView({
         />
       </button>
       {foldersExpanded && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
           {folders.map((folder) => (
             <FolderCard
               key={folder.folder_id}
@@ -705,7 +705,7 @@ export function MediaLibraryView({
     <div>
       <p className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">Fișiere ({total})</p>
       {viewMode === "grid" ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
           {files.map((file) => (
             <FileCard
               key={file.media_id}

@@ -27,19 +27,23 @@ export function FileCard({ clientId, file, selected, onClick }: FileCardProps) {
       type="button"
       onClick={() => onClick?.(file)}
       className={cn(
-        "group relative flex h-44 w-full flex-col overflow-hidden rounded-lg border text-left transition-colors",
+        "group flex h-48 w-full flex-col overflow-hidden rounded-lg border text-left transition-colors",
         selected
           ? "border-indigo-400 ring-2 ring-indigo-400/40"
           : "border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600",
       )}
       title={label}
     >
-      <div className="relative flex-1 bg-slate-50 dark:bg-slate-800">
+      {/* Image preview area — `min-h-0` lets the child shrink inside the
+          flex column, and the padded wrapper keeps object-contain images
+          breathing instead of bleeding into the card edges. */}
+      <div className="relative flex min-h-0 w-full flex-1 items-center justify-center bg-slate-50 p-4 dark:bg-slate-800">
         <MediaThumbnail
           clientId={clientId}
           mediaId={file.media_id}
           kind={file.kind}
           displayName={label}
+          sizeClassName="max-h-full max-w-full"
         />
         {isSystem && (
           <div
@@ -51,8 +55,8 @@ export function FileCard({ clientId, file, selected, onClick }: FileCardProps) {
           </div>
         )}
       </div>
-      <div className="flex items-center gap-2 border-t border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-900">
-        <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">{label}</span>
+      <div className="flex w-full shrink-0 items-center gap-2 border-t border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+        <span className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
       </div>
     </button>
   );
