@@ -30,6 +30,21 @@ class StartRenderRequest(BaseModel):
     products: list[dict] = Field(default_factory=list)
 
 
+class RenderPageRequest(BaseModel):
+    """Lazy render dispatch for the preview grid.
+
+    The grid emits the list of product_ids currently visible (plus one page
+    of prefetch). We look up the full product documents in Mongo, resolve
+    each product's matching template via treatments, and enqueue the render
+    on the render_hi queue. Only the requested products get rendered, so a
+    100k-product feed never costs more than the ~40 products the user is
+    actually looking at.
+    """
+
+    product_ids: list[str] = Field(default_factory=list)
+    priority: str = "hi"  # "hi" for editor/grid, "bulk" for Publish
+
+
 class ScheduleRefreshRequest(BaseModel):
     interval_hours: int = Field(ge=1, le=168)
 
@@ -107,6 +122,62 @@ def start_render(
     background_tasks.add_task(render_job_service.run_render_background, output_feed_id, payload.products)
 
     return job
+
+
+@router.post("/{output_feed_id}/render/page", status_code=status.HTTP_202_ACCEPTED)
+def render_visible_page(
+    output_feed_id: str,
+    payload: RenderPageRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Enqueue async renders for a bounded slice of products.
+
+    Called by the preview grid whenever the visible page changes. We look up
+    each product_id in Mongo, hand the rows to
+    ``render_job_service.dispatch_render_job`` which checks the
+    template_render_results cache and only enqueues tasks for stale entries.
+
+    Returns a summary: how many tasks were dispatched vs cache-hit vs
+    skipped because no treatment matched.
+    """
+    try:
+        existing = output_feed_service.get_output_feed(output_feed_id)
+    except OutputFeedNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    enforce_subaccount_action(
+        user=user, action="creative:write", subaccount_id=int(existing["subaccount_id"])
+    )
+
+    if not payload.product_ids:
+        return {"dispatched": 0, "cache_hits": 0, "chunks": 0, "priority": payload.priority}
+
+    # Resolve the product documents from Mongo. The feed_source_id is on the
+    # output feed record; we look up each product_id individually so large
+    # batches don't bloat the query.
+    from app.services.feed_management.products_repository import feed_products_repository
+    from app.services.enriched_catalog.render_job_service import render_job_service
+
+    feed_source_id = existing.get("feed_source_id")
+    if not feed_source_id:
+        return {"dispatched": 0, "cache_hits": 0, "chunks": 0, "priority": payload.priority}
+
+    products: list[dict] = []
+    for product_id in payload.product_ids:
+        doc = feed_products_repository.get_product(str(feed_source_id), str(product_id))
+        if not doc:
+            continue
+        data = doc.get("data", doc) if isinstance(doc, dict) else {}
+        if isinstance(data, dict):
+            # Ensure the product id is always present in the dict so the
+            # renderer can address the cache row later.
+            data.setdefault("id", str(product_id))
+            products.append(data)
+
+    return render_job_service.dispatch_render_job(
+        output_feed_id,
+        products,
+        priority=payload.priority,
+    )
 
 
 @router.get("/{output_feed_id}/render-status")

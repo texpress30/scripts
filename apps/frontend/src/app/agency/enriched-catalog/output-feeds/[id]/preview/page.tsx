@@ -1,9 +1,11 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useOutputFeed, useRenderStatus } from "@/lib/hooks/useOutputFeeds";
 import { CreativePreviewGrid } from "@/components/enriched-catalog/CreativePreviewGrid";
+import { apiRequest } from "@/lib/api";
 
 export default function OutputFeedPreviewPage() {
   const params = useParams();
@@ -31,6 +33,38 @@ export default function OutputFeedPreviewPage() {
 
   // Build entries from render status if available
   const entries = (renderStatus as unknown as { entries?: unknown[] })?.entries ?? [];
+
+  // Lazy dispatch: when the grid scrolls to a new page it tells us the
+  // product_ids currently on screen (plus one page of prefetch). We turn
+  // that into a POST /render/page call which checks the
+  // template_render_results cache and only enqueues Celery tasks for the
+  // stale entries. For a 100k-product feed we therefore only ever render
+  // the ~40 products the user is actually looking at.
+  //
+  // The dispatchedIdsRef guard keeps us from re-enqueueing the same product
+  // ids every time the React state ticks — we only fire when the set of
+  // visible ids actually changes.
+  const dispatchedIdsRef = useRef<string>("");
+  const handleVisibleRangeChange = useCallback(
+    async (visibleIds: string[]) => {
+      if (!feedId || visibleIds.length === 0) return;
+      const signature = visibleIds.slice().sort().join("|");
+      if (signature === dispatchedIdsRef.current) return;
+      dispatchedIdsRef.current = signature;
+      try {
+        await apiRequest(`/creative/output-feeds/${feedId}/render/page`, {
+          method: "POST",
+          body: JSON.stringify({ product_ids: visibleIds, priority: "hi" }),
+        });
+      } catch (err) {
+        // Best-effort: the grid will simply show skeletons for longer if
+        // dispatch fails. Surface in the console so we can spot systemic
+        // failures during rollout.
+        console.warn("render_page_dispatch_failed", err);
+      }
+    },
+    [feedId],
+  );
 
   return (
     <div>
@@ -71,6 +105,7 @@ export default function OutputFeedPreviewPage() {
       <CreativePreviewGrid
         entries={entries as { product_id: string; product_data: Record<string, unknown>; template_id: string | null; treatment_id: string | null; enriched_image_url: string | null }[]}
         isLoading={renderLoading}
+        onVisibleRangeChange={handleVisibleRangeChange}
       />
     </div>
   );
