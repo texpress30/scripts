@@ -40,6 +40,7 @@ export default function SettingsStoragePage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
 
@@ -72,7 +73,24 @@ export default function SettingsStoragePage() {
     return () => {
       ignore = true;
     };
-  }, [search, page, pageSize]);
+  }, [search, page, pageSize, refreshTick]);
+
+  // Keep the totals fresh: refetch every 30s while the tab is visible and
+  // whenever the window regains focus, so new uploads in a sub-account's
+  // Media Storage surface here without a manual reload.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const triggerRefresh = () => setRefreshTick((prev) => prev + 1);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") triggerRefresh();
+    }, 30_000);
+    const onFocus = () => triggerRefresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   return (
     <ProtectedPage>
