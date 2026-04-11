@@ -344,3 +344,15 @@ cd apps/frontend && npm run build
 - Exit code semantics:
   - `0` când batch-ul rulează (inclusiv dacă are item-uri `failed`/`skipped`)
   - non-zero doar la eroare globală (ex: provider/config indisponibil, excepție neprevăzută înainte/în jurul run-ului).
+
+## Railway: `worker-bgremoval` service (background removal Celery worker)
+- Acest worker rulează pipeline-ul `rembg` + ONNX pentru cutout-uri. Este **separat** de restul serviciilor Railway pentru că imaginea lui include dependențe ML (onnxruntime, opencv-python-headless, rembg) care adaugă ~800MB peste baseline.
+- Dockerfile dedicat: `apps/backend/Dockerfile.bgworker`. NU folosi `apps/backend/Dockerfile` pentru acest serviciu.
+- Config-as-Code: `apps/backend/railway.bgworker.json` — conține `build.dockerfilePath` + `deploy.startCommand` + restart policy. Pune acest path în câmpul **Config-as-Code** al serviciului Railway.
+- Setări Railway dashboard pentru serviciul `worker-bgremoval`:
+  1. **Root Directory** = `apps/backend` (pentru ca `dockerfilePath: "Dockerfile.bgworker"` și `railway.bgworker.json` să fie găsite relative la acest subdirector, la fel ca restul serviciilor).
+  2. **Config-as-Code path** = `railway.bgworker.json`.
+  3. **Variables** (share din `api-backend` sau set explicit): `DATABASE_URL`, `MONGO_URI`, `MONGO_DATABASE`, `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `STORAGE_S3_BUCKET`, `STORAGE_S3_REGION`, `STORAGE_S3_ENDPOINT_URL`, `STORAGE_S3_PRESIGNED_TTL_SECONDS`, `APP_AUTH_SECRET`, `INTEGRATION_SECRET_ENCRYPTION_KEY`. Opțional: `REMBG_MODEL` (default `u2net`), `CUTOUT_CONCURRENCY_PER_CLIENT`, `CUTOUT_ORPHAN_RETENTION_DAYS`.
+- Start command (redus în `railway.bgworker.json`): `celery -A app.workers.celery_app worker -Q bgremoval_interactive,bgremoval_prime,bgremoval,bgremoval_bulk,sync_hooks -c 2 -n bgremoval@%h --loglevel=info`.
+- Verificare post-deploy: log-urile runtime trebuie să conțină `rembg_session_warmed model=u2net` + `celery@bgremoval ready.`. Dacă vezi `ModuleNotFoundError: onnxruntime`, serviciul a fost build-uit cu Dockerfile-ul greșit (baseline). Dacă vezi `Cannot connect to redis://...`, `CELERY_BROKER_URL` lipsește.
+- Fără healthcheck HTTP: workerul nu expune port. Lasă `healthcheckPath` gol în UI (JSON-ul nu setează path).
