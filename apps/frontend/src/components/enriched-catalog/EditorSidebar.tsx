@@ -635,7 +635,17 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [categoriesError, setCategoriesError] = useState<string>("");
 
-  const [activeCategory, setActiveCategory] = useState<StorageFolder | null>(null);
+  // Navigation stack of folders the user has drilled into under the
+  // top-level "Public Elements" root. Empty → the flat list of categories.
+  // One or more entries → the last entry is the currently viewed folder.
+  const [folderStack, setFolderStack] = useState<StorageFolder[]>([]);
+  const currentFolder = folderStack[folderStack.length - 1] ?? null;
+
+  // Contents of the currently viewed folder. A folder can contain sub-folders
+  // (e.g. "Emoticoane" → "Smileys", "Animals & Nature", ...) and/or direct
+  // image files; both are loaded in parallel so we can pick the correct
+  // render mode (nested preview sections vs flat file grid).
+  const [subFolders, setSubFolders] = useState<StorageFolder[]>([]);
   const [categoryFiles, setCategoryFiles] = useState<StorageMediaListItem[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState<string>("");
@@ -684,9 +694,10 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
     };
   }, [clientId]);
 
-  // Load files whenever the user opens a category
+  // Load sub-folders + files whenever the user navigates into a folder.
   useEffect(() => {
-    if (!clientId || !activeCategory) {
+    if (!clientId || !currentFolder) {
+      setSubFolders([]);
       setCategoryFiles([]);
       setFilesError("");
       return;
@@ -697,17 +708,22 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
     setFileSearch("");
     (async () => {
       try {
-        const response = await listMedia({
-          clientId,
-          folderId: activeCategory.folder_id,
-          kind: "image",
-          limit: 100,
-          sort: "name_asc",
-        });
+        const [subResponse, filesResponse] = await Promise.all([
+          listFolders({ clientId, parentFolderId: currentFolder.folder_id }),
+          listMedia({
+            clientId,
+            folderId: currentFolder.folder_id,
+            kind: "image",
+            limit: 100,
+            sort: "name_asc",
+          }),
+        ]);
         if (cancelled) return;
-        setCategoryFiles(response.items);
+        setSubFolders(subResponse.items);
+        setCategoryFiles(filesResponse.items);
       } catch (err) {
         if (cancelled) return;
+        setSubFolders([]);
         setCategoryFiles([]);
         setFilesError(err instanceof Error ? err.message : "Nu am putut încărca fișierele.");
       } finally {
@@ -717,7 +733,7 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [clientId, activeCategory]);
+  }, [clientId, currentFolder]);
 
   const filteredFiles = useMemo(() => {
     const token = fileSearch.trim().toLowerCase();
@@ -728,6 +744,14 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
     });
   }, [categoryFiles, fileSearch]);
 
+  const openFolder = (folder: StorageFolder) => {
+    setFolderStack((prev) => [...prev, folder]);
+  };
+
+  const goBack = () => {
+    setFolderStack((prev) => prev.slice(0, -1));
+  };
+
   if (!clientId) {
     return (
       <div className="p-3 text-center text-xs text-slate-400">
@@ -736,22 +760,37 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
     );
   }
 
-  // --- Extended panel: files inside a category ---
-  if (activeCategory) {
+  // --- Extended panel: inside a folder ---
+  if (currentFolder) {
+    const hasSubFolders = subFolders.length > 0;
+    // When browsing a folder that contains sub-folders we render a section
+    // per sub-folder (showing a 3-file preview). When the folder is a leaf
+    // (no sub-folders) we render the flat file grid + search, matching the
+    // previous single-level behaviour.
     return (
       <div className="flex h-full flex-col">
         <div className="flex items-start justify-between gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
-          <div className="min-w-0 flex-1">
-            <h4 className="truncate text-sm font-bold uppercase tracking-wide text-slate-900 dark:text-slate-100">
-              {activeCategory.name}
-            </h4>
-            <p className="mt-0.5 text-[10px] text-slate-400">
-              {categoryFiles.length} fișier{categoryFiles.length === 1 ? "" : "e"}
-            </p>
-          </div>
           <button
             type="button"
-            onClick={() => setActiveCategory(null)}
+            onClick={goBack}
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+            title="Înapoi"
+          >
+            <ChevronLeft className="h-4 w-4 shrink-0 text-slate-400" />
+            <div className="min-w-0 flex-1">
+              <h4 className="truncate text-sm font-bold uppercase tracking-wide text-slate-900 dark:text-slate-100">
+                {currentFolder.name}
+              </h4>
+              <p className="mt-0.5 text-[10px] text-slate-400">
+                {hasSubFolders
+                  ? `${subFolders.length} categori${subFolders.length === 1 ? "e" : "i"}`
+                  : `${categoryFiles.length} fișier${categoryFiles.length === 1 ? "" : "e"}`}
+              </p>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFolderStack([])}
             className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
             title="Înapoi la Elemente Publice"
           >
@@ -759,18 +798,20 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
           </button>
         </div>
 
-        <div className="border-b border-slate-200 px-3 py-2 dark:border-slate-700">
-          <div className="relative">
-            <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="search"
-              value={fileSearch}
-              onChange={(event) => setFileSearch(event.target.value)}
-              placeholder="Caută în categorie..."
-              className="mcc-input w-full rounded border py-1.5 pl-7 pr-2 text-xs"
-            />
+        {!hasSubFolders && (
+          <div className="border-b border-slate-200 px-3 py-2 dark:border-slate-700">
+            <div className="relative">
+              <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="search"
+                value={fileSearch}
+                onChange={(event) => setFileSearch(event.target.value)}
+                placeholder="Caută în categorie..."
+                className="mcc-input w-full rounded border py-1.5 pl-7 pr-2 text-xs"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-3">
           {loadingFiles ? (
@@ -779,10 +820,39 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
             </div>
           ) : filesError ? (
             <p className="text-center text-xs text-red-500">{filesError}</p>
+          ) : hasSubFolders ? (
+            <div className="space-y-4">
+              {subFolders.map((folder) => (
+                <SubFolderPreviewSection
+                  key={folder.folder_id}
+                  clientId={clientId}
+                  folder={folder}
+                  onOpen={() => openFolder(folder)}
+                  onInsertImage={onInsertImage}
+                />
+              ))}
+              {categoryFiles.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Fișiere
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {categoryFiles.map((file) => (
+                      <LibraryFileTile
+                        key={file.media_id}
+                        clientId={clientId}
+                        file={file}
+                        onInsert={onInsertImage}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           ) : filteredFiles.length === 0 ? (
             <p className="text-center text-xs text-slate-400">Niciun fișier în această categorie.</p>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {filteredFiles.map((file) => (
                 <LibraryFileTile
                   key={file.media_id}
@@ -817,7 +887,7 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
             <button
               key={folder.folder_id}
               type="button"
-              onClick={() => setActiveCategory(folder)}
+              onClick={() => openFolder(folder)}
               className="flex w-full items-center gap-2 rounded border border-slate-200 px-2.5 py-2 text-left text-xs hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-600 dark:hover:border-indigo-600 dark:hover:bg-indigo-950/30"
               title={folder.name}
             >
@@ -825,6 +895,96 @@ export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
               <span className="flex-1 truncate font-medium text-slate-700 dark:text-slate-200">{folder.name}</span>
               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
             </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Renders a single sub-folder preview row: its title + first 3 images fetched
+// lazily via `listMedia`. The whole row is a button that drills into the
+// folder. Used inside `LibraryPanel` when a category contains sub-folders.
+function SubFolderPreviewSection({
+  clientId,
+  folder,
+  onOpen,
+  onInsertImage,
+}: {
+  clientId: number;
+  folder: StorageFolder;
+  onOpen: () => void;
+  onInsertImage: (url: string, name: string) => void;
+}) {
+  const [previewFiles, setPreviewFiles] = useState<StorageMediaListItem[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const response = await listMedia({
+          clientId,
+          folderId: folder.folder_id,
+          kind: "image",
+          limit: 3,
+          sort: "name_asc",
+        });
+        if (cancelled) return;
+        setPreviewFiles(response.items);
+        setTotalCount(response.total ?? response.items.length);
+      } catch {
+        if (!cancelled) {
+          setPreviewFiles([]);
+          setTotalCount(0);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, folder.folder_id]);
+
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="group flex w-full items-center justify-between gap-2 rounded px-0.5 py-1 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+        title={`Deschide ${folder.name}`}
+      >
+        <span className="truncate text-[11px] font-bold uppercase tracking-wide text-slate-700 group-hover:text-indigo-600 dark:text-slate-200 dark:group-hover:text-indigo-400">
+          {folder.name}
+        </span>
+        <span className="flex shrink-0 items-center gap-1 text-[10px] text-slate-400">
+          {totalCount > 0 && <span>{totalCount}</span>}
+          <ChevronRight className="h-3.5 w-3.5" />
+        </span>
+      </button>
+      {loading ? (
+        <div className="grid grid-cols-3 gap-2">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="aspect-square animate-pulse rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"
+            />
+          ))}
+        </div>
+      ) : previewFiles.length === 0 ? (
+        <p className="px-0.5 py-1 text-[10px] text-slate-400">Gol</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {previewFiles.map((file) => (
+            <LibraryFileTile
+              key={file.media_id}
+              clientId={clientId}
+              file={file}
+              onInsert={onInsertImage}
+            />
           ))}
         </div>
       )}
