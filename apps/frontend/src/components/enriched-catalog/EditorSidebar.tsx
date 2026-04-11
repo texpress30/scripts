@@ -570,25 +570,37 @@ function LibraryFileTile({ clientId, file, onInsert }: {
   file: StorageMediaListItem;
   onInsert: (url: string, name: string) => void;
 }) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // We store a *data URL* (base64) rather than a blob: URL so the inserted
+  // image survives the tile unmounting. Blob URLs get revoked when the panel
+  // navigates away, which was leaving fabric with a broken src and rendering
+  // a gray placeholder rectangle on the canvas.
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    let createdObjectUrl: string | null = null;
     (async () => {
       try {
         const blob = await fetchMediaBlob({ clientId, mediaId: file.media_id });
         if (cancelled) return;
-        createdObjectUrl = URL.createObjectURL(blob);
-        setPreviewUrl(createdObjectUrl);
+        const encoded = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result;
+            if (typeof result === "string") resolve(result);
+            else reject(new Error("FileReader returned non-string result"));
+          };
+          reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+          reader.readAsDataURL(blob);
+        });
+        if (cancelled) return;
+        setDataUrl(encoded);
       } catch {
         if (!cancelled) setFailed(true);
       }
     })();
     return () => {
       cancelled = true;
-      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
     };
   }, [clientId, file.media_id]);
 
@@ -598,25 +610,28 @@ function LibraryFileTile({ clientId, file, onInsert }: {
     <button
       type="button"
       onClick={() => {
-        if (previewUrl) onInsert(previewUrl, label);
+        if (dataUrl) onInsert(dataUrl, label);
       }}
-      disabled={!previewUrl}
+      disabled={!dataUrl}
       className={cn(
         "group relative aspect-square overflow-hidden rounded-md border border-slate-200 bg-slate-50 p-1.5 text-left transition hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-indigo-600 dark:hover:bg-indigo-950/30",
-        !previewUrl && "cursor-not-allowed opacity-60",
+        !dataUrl && "cursor-not-allowed opacity-60",
       )}
       title={label}
     >
-      {previewUrl && !failed ? (
+      {dataUrl && !failed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={previewUrl}
+          src={dataUrl}
           alt={label}
           className="h-full w-full object-contain"
           onError={() => setFailed(true)}
           draggable
           onDragStart={(event) => {
-            event.dataTransfer.setData("application/x-media-image", JSON.stringify({ url: previewUrl, name: label }));
+            event.dataTransfer.setData(
+              "application/x-media-image",
+              JSON.stringify({ url: dataUrl, name: label }),
+            );
             event.dataTransfer.effectAllowed = "copy";
           }}
         />

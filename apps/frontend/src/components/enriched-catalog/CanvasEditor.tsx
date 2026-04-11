@@ -12,7 +12,7 @@ export interface CanvasEditorHandle {
   addDynamicField: (binding: string) => void;
   addShape: (shapeType: "rectangle" | "ellipse") => void;
   addImagePlaceholder: (binding?: string) => void;
-  addImageFromURL: (url: string, binding: string) => void;
+  addImageFromURL: (url: string, binding: string, position?: { clientX: number; clientY: number }) => void;
   deleteSelected: () => void;
   bringForward: () => void;
   sendBackward: () => void;
@@ -351,14 +351,46 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         canvas.renderAll();
         onModified?.();
       },
-      addImageFromURL: (url: string, binding: string) => {
+      addImageFromURL: (url: string, binding: string, position?: { clientX: number; clientY: number }) => {
         const canvas = fabricRef.current;
         if (!canvas) return;
-        if (!url || !url.startsWith("http")) {
+        // Accept http(s) URLs, blob: URLs (from object-url preview flow) and
+        // data: URLs (base64 emojis from the Public Elements tile). Any other
+        // shape falls back to a placeholder rectangle.
+        const isValidUrl =
+          typeof url === "string" &&
+          (url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:"));
+
+        // Resolve drop coordinates in fabric canvas space when the caller
+        // provides clientX/clientY (drag-and-drop); otherwise default to
+        // (50, 50) so click-to-insert stays consistent with previous UX.
+        const resolvePosition = (objectW: number, objectH: number) => {
+          if (!position) return { left: 50, top: 50 };
+          const canvasEl = (canvas as unknown as {
+            upperCanvasEl?: HTMLCanvasElement;
+            lowerCanvasEl?: HTMLCanvasElement;
+          }).upperCanvasEl ?? (canvas as unknown as { lowerCanvasEl?: HTMLCanvasElement }).lowerCanvasEl;
+          if (!canvasEl) return { left: 50, top: 50 };
+          const rect = canvasEl.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) return { left: 50, top: 50 };
+          const logicalW = canvas.getWidth();
+          const logicalH = canvas.getHeight();
+          const scaleX = logicalW / rect.width;
+          const scaleY = logicalH / rect.height;
+          const centerX = (position.clientX - rect.left) * scaleX;
+          const centerY = (position.clientY - rect.top) * scaleY;
+          return {
+            left: Math.max(0, Math.round(centerX - objectW / 2)),
+            top: Math.max(0, Math.round(centerY - objectH / 2)),
+          };
+        };
+
+        if (!isValidUrl) {
           // Fallback to placeholder if no valid URL
+          const pos = resolvePosition(200, 200);
           const placeholder = new Rect({
-            left: 50,
-            top: 50,
+            left: pos.left,
+            top: pos.top,
             width: 200,
             height: 200,
             fill: "#cbd5e1",
@@ -377,6 +409,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           onModified?.();
           return;
         }
+        // `crossOrigin` is ignored for data: and blob: URLs, but harmless.
         FabricImage.fromURL(url, { crossOrigin: "anonymous" }).then((fabricImg) => {
           const maxDim = 300;
           let w = fabricImg.width ?? 200;
@@ -386,9 +419,10 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
             w = Math.round(w * ratio);
             h = Math.round(h * ratio);
           }
+          const pos = resolvePosition(w, h);
           fabricImg.set({
-            left: 50,
-            top: 50,
+            left: pos.left,
+            top: pos.top,
             data: {
               elementId: crypto.randomUUID(),
               elementType: "image",
@@ -405,9 +439,13 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           // Try again without CORS (allows display but not pixel access)
           const imgEl = document.createElement("img");
           imgEl.onload = () => {
+            const scaledW = Math.min(300, imgEl.naturalWidth || 200);
+            const ratio = imgEl.naturalWidth > 0 ? scaledW / imgEl.naturalWidth : 1;
+            const scaledH = Math.round((imgEl.naturalHeight || 200) * ratio);
+            const pos = resolvePosition(scaledW, scaledH);
             const fabricImg = new FabricImage(imgEl, {
-              left: 50,
-              top: 50,
+              left: pos.left,
+              top: pos.top,
               data: {
                 elementId: crypto.randomUUID(),
                 elementType: "image",
@@ -415,7 +453,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
                 imageSrc: url,
               },
             });
-            fabricImg.scaleToWidth(Math.min(300, imgEl.naturalWidth));
+            fabricImg.scaleToWidth(scaledW);
             canvas.add(fabricImg);
             canvas.setActiveObject(fabricImg);
             canvas.renderAll();
@@ -423,9 +461,10 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           };
           imgEl.onerror = () => {
             // Final fallback: placeholder
+            const pos = resolvePosition(200, 200);
             const placeholder = new Rect({
-              left: 50,
-              top: 50,
+              left: pos.left,
+              top: pos.top,
               width: 200,
               height: 200,
               fill: "#cbd5e1",
