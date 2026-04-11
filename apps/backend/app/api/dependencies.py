@@ -8,7 +8,7 @@ from app.services.team_members import team_members_service
 
 SUBACCOUNT_MODULE_KEYS: set[str] = {
     "dashboard", "campaigns", "rules", "creative", "recommendations", "media",
-    "settings", "settings_profile", "settings_team", "settings_integrations",
+    "settings", "settings_profile", "settings_personal_profile", "settings_team", "settings_integrations",
     "settings_accounts", "settings_tags", "settings_audit_logs", "settings_ai_agents",
 }
 AGENCY_NAVIGATION_KEYS: set[str] = {
