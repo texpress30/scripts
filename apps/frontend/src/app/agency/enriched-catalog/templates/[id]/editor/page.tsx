@@ -438,15 +438,38 @@ export default function TemplateEditorPage() {
             ref={canvasAreaRef}
             className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-300/70 dark:bg-slate-900"
             style={{ backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}
-            onDragOver={(e) => { if (e.dataTransfer.types.includes("application/x-feed-field")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
+            onDragOver={(e) => {
+              const types = e.dataTransfer.types;
+              if (
+                types.includes("application/x-feed-field") ||
+                types.includes("application/x-media-image")
+              ) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+              }
+            }}
             onDrop={(e) => {
               e.preventDefault();
-              const raw = e.dataTransfer.getData("application/x-feed-field");
-              if (!raw) return;
-              try {
-                const { key, value } = JSON.parse(raw) as { key: string; value: string };
-                handleSourceFieldClick(key, value);
-              } catch { /* ignore invalid data */ }
+              // Drop a feed field → add a dynamic binding placeholder
+              const feedRaw = e.dataTransfer.getData("application/x-feed-field");
+              if (feedRaw) {
+                try {
+                  const { key, value } = JSON.parse(feedRaw) as { key: string; value: string };
+                  handleSourceFieldClick(key, value);
+                } catch { /* ignore invalid data */ }
+                return;
+              }
+              // Drop a Public Elements image → add it at the drop position
+              const mediaRaw = e.dataTransfer.getData("application/x-media-image");
+              if (mediaRaw) {
+                try {
+                  const { url, name } = JSON.parse(mediaRaw) as { url: string; name: string };
+                  canvasRef.current?.addImageFromURL(url, name, {
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                  });
+                } catch { /* ignore invalid data */ }
+              }
             }}
           >
             {/* Scaled canvas wrapper for CSS-based zoom */}
