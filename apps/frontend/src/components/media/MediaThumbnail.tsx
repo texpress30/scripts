@@ -69,15 +69,15 @@ export function MediaThumbnail({
       <img
         src={url}
         alt={displayName}
-        className={cn("object-cover", sizeClassName)}
+        className={cn("max-h-full max-w-full object-contain", sizeClassName)}
         onError={() => setFailed(true)}
       />
     );
   }
 
   return (
-    <div className={cn("flex items-center justify-center", sizeClassName)}>
-      <Icon className="h-1/2 w-1/2 max-h-10 max-w-10 text-slate-400 dark:text-slate-500" />
+    <div className="flex h-full w-full items-center justify-center">
+      <Icon className="h-10 w-10 max-h-full max-w-full text-slate-400 dark:text-slate-500" />
     </div>
   );
 }
