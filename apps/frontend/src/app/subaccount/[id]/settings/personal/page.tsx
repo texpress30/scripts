@@ -87,6 +87,9 @@ export default function SubAccountPersonalProfilePage() {
       setPhone(payload.phone);
       setExtension(payload.extension);
       setLanguage(payload.platform_language);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("user-profile-updated"));
+      }
       showToast("Profil actualizat cu succes!");
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva profilul.");
