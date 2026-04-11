@@ -439,6 +439,47 @@ def get_media_access_url(
     return StorageMediaAccessResponse(**payload)
 
 
+@router.get("/media/{media_id}/content")
+def get_media_content(
+    media_id: str,
+    client_id: int = Query(..., ge=1),
+    disposition: Literal["inline", "attachment"] = Query(default="inline"),
+    user: AuthUser = Depends(get_current_user),
+):
+    """Stream the raw object bytes from S3 through the backend so browsers
+    don't need direct access to the bucket. Used by `<img src>` previews and
+    the media preview modal — removes the CORS / internal-endpoint headache
+    that breaks the presigned GET path in some deployments."""
+    from fastapi import Response as FastAPIResponse
+
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
+    try:
+        payload = storage_media_access_service.fetch_bytes(
+            client_id=int(client_id),
+            media_id=media_id,
+        )
+    except StorageMediaAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("storage_media_content_failed client_id=%s media_id=%s", client_id, media_id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to stream media content") from exc
+
+    content = payload.get("content") or b""
+    mime_type = str(payload.get("mime_type") or "application/octet-stream")
+    filename = str(payload.get("filename") or "file")
+    content_disposition = f'{disposition}; filename="{filename}"'
+    return FastAPIResponse(
+        content=content,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": content_disposition,
+            "Cache-Control": "private, max-age=300",
+        },
+    )
+
+
 @router.delete("/media/{media_id}", response_model=StorageMediaDeleteResponse)
 def soft_delete_media(
     media_id: str,

@@ -5,7 +5,7 @@ import { FileText, Film, ImageIcon, Loader2, Trash2, X } from "lucide-react";
 
 import {
   deleteMedia,
-  getMediaAccessUrl,
+  fetchMediaBlob,
   updateMedia,
   type StorageMediaListItem,
   type StorageMediaSource,
@@ -72,20 +72,20 @@ export function MediaPreviewModal({
     setError("");
 
     let cancelled = false;
+    let createdObjectUrl: string | null = null;
     (async () => {
       try {
-        const response = await getMediaAccessUrl({
-          clientId,
-          mediaId: file.media_id,
-          disposition: "inline",
-        });
-        if (!cancelled) setAccessUrl(response.url);
+        const blob = await fetchMediaBlob({ clientId, mediaId: file.media_id });
+        if (cancelled) return;
+        createdObjectUrl = URL.createObjectURL(blob);
+        setAccessUrl(createdObjectUrl);
       } catch (err) {
         if (!cancelled) setAccessUrl(null);
       }
     })();
     return () => {
       cancelled = true;
+      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
     };
   }, [clientId, file]);
 
