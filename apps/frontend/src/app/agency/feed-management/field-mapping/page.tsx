@@ -30,7 +30,14 @@ function SourceCard({ source }: { source: FeedSource }) {
     <div className="wm-card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{source.name}</h3>
+          <h3 className="text-sm font-semibold">
+            <Link
+              href={`/agency/feed-management/field-mapping/${source.id}`}
+              className="text-slate-900 hover:text-indigo-600 hover:underline dark:text-slate-100 dark:hover:text-indigo-400"
+            >
+              {source.name}
+            </Link>
+          </h3>
           <span className={`inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-800 ${catalogCfg.color}`}>
             <CatalogIcon className="h-3 w-3" />
             {catalogCfg.label}
