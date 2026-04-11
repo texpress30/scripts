@@ -108,7 +108,7 @@ export default function SubCampaignsPage() {
 
   return (
     <ProtectedPage>
-      <AppShell title={`Sub Campaigns · #${clientId}`}>
+      <AppShell title="Campanii">
         <div className="mb-4 flex items-center gap-3 text-sm">
           <Link href={`/sub/${clientId}/dashboard`} className="text-indigo-600 hover:underline">Dashboard</Link>
           <Link href={`/sub/${clientId}/rules`} className="text-indigo-600 hover:underline">Rules</Link>

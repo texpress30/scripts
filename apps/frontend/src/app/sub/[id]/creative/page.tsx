@@ -66,7 +66,7 @@ export default function SubCreativePage() {
 
   return (
     <ProtectedPage>
-      <AppShell title={`Sub Creative · #${clientId}`}>
+      <AppShell title="Creative">
         {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
 
         <form onSubmit={createAsset} className="mb-4 flex gap-3">

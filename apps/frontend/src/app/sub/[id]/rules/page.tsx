@@ -75,7 +75,7 @@ export default function SubRulesPage() {
 
   return (
     <ProtectedPage>
-      <AppShell title={`Sub Rules · #${clientId}`}>
+      <AppShell title="Reguli">
         {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
 
         <form onSubmit={onCreate} className="wm-card mb-5 grid gap-3 p-4 md:grid-cols-5">

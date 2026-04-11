@@ -75,7 +75,7 @@ export default function SubRecommendationsPage() {
 
   return (
     <ProtectedPage>
-      <AppShell title={`Sub Recommendations · #${clientId}`}>
+      <AppShell title="Recomandări">
         {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
 
         <button
