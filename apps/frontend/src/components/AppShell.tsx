@@ -514,7 +514,17 @@ export function AppShell({
     if (!keys || subaccountMyAccessLoading) return rawSubSettingsItems;
     const allowed = new Set(keys.map((k) => k.toLowerCase()));
     if (!allowed.has("settings")) return [];
-    return rawSubSettingsItems.filter((item) => !item.moduleKey || allowed.has(item.moduleKey));
+    return rawSubSettingsItems.filter((item) => {
+      if (!item.moduleKey) return true;
+      // `settings_personal_profile` is a universal user-level entry (every
+      // sub-account user can edit their own profile). It was added to the
+      // catalog after some memberships were already stored, so existing
+      // sub-account users don't have it in their persisted module_keys yet.
+      // Show it unconditionally as long as they have access to the settings
+      // section at all.
+      if (item.moduleKey === "settings_personal_profile") return true;
+      return allowed.has(item.moduleKey);
+    });
   }, [rawSubSettingsItems, subaccountMyAccess, subaccountMyAccessLoading]);
 
   useEffect(() => {
