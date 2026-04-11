@@ -746,7 +746,23 @@ class TeamMembersFoundationTests(unittest.TestCase):
         keys = [str(item["key"]) for item in items]
         self.assertEqual(
             keys,
-            ["dashboard", "campaigns", "rules", "creative", "recommendations", "settings"],
+            [
+                "dashboard",
+                "campaigns",
+                "rules",
+                "creative",
+                "recommendations",
+                "media",
+                "settings",
+                "settings_personal_profile",
+                "settings_profile",
+                "settings_team",
+                "settings_integrations",
+                "settings_accounts",
+                "settings_tags",
+                "settings_audit_logs",
+                "settings_ai_agents",
+            ],
         )
 
     def test_module_catalog_endpoint_returns_empty_when_db_is_unavailable(self):

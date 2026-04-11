@@ -497,6 +497,7 @@ export function AppShell({
     () =>
       subSettingsId
         ? [
+            { href: `/subaccount/${subSettingsId}/settings/personal`, label: "Profil", moduleKey: "settings_personal_profile" },
             { href: `/subaccount/${subSettingsId}/settings/profile`, label: "Profil Business", moduleKey: "settings_profile" },
             { href: `/subaccount/${subSettingsId}/settings/team`, label: "Echipa Mea", moduleKey: "settings_team" },
             { href: `/subaccount/${subSettingsId}/settings/integrations`, label: "Integrări", moduleKey: "settings_integrations" },
@@ -908,7 +909,11 @@ export function AppShell({
   const showSubaccountSettingsEntry = contextClientId !== null ? Boolean(subaccountMyAccess?.module_keys?.map((k) => k.toLowerCase()).includes("settings")) : false;
   const showAgencySettingsEntry = contextClientId === null ? filteredAgencySettingsItems.length > 0 : false;
 
-  const profileTargetHref = isSubContext ? "/settings/team" : ["super_admin", "agency_owner", "agency_admin"].includes(sessionInfo.role) ? "/settings/profile" : "/settings/team";
+  const profileTargetHref = isSubContext && contextClientId
+    ? `/subaccount/${contextClientId}/settings/personal`
+    : ["super_admin", "agency_owner", "agency_admin"].includes(sessionInfo.role)
+      ? "/settings/profile"
+      : "/settings/team";
 
   const switcherBodyContent = (
     <>
