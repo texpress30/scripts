@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import (
@@ -285,6 +285,84 @@ def complete_direct_upload(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to complete upload") from exc
     return StorageUploadCompleteResponse(**response_payload)
+
+
+@router.post("/uploads/binary", response_model=StorageUploadCompleteResponse)
+async def upload_binary(
+    client_id: int = Form(..., ge=1),
+    kind: Literal["image", "video", "document", "audio", "other"] = Form(...),
+    folder_id: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(get_current_user),
+) -> StorageUploadCompleteResponse:
+    """Server-side upload fallback. The normal flow is browser → presigned
+    PUT → S3, but that can fail in environments where the bucket's CORS
+    policy isn't configured for the current origin (the browser then
+    throws "TypeError: Failed to fetch" before any request reaches the
+    backend). This endpoint accepts the raw multipart body, runs the
+    same init → S3 put → mark-ready pipeline entirely server-side, and
+    returns a payload compatible with the existing presigned flow."""
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
+
+    content_bytes = await file.read()
+    if not content_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file body")
+
+    original_filename = str(file.filename or "").strip() or "file"
+    mime_type = str(file.content_type or "").strip() or "application/octet-stream"
+
+    try:
+        init_payload = storage_upload_init_service.init_upload(
+            client_id=int(client_id),
+            kind=kind,
+            original_filename=original_filename,
+            mime_type=mime_type,
+            size_bytes=len(content_bytes),
+            metadata={"upload_strategy": "backend_proxy"},
+            folder_id=str(folder_id or "").strip() or None,
+        )
+    except StorageUploadInitError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    bucket = str(init_payload.get("bucket") or "").strip()
+    storage_key = str(init_payload.get("key") or "").strip()
+    media_id = str(init_payload.get("media_id") or "").strip()
+    if bucket == "" or storage_key == "" or media_id == "":
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload initialization returned an incomplete payload")
+
+    try:
+        from app.services.s3_provider import get_s3_client
+
+        s3 = get_s3_client()
+        s3.put_object(
+            Bucket=bucket,
+            Key=storage_key,
+            Body=content_bytes,
+            ContentType=mime_type,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("storage_uploads_binary_s3_put_failed client_id=%s key=%s", client_id, storage_key)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to upload file to S3: {exc}",
+        ) from exc
+
+    try:
+        complete_payload = storage_upload_complete_service.complete_upload(
+            client_id=int(client_id),
+            media_id=media_id,
+        )
+    except StorageUploadCompleteError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("storage_uploads_binary_complete_failed client_id=%s media_id=%s", client_id, media_id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to complete upload") from exc
+
+    return StorageUploadCompleteResponse(**complete_payload)
 
 
 @router.get("/media", response_model=StorageMediaListResponse)

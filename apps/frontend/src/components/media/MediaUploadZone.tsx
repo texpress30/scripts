@@ -7,6 +7,7 @@ import {
   completeDirectUpload,
   initDirectUpload,
   uploadFileToPresignedUrl,
+  uploadFileViaBackend,
   type StorageKind,
 } from "@/lib/storage-client";
 
@@ -46,24 +47,44 @@ export function MediaUploadZone({
       for (const file of Array.from(files)) {
         setProgressLabel(`Încarc ${file.name}...`);
         const kind = detectKind(file);
-        const init = await initDirectUpload({
-          clientId,
-          kind,
-          fileName: file.name,
-          mimeType: file.type || "application/octet-stream",
-          sizeBytes: file.size,
-          folderId,
-        });
-        await uploadFileToPresignedUrl({
-          url: init.upload.url,
-          file,
-          method: init.upload.method,
-          headers: init.upload.headers,
-        });
-        await completeDirectUpload({
-          clientId,
-          mediaId: init.media_id,
-        });
+        try {
+          // Fast path: browser → S3 presigned PUT
+          const init = await initDirectUpload({
+            clientId,
+            kind,
+            fileName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            sizeBytes: file.size,
+            folderId,
+          });
+          await uploadFileToPresignedUrl({
+            url: init.upload.url,
+            file,
+            method: init.upload.method,
+            headers: init.upload.headers,
+          });
+          await completeDirectUpload({
+            clientId,
+            mediaId: init.media_id,
+          });
+        } catch (err) {
+          // Fallback: backend-proxied upload. The browser-direct PUT fails with
+          // a low-level TypeError ("Failed to fetch") when the S3 bucket's CORS
+          // policy doesn't include the current origin (or on mixed-content /
+          // offline scenarios). Route the file through the FastAPI server in
+          // that case instead of surfacing the error to the user.
+          const isNetworkError =
+            err instanceof TypeError ||
+            (err instanceof Error && /failed to fetch/i.test(err.message));
+          if (!isNetworkError) throw err;
+          setProgressLabel(`Încarc ${file.name} (fallback)...`);
+          await uploadFileViaBackend({
+            clientId,
+            kind,
+            file,
+            folderId,
+          });
+        }
         completedCount += 1;
       }
       setProgressLabel(null);
