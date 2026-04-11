@@ -260,8 +260,16 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
 
           return base;
         }).filter((el) => {
-          // Remove image elements with no valid content (ghost placeholders)
-          if (el.type === "image" && (!el.content || !el.content.startsWith("http"))) return false;
+          // Remove image elements with no valid content (ghost placeholders).
+          // Accept both http(s) URLs (dynamic bindings, enriched-catalog
+          // feeds) and data: URLs (Public Elements emojis serialized as
+          // base64) — anything else is a ghost we must not persist.
+          if (el.type === "image") {
+            const content = el.content || "";
+            const isValid =
+              content.startsWith("http") || content.startsWith("data:");
+            if (!isValid) return false;
+          }
           return true;
         });
       },
@@ -616,10 +624,12 @@ async function createFabricObject(data: Record<string, unknown>): Promise<Fabric
       });
     case "image": {
       const src = data.src as string;
-      // Skip images with no valid src — prevents ghost placeholder rectangles
-      if (!src || !src.startsWith("http")) return null;
+      // Skip images with no valid src — prevents ghost placeholder rectangles.
+      // Accept http(s) URLs and data: URLs (Public Elements emojis persisted
+      // as base64).
+      if (!src || !(src.startsWith("http") || src.startsWith("data:"))) return null;
       try {
-        const img = await FabricImage.fromURL(data.src as string);
+        const img = await FabricImage.fromURL(src);
         img.set({
           left: data.left as number,
           top: data.top as number,
