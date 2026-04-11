@@ -173,7 +173,7 @@ export function MediaLibraryView({
   const [summary, setSummary] = useState<{ total_files: number; total_bytes: number } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(50);
   const [pageSizeMenuOpen, setPageSizeMenuOpen] = useState(false);
 
   const currentFolderId = activeFolderId;
