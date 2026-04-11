@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
@@ -25,6 +26,7 @@ import { useMediaLibrary } from "@/lib/hooks/useMediaLibrary";
 import {
   createFolder,
   deleteFolder,
+  getFolderAncestors,
   getMediaSummary,
   renameFolder,
   type StorageFolder,
@@ -131,6 +133,16 @@ export function MediaLibraryView({
   kindFilter,
   readOnly = false,
 }: MediaLibraryViewProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Only the "main page" usage of MediaLibraryView should drive/read the URL
+  // query param. Embedded usages (e.g. inside the MediaPicker modal) keep
+  // their own local breadcrumb state so navigating a folder in the picker
+  // doesn't pollute the host page's URL.
+  const urlSyncEnabled = !embed;
+  const urlFolderId = urlSyncEnabled ? searchParams?.get("folder") || null : null;
+
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([{ folder_id: null, name: "Home" }]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -155,6 +167,58 @@ export function MediaLibraryView({
   const [pageSizeMenuOpen, setPageSizeMenuOpen] = useState(false);
 
   const currentFolderId = breadcrumbs[breadcrumbs.length - 1]?.folder_id ?? null;
+
+  // Restore the breadcrumb from the `?folder=...` query param on mount /
+  // whenever it changes (e.g. browser back/forward), by fetching the
+  // folder's ancestor chain from the backend.
+  useEffect(() => {
+    if (!Number.isFinite(clientId) || clientId <= 0) return;
+    if (!urlFolderId) {
+      setBreadcrumbs([{ folder_id: null, name: "Home" }]);
+      return;
+    }
+    // Avoid re-fetching if we already have the right folder in state.
+    const lastEntry = breadcrumbs[breadcrumbs.length - 1];
+    if (lastEntry && lastEntry.folder_id === urlFolderId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await getFolderAncestors({ clientId, folderId: urlFolderId });
+        if (cancelled) return;
+        const nextBreadcrumbs: BreadcrumbEntry[] = [
+          { folder_id: null, name: "Home" },
+          ...response.items.map((folder) => ({
+            folder_id: folder.folder_id,
+            name: folder.name,
+          })),
+        ];
+        setBreadcrumbs(nextBreadcrumbs);
+      } catch {
+        if (!cancelled) setBreadcrumbs([{ folder_id: null, name: "Home" }]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally omitting `breadcrumbs` from deps — we only want this
+    // effect to react to url/clientId changes, not to every breadcrumb
+    // mutation triggered by in-page navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, urlFolderId]);
+
+  const pushFolderToUrl = useCallback(
+    (folderId: string | null) => {
+      if (!urlSyncEnabled || !pathname) return;
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      if (folderId) params.set("folder", folderId);
+      else params.delete("folder");
+      const nextQuery = params.toString();
+      const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+      router.replace(nextUrl, { scroll: false });
+    },
+    [pathname, router, searchParams, urlSyncEnabled],
+  );
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -233,13 +297,25 @@ export function MediaLibraryView({
     refreshSummary();
   }, [refreshSummary]);
 
-  const enterFolder = useCallback((folder: StorageFolder) => {
-    setBreadcrumbs((prev) => [...prev, { folder_id: folder.folder_id, name: folder.name }]);
-  }, []);
+  const enterFolder = useCallback(
+    (folder: StorageFolder) => {
+      setBreadcrumbs((prev) => [...prev, { folder_id: folder.folder_id, name: folder.name }]);
+      pushFolderToUrl(folder.folder_id);
+    },
+    [pushFolderToUrl],
+  );
 
-  const jumpTo = useCallback((index: number) => {
-    setBreadcrumbs((prev) => prev.slice(0, index + 1));
-  }, []);
+  const jumpTo = useCallback(
+    (index: number) => {
+      setBreadcrumbs((prev) => {
+        const next = prev.slice(0, index + 1);
+        const target = next[next.length - 1];
+        pushFolderToUrl(target?.folder_id ?? null);
+        return next;
+      });
+    },
+    [pushFolderToUrl],
+  );
 
   const openCreate = useCallback(() => {
     setFolderMutationError("");

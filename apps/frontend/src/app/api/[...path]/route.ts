@@ -16,6 +16,8 @@ function resolveRevalidateSeconds(joined: string): number | false {
   if (p === "clients" || p.startsWith("clients/")) return false;
   if (p.startsWith("team/")) return 120;
   if (p.startsWith("company/")) return false;
+  if (p.startsWith("storage")) return false;  // media library mutations + binary previews
+  if (p.startsWith("user/")) return false;     // personal profile read/write
   return 30;
 }
 

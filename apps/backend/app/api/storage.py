@@ -585,6 +585,27 @@ def list_folders(
     return StorageFolderListResponse(items=[StorageFolderResponse(**_folder_payload(item)) for item in items])
 
 
+@router.get("/folders/{folder_id}/ancestors", response_model=StorageFolderListResponse)
+def get_folder_ancestors(
+    folder_id: str,
+    client_id: int = Query(..., ge=1),
+    user: AuthUser = Depends(get_current_user),
+) -> StorageFolderListResponse:
+    """Return the ancestor chain from root to the given folder so the UI can
+    rebuild the breadcrumb after a page reload (deep-linked folder URLs)."""
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
+    try:
+        chain = media_folder_service.list_ancestors(
+            client_id=int(client_id),
+            folder_id=folder_id,
+        )
+    except MediaFolderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return StorageFolderListResponse(items=[StorageFolderResponse(**_folder_payload(item)) for item in chain])
+
+
 @router.post("/folders", response_model=StorageFolderResponse)
 def create_folder(
     payload: StorageFolderCreateRequest,
