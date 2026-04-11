@@ -11,6 +11,7 @@ import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useChannelProducts } from "@/lib/hooks/useChannelProducts";
 import { useChannels } from "@/lib/hooks/useMasterFields";
+import { usePrimeCutouts, useShufflePool } from "@/lib/hooks/useShufflePool";
 import { apiRequest } from "@/lib/api";
 import type { CanvasEditorHandle } from "@/components/enriched-catalog/CanvasEditor";
 import type { UpdateTemplatePayload } from "@/lib/hooks/useCreativeTemplates";
@@ -90,6 +91,24 @@ export default function TemplateEditorPage() {
   const { channels } = useChannels(firstSourceId);
   const firstChannelId = (channels?.length ?? 0) > 0 ? channels![0].id : null;
   const { products, columns, total: totalProducts, isLoading: productsLoading } = useChannelProducts(firstChannelId, 1, 50);
+
+  // Shuffle pool: products that already have a background-removed cutout and
+  // that match this template's treatment filters. The pool is refreshed every
+  // 5s while the background-removal worker is still priming cutouts, so the
+  // ready-count chip in the top bar grows live.
+  const shufflePool = useShufflePool(templateId, { limit: 50 });
+  const primeMutation = usePrimeCutouts();
+
+  // Kick off priming the first time the editor opens a template. The backend
+  // is idempotent (image_cutouts is unique on (client_id, source_hash)) so
+  // double-opens don't re-run the ML step.
+  const primedTemplateRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!templateId || primedTemplateRef.current === templateId) return;
+    primedTemplateRef.current = templateId;
+    primeMutation.mutate({ templateId, limit: 200 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId]);
 
   const hasFormatGroup = (siblings?.length ?? 0) > 1;
   const [saving, setSaving] = useState(false);
@@ -434,6 +453,27 @@ export default function TemplateEditorPage() {
               </span>
             )}
           </button>
+
+          {/* Cutout readiness chip — how many products in this template's feed
+              already have a background-removed cutout ready for compositing.
+              Polls every 5s while the priming worker is still processing so
+              the count grows live. Hidden when the API isn't reachable or the
+              template isn't bound to an output feed. */}
+          {shufflePool.data && shufflePool.data.output_feed_id && (
+            <div
+              className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400"
+              title="Products with a ready transparent-background cutout. The editor's Shuffle button can pick from these instantly."
+            >
+              {shufflePool.data.pool_ready_count < 50 && shufflePool.data.pool_ready_count < shufflePool.data.total_products ? (
+                <Loader2 className="h-3 w-3 animate-spin text-indigo-500" />
+              ) : (
+                <Wand2 className="h-3 w-3 text-emerald-500" />
+              )}
+              <span>
+                Cutouts {shufflePool.data.pool_ready_count}/{shufflePool.data.total_products}
+              </span>
+            </div>
+          )}
 
           <div className="h-5 w-px bg-slate-200 dark:bg-slate-600" />
 
