@@ -75,15 +75,15 @@ export default function SettingsStoragePage() {
     };
   }, [search, page, pageSize, refreshTick]);
 
-  // Keep the totals fresh: refetch every 30s while the tab is visible and
-  // whenever the window regains focus, so new uploads in a sub-account's
+  // Keep the totals fresh: refetch once every 24h while the tab is visible
+  // and whenever the window regains focus, so new uploads in a sub-account's
   // Media Storage surface here without a manual reload.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const triggerRefresh = () => setRefreshTick((prev) => prev + 1);
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") triggerRefresh();
-    }, 30_000);
+    }, 24 * 60 * 60 * 1000);
     const onFocus = () => triggerRefresh();
     window.addEventListener("focus", onFocus);
     return () => {
