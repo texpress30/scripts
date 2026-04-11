@@ -25,10 +25,14 @@ export function TemplateGroupCard({ groupName, templates, onEdit, onDuplicate, o
   const primaryTemplate = templates[0];
 
   return (
-    <div className="mcc-card group relative flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+    <div
+      className={`mcc-card group relative flex flex-col rounded-lg border border-slate-200 bg-white shadow-sm transition hover:shadow-md dark:border-slate-700 dark:bg-slate-800${
+        menuOpen ? " z-30" : ""
+      }`}
+    >
       {/* Preview area */}
       <div
-        className="relative flex h-40 items-center justify-center overflow-hidden"
+        className="relative flex h-40 items-center justify-center overflow-hidden rounded-t-lg"
         style={{ backgroundColor: primaryTemplate.background_color || "#f1f5f9" }}
         onClick={() => onEdit(primaryTemplate.id)}
         role="button"
