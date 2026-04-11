@@ -1,6 +1,41 @@
 import { apiRequest } from "@/lib/api";
 
 export type StorageKind = "image" | "video" | "document";
+export type StorageMediaSort = "newest" | "oldest" | "name_asc" | "name_desc";
+export type StorageMediaSource = "user_upload" | "backend_ingest" | "platform_sync" | "enriched_catalog";
+
+export type StorageMediaListItem = {
+  media_id: string;
+  client_id: number;
+  kind: StorageKind | string;
+  source: StorageMediaSource | string;
+  status: string;
+  original_filename: string;
+  display_name: string;
+  folder_id: string | null;
+  mime_type: string;
+  size_bytes?: number | null;
+  created_at?: string | null;
+  uploaded_at?: string | null;
+};
+
+export type StorageMediaListResponse = {
+  items: StorageMediaListItem[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type StorageFolder = {
+  folder_id: string;
+  client_id: number;
+  parent_folder_id: string | null;
+  name: string;
+  system: boolean;
+  status: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
 
 export type StorageUploadInitResponse = {
   media_id: string;
@@ -47,6 +82,7 @@ export async function initDirectUpload(params: {
   mimeType: string;
   sizeBytes: number;
   metadata?: Record<string, unknown>;
+  folderId?: string | null;
 }): Promise<StorageUploadInitResponse> {
   return apiRequest<StorageUploadInitResponse>("/storage/uploads/init", {
     method: "POST",
@@ -57,6 +93,7 @@ export async function initDirectUpload(params: {
       mime_type: params.mimeType,
       size_bytes: params.sizeBytes,
       metadata: params.metadata ?? {},
+      folder_id: params.folderId ?? null,
     }),
   });
 }
@@ -102,4 +139,115 @@ export async function getMediaAccessUrl(params: {
     disposition: params.disposition || "inline",
   });
   return apiRequest<StorageAccessUrlResponse>(`/storage/media/${encodeURIComponent(params.mediaId)}/access-url?${query.toString()}`);
+}
+
+export async function listMedia(params: {
+  clientId: number;
+  folderId?: string | null; // "root" for top-level files
+  kind?: StorageKind;
+  search?: string;
+  sort?: StorageMediaSort;
+  limit?: number;
+  offset?: number;
+}): Promise<StorageMediaListResponse> {
+  const query = new URLSearchParams();
+  query.set("client_id", String(params.clientId));
+  if (params.folderId !== undefined && params.folderId !== null && params.folderId !== "") {
+    query.set("folder_id", params.folderId);
+  }
+  if (params.kind) query.set("kind", params.kind);
+  if (params.search && params.search.trim() !== "") query.set("search", params.search.trim());
+  if (params.sort) query.set("sort", params.sort);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.offset !== undefined) query.set("offset", String(params.offset));
+  return apiRequest<StorageMediaListResponse>(`/storage/media?${query.toString()}`);
+}
+
+export async function updateMedia(params: {
+  clientId: number;
+  mediaId: string;
+  displayName?: string;
+  folderId?: string | null;
+  clearFolder?: boolean;
+}): Promise<StorageMediaListItem> {
+  return apiRequest<StorageMediaListItem>(`/storage/media/${encodeURIComponent(params.mediaId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      client_id: params.clientId,
+      display_name: params.displayName,
+      folder_id: params.folderId ?? null,
+      clear_folder: params.clearFolder ?? false,
+    }),
+  });
+}
+
+export async function deleteMedia(params: {
+  clientId: number;
+  mediaId: string;
+}): Promise<void> {
+  const query = new URLSearchParams({ client_id: String(params.clientId) });
+  await apiRequest<unknown>(`/storage/media/${encodeURIComponent(params.mediaId)}?${query.toString()}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Folders ───────────────────────────────────────────────────────────────
+
+export async function listFolders(params: {
+  clientId: number;
+  parentFolderId?: string | null;
+}): Promise<{ items: StorageFolder[] }> {
+  const query = new URLSearchParams({ client_id: String(params.clientId) });
+  if (params.parentFolderId) query.set("parent_folder_id", params.parentFolderId);
+  return apiRequest<{ items: StorageFolder[] }>(`/storage/folders?${query.toString()}`);
+}
+
+export async function createFolder(params: {
+  clientId: number;
+  name: string;
+  parentFolderId?: string | null;
+}): Promise<StorageFolder> {
+  return apiRequest<StorageFolder>("/storage/folders", {
+    method: "POST",
+    body: JSON.stringify({
+      client_id: params.clientId,
+      name: params.name,
+      parent_folder_id: params.parentFolderId ?? null,
+    }),
+  });
+}
+
+export async function renameFolder(params: {
+  clientId: number;
+  folderId: string;
+  name: string;
+}): Promise<StorageFolder> {
+  return apiRequest<StorageFolder>(`/storage/folders/${encodeURIComponent(params.folderId)}/rename`, {
+    method: "PATCH",
+    body: JSON.stringify({ client_id: params.clientId, name: params.name }),
+  });
+}
+
+export async function moveFolder(params: {
+  clientId: number;
+  folderId: string;
+  parentFolderId: string | null;
+}): Promise<StorageFolder> {
+  return apiRequest<StorageFolder>(`/storage/folders/${encodeURIComponent(params.folderId)}/move`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      client_id: params.clientId,
+      parent_folder_id: params.parentFolderId ?? null,
+    }),
+  });
+}
+
+export async function deleteFolder(params: {
+  clientId: number;
+  folderId: string;
+}): Promise<void> {
+  const query = new URLSearchParams({ client_id: String(params.clientId) });
+  await apiRequest<unknown>(`/storage/folders/${encodeURIComponent(params.folderId)}?${query.toString()}`, {
+    method: "DELETE",
+  });
 }
