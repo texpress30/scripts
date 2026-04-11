@@ -1682,7 +1682,7 @@ class ClientRegistryService:
 
         if self._is_test_mode():
             with self._lock:
-                items = [
+                candidates = [
                     {
                         "id": c.id,
                         "name": c.name,
@@ -1692,10 +1692,11 @@ class ClientRegistryService:
                     for c in self._clients
                     if c.source == "manual" and (token == "" or token in c.name.lower())
                 ]
-            total = len(items)
+            total = len(candidates)
             start = (page - 1) * page_size
             end = start + page_size
-            return items[start:end], total
+            page_items = candidates[start:end]
+            return self._overlay_live_media_bytes(page_items), total
 
         clauses = ["c.source = 'manual'"]
         values: list[object] = []
@@ -1730,7 +1731,32 @@ class ClientRegistryService:
             }
             for row in rows
         ]
-        return items, total
+        return self._overlay_live_media_bytes(items), total
+
+    def _overlay_live_media_bytes(
+        self,
+        items: list[dict[str, str | int]],
+    ) -> list[dict[str, str | int]]:
+        """Replace each item's `media_storage_bytes` with the live Mongo
+        aggregate from `media_files`. Silently falls back to the stored
+        value if the lookup fails (e.g. Mongo unavailable) so the usage
+        page always renders."""
+        if not items:
+            return items
+        client_ids = [int(item.get("id") or 0) for item in items]
+        try:
+            from app.services.media_metadata_repository import media_metadata_repository
+
+            live_summary = media_metadata_repository.summarize_for_clients(client_ids=client_ids)
+        except Exception:  # noqa: BLE001
+            return items
+        overlaid: list[dict[str, str | int]] = []
+        for item in items:
+            cid = int(item.get("id") or 0)
+            live = live_summary.get(cid) or {}
+            bytes_value = int(live.get("total_bytes") or 0)
+            overlaid.append({**item, "media_storage_bytes": bytes_value})
+        return overlaid
 
 
     def clear(self) -> None:

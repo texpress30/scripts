@@ -350,6 +350,45 @@ class MediaMetadataRepository:
             "total_bytes": int(record.get("total_bytes") or 0),
         }
 
+    def summarize_for_clients(self, *, client_ids: list[int]) -> dict[int, dict[str, int]]:
+        """Batch version of `summarize_for_client` — returns
+        `{client_id: {"total_files": N, "total_bytes": N}}` for every id
+        that has at least one ready media file. Clients with zero files
+        are simply absent from the returned dict (callers should treat
+        missing entries as zero). Raises on Mongo connection failure so
+        callers can choose to fall back to a cached/default value."""
+        normalized = sorted({int(cid) for cid in client_ids if int(cid) > 0})
+        if not normalized:
+            return {}
+        pipeline = [
+            {
+                "$match": {
+                    "client_id": {"$in": normalized},
+                    "status": {"$nin": ["purged", "delete_requested", "draft"]},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$client_id",
+                    "total_files": {"$sum": 1},
+                    "total_bytes": {"$sum": {"$ifNull": ["$size_bytes", 0]}},
+                }
+            },
+        ]
+        results = list(self._collection().aggregate(pipeline))
+        summary: dict[int, dict[str, int]] = {}
+        for record in results:
+            if not isinstance(record, dict):
+                continue
+            cid = int(record.get("_id") or 0)
+            if cid <= 0:
+                continue
+            summary[cid] = {
+                "total_files": int(record.get("total_files") or 0),
+                "total_bytes": int(record.get("total_bytes") or 0),
+            }
+        return summary
+
     def mark_ready(
         self,
         *,
