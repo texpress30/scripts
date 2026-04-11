@@ -110,8 +110,45 @@ export default function TemplateEditorPage() {
 
   // Enriched Feed Filters — modal opens from the SKU chip in the top bar and
   // narrows the set of rows the shuffle / source-feed panel iterates over.
+  // Filters are persisted per-template in localStorage so they survive a
+  // page refresh; the user explicitly clears them via the modal's Clear All
+  // / trash controls.
+  const filtersStorageKey = templateId ? `enriched-feed-filters:${templateId}` : "";
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [feedFilters, setFeedFilters] = useState<FeedFilter[]>([]);
+  const [feedFilters, setFeedFilters] = useState<FeedFilter[]>(() => {
+    if (typeof window === "undefined" || !filtersStorageKey) return [];
+    try {
+      const raw = window.localStorage.getItem(filtersStorageKey);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      // Defensive validation: only accept items that look like a FeedFilter
+      // so an unrelated localStorage entry can't crash the editor.
+      return parsed.filter(
+        (f): f is FeedFilter =>
+          f != null &&
+          typeof f === "object" &&
+          typeof (f as FeedFilter).id === "string" &&
+          typeof (f as FeedFilter).column === "string" &&
+          typeof (f as FeedFilter).operator === "string" &&
+          typeof (f as FeedFilter).value === "string",
+      );
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !filtersStorageKey) return;
+    try {
+      if (feedFilters.length === 0) {
+        window.localStorage.removeItem(filtersStorageKey);
+      } else {
+        window.localStorage.setItem(filtersStorageKey, JSON.stringify(feedFilters));
+      }
+    } catch {
+      // Ignore quota / private-mode errors — the filter still works in-memory.
+    }
+  }, [feedFilters, filtersStorageKey]);
   const filteredProducts = useMemo(
     () => applyFeedFilters(products, feedFilters),
     [products, feedFilters],
