@@ -38,6 +38,7 @@ import { CreateFolderModal } from "./CreateFolderModal";
 import { FileCard } from "./FileCard";
 import { FolderCard } from "./FolderCard";
 import { MediaPreviewModal } from "./MediaPreviewModal";
+import { MediaThumbnail } from "./MediaThumbnail";
 import { MediaUploadZone } from "./MediaUploadZone";
 
 type BreadcrumbEntry = {
@@ -70,6 +71,31 @@ function formatBytes(bytes: number | null | undefined): string {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
+
+const SHORT_DATE_MONTHS = [
+  "Ian",
+  "Feb",
+  "Mar",
+  "Apr",
+  "Mai",
+  "Iun",
+  "Iul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Noi",
+  "Dec",
+];
+
+function formatShortDate(value: string | null | undefined): string {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  const month = SHORT_DATE_MONTHS[parsed.getMonth()] || "";
+  return `${month} ${parsed.getDate()}, ${parsed.getFullYear()}`;
+}
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const SORT_OPTIONS: Array<{ value: StorageMediaSort; label: string }> = [
   { value: "name_asc", label: "Nume: A la Z" },
@@ -123,6 +149,10 @@ export function MediaLibraryView({
   const [kindMenuOpen, setKindMenuOpen] = useState(false);
   const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
   const [summary, setSummary] = useState<{ total_files: number; total_bytes: number } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [pageSizeMenuOpen, setPageSizeMenuOpen] = useState(false);
 
   const currentFolderId = breadcrumbs[breadcrumbs.length - 1]?.folder_id ?? null;
 
@@ -146,7 +176,32 @@ export function MediaLibraryView({
     kind: resolvedKind,
     search: debouncedSearch || undefined,
     sort,
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
   });
+
+  // Reset to page 1 when any filter / navigation changes so the pagination
+  // doesn't point at an empty page of the new result set.
+  useEffect(() => {
+    setPage(1);
+  }, [currentFolderId, debouncedSearch, sort, kind, pageSize]);
+
+  // Drop stale selections when the visible rows change.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(files.map((file) => file.media_id));
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (visible.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [files]);
+
+  const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
+  const canGoPrev = page > 1;
+  const canGoNext = page < totalPages;
 
   useEffect(() => {
     if (libraryError) setErrorBanner(libraryError);
@@ -522,6 +577,35 @@ export function MediaLibraryView({
     </div>
   ) : null;
 
+  const allVisibleSelected =
+    files.length > 0 && files.every((file) => selectedIds.has(file.media_id));
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      if (files.length === 0) return prev;
+      if (files.every((file) => prev.has(file.media_id))) {
+        const next = new Set(prev);
+        files.forEach((file) => next.delete(file.media_id));
+        return next;
+      }
+      const next = new Set(prev);
+      files.forEach((file) => next.add(file.media_id));
+      return next;
+    });
+  };
+
+  const toggleRowSelected = (mediaId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(mediaId)) next.delete(mediaId);
+      else next.add(mediaId);
+      return next;
+    });
+  };
+
+  const openFileAction = (file: StorageMediaListItem) =>
+    (onFileSelect ?? ((target) => setPreviewFile(target)))(file);
+
   const filesSection = hasFiles ? (
     <div>
       <p className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">Fișiere ({total})</p>
@@ -532,38 +616,172 @@ export function MediaLibraryView({
               key={file.media_id}
               clientId={clientId}
               file={file}
-              onClick={onFileSelect ?? ((target) => setPreviewFile(target))}
+              selected={selectedIds.has(file.media_id)}
+              onClick={openFileAction}
             />
           ))}
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
+            <thead className="bg-slate-50 text-xs font-medium uppercase text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
               <tr>
+                <th className="w-10 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label="Selectează tot"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                </th>
+                <th className="w-16 px-3 py-2 text-left">Media</th>
                 <th className="px-3 py-2 text-left">Nume</th>
-                <th className="px-3 py-2 text-left">Tip</th>
-                <th className="px-3 py-2 text-left">Mărime</th>
-                <th className="px-3 py-2 text-left">Modificat</th>
+                <th className="w-36 px-3 py-2 text-left">Actualizat la</th>
+                <th className="w-28 px-3 py-2 text-left">Mărime</th>
+                <th className="w-28 px-3 py-2 text-left">Dimensiuni</th>
+                <th className="w-16 px-3 py-2 text-right">Acțiuni</th>
               </tr>
             </thead>
             <tbody>
-              {files.map((file) => (
-                <tr
-                  key={file.media_id}
-                  onClick={() => (onFileSelect ?? ((target) => setPreviewFile(target)))(file)}
-                  className="cursor-pointer border-t border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  <td className="truncate px-3 py-2">{file.display_name || file.original_filename}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{file.kind}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{formatBytes(file.size_bytes)}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">
-                    {file.uploaded_at ? new Date(file.uploaded_at).toLocaleString() : "-"}
-                  </td>
-                </tr>
-              ))}
+              {files.map((file) => {
+                const label = file.display_name || file.original_filename;
+                const isSelected = selectedIds.has(file.media_id);
+                return (
+                  <tr
+                    key={file.media_id}
+                    className={cn(
+                      "border-t border-slate-200 text-slate-700 transition-colors dark:border-slate-700 dark:text-slate-200",
+                      isSelected
+                        ? "bg-indigo-50/60 dark:bg-indigo-950/30"
+                        : "hover:bg-slate-50 dark:hover:bg-slate-800",
+                    )}
+                  >
+                    <td
+                      className="w-10 px-3 py-2 align-middle"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Selectează ${label}`}
+                        checked={isSelected}
+                        onChange={() => toggleRowSelected(file.media_id)}
+                        className="h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </td>
+                    <td className="w-16 px-3 py-2 align-middle">
+                      <button
+                        type="button"
+                        onClick={() => openFileAction(file)}
+                        className="block h-11 w-11 overflow-hidden rounded-md border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+                        title={label}
+                      >
+                        <MediaThumbnail
+                          clientId={clientId}
+                          mediaId={file.media_id}
+                          kind={file.kind}
+                          displayName={label}
+                        />
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 align-middle">
+                      <button
+                        type="button"
+                        onClick={() => openFileAction(file)}
+                        className="truncate text-left text-sm font-medium text-slate-800 hover:text-indigo-700 dark:text-slate-100 dark:hover:text-indigo-300"
+                        title={label}
+                      >
+                        {label}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 align-middle text-xs text-slate-500 dark:text-slate-400">
+                      {formatShortDate(file.uploaded_at || file.created_at)}
+                    </td>
+                    <td className="px-3 py-2 align-middle text-xs text-slate-500 dark:text-slate-400">
+                      {formatBytes(file.size_bytes)}
+                    </td>
+                    <td className="px-3 py-2 align-middle text-xs text-slate-500 dark:text-slate-400">-</td>
+                    <td
+                      className="px-3 py-2 align-middle text-right"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openFileAction(file)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        aria-label={`Acțiuni pentru ${label}`}
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {total > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => canGoPrev && setPage((prev) => Math.max(1, prev - 1))}
+            disabled={!canGoPrev}
+            className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Precedent
+          </button>
+          <span className="inline-flex h-8 items-center rounded-md border border-indigo-300 bg-indigo-50 px-3 font-medium text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+            {page}
+          </span>
+          <button
+            type="button"
+            onClick={() => canGoNext && setPage((prev) => Math.min(totalPages, prev + 1))}
+            disabled={!canGoNext}
+            className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Următorul
+          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPageSizeMenuOpen((prev) => !prev)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              {pageSize} / pagină
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+            </button>
+            {pageSizeMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setPageSizeMenuOpen(false)} />
+                <div className="absolute bottom-full right-0 z-40 mb-1 w-32 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                  {PAGE_SIZE_OPTIONS.map((option) => {
+                    const active = option === pageSize;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          setPageSize(option);
+                          setPageSizeMenuOpen(false);
+                        }}
+                        className={cn(
+                          "flex w-full items-center justify-between px-3 py-2 text-left text-sm",
+                          active
+                            ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
+                            : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800",
+                        )}
+                      >
+                        <span>{option} / pagină</span>
+                        {active && <Check className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
