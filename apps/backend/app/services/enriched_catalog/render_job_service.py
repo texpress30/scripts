@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.services.enriched_catalog.image_renderer import ImageRenderer
+from app.services.enriched_catalog.multi_format_renderer import _bridge_render_to_media_library
 from app.services.enriched_catalog.output_feed_service import output_feed_service
 from app.services.enriched_catalog.repository import creative_template_repository, treatment_repository
 
@@ -57,6 +58,14 @@ class RenderJobService:
         errors: list[dict[str, str]] = []
         entries: list[dict[str, Any]] = []
 
+        feed_subaccount_id: int | None = None
+        feed_name = ""
+        try:
+            feed_subaccount_id = int(feed.get("subaccount_id")) if feed and feed.get("subaccount_id") else None
+            feed_name = str((feed or {}).get("name") or "").strip()
+        except Exception:  # noqa: BLE001
+            feed_subaccount_id = None
+
         # Cache templates by id to avoid repeated lookups
         template_cache: dict[str, dict[str, Any] | None] = {}
 
@@ -95,6 +104,21 @@ class RenderJobService:
                 s3_key = f"enriched-catalog/{output_feed_id}/{product_id}.png"
                 image_url = self._upload(s3_key, png_bytes, "image/png")
                 rendered_count += 1
+
+                format_label = (
+                    (template or {}).get("format_label")
+                    or f"{(template or {}).get('canvas_width')}x{(template or {}).get('canvas_height')}"
+                )
+                _bridge_render_to_media_library(
+                    subaccount_id=feed_subaccount_id,
+                    feed_name=feed_name,
+                    output_feed_id=str(output_feed_id),
+                    template_id=str(template_id),
+                    product_id=product_id,
+                    format_label=str(format_label or ""),
+                    s3_key=s3_key,
+                    image_url=image_url,
+                )
 
                 entries.append({
                     "product_id": product_id,

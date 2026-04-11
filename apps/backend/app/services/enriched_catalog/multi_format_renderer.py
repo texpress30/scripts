@@ -18,6 +18,73 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _bridge_render_to_media_library(
+    *,
+    subaccount_id: int | None,
+    feed_name: str,
+    output_feed_id: str,
+    template_id: str,
+    product_id: str,
+    format_label: str,
+    s3_key: str,
+    image_url: str,
+) -> None:
+    """Register a freshly-rendered creative in the sub-account's Media Storage.
+
+    Best-effort — any failure is logged but must never abort the render. The
+    sub-account browses assets by looking up Mongo media_files rows, so this
+    is what makes the creative visible in the "Stocare Media" page.
+    """
+    if subaccount_id is None or int(subaccount_id) <= 0:
+        return
+    try:
+        from app.services.media_folder_service import media_folder_service
+        from app.services.s3_provider import get_s3_bucket_name
+        from app.services.storage_media_ingest import storage_media_ingest_service
+
+        parent_folder = media_folder_service.ensure_system_folder(
+            client_id=int(subaccount_id),
+            parent_folder_id=None,
+            name="Enriched Catalog",
+        )
+        feed_folder = media_folder_service.ensure_system_folder(
+            client_id=int(subaccount_id),
+            parent_folder_id=str(parent_folder.get("folder_id") or "") or None,
+            name=(feed_name or f"Feed {output_feed_id}")[:120],
+        )
+        bucket = str(get_s3_bucket_name() or "").strip()
+        if bucket == "" or not s3_key:
+            return
+        storage_media_ingest_service.register_existing_s3_asset(
+            client_id=int(subaccount_id),
+            kind="image",
+            source="enriched_catalog",
+            bucket=bucket,
+            key=s3_key,
+            mime_type="image/png",
+            original_filename=f"{product_id}.png",
+            display_name=f"{product_id} · {format_label}",
+            folder_id=str(feed_folder.get("folder_id") or "") or None,
+            metadata={
+                "enriched_catalog": {
+                    "output_feed_id": str(output_feed_id),
+                    "template_id": str(template_id),
+                    "product_id": str(product_id),
+                    "format_label": format_label,
+                    "image_url": image_url,
+                }
+            },
+        )
+    except Exception:  # noqa: BLE001 — bridge must never break rendering
+        logger.warning(
+            "enriched_catalog_media_bridge_error subaccount_id=%s output_feed_id=%s product_id=%s",
+            subaccount_id,
+            output_feed_id,
+            product_id,
+            exc_info=True,
+        )
+
+
 def _upload_to_s3(key: str, body: bytes, content_type: str) -> str:
     from app.services.s3_provider import get_s3_client, get_s3_bucket_name
 
@@ -68,6 +135,19 @@ class MultiFormatRenderService:
         total_rendered = 0
         total_errors: list[dict[str, str]] = []
 
+        # Resolve the owning sub-account + feed name so we can bridge each
+        # rendered PNG into that sub-account's media library.
+        feed_subaccount_id: int | None = None
+        feed_name = ""
+        try:
+            from app.services.enriched_catalog.output_feed_service import output_feed_service
+
+            feed_record = output_feed_service.get_output_feed(output_feed_id)
+            feed_subaccount_id = int(feed_record.get("subaccount_id")) if feed_record.get("subaccount_id") else None
+            feed_name = str(feed_record.get("name") or "").strip()
+        except Exception:  # noqa: BLE001
+            logger.warning("enriched_catalog_feed_lookup_error output_feed_id=%s", output_feed_id, exc_info=True)
+
         for template_id in template_ids:
             template = creative_template_repository.get_by_id(template_id)
             if template is None:
@@ -92,6 +172,16 @@ class MultiFormatRenderService:
                         "format_label": format_label,
                         "enriched_image_url": image_url,
                     })
+                    _bridge_render_to_media_library(
+                        subaccount_id=feed_subaccount_id,
+                        feed_name=feed_name,
+                        output_feed_id=str(output_feed_id),
+                        template_id=str(template_id),
+                        product_id=product_id,
+                        format_label=str(format_label or ""),
+                        s3_key=s3_key,
+                        image_url=image_url,
+                    )
                 except Exception as exc:
                     logger.warning("Failed to render product %s with template %s: %s", product_id, template_id, exc)
                     total_errors.append({
