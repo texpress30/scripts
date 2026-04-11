@@ -87,10 +87,15 @@ interface SourceFeedPanelProps {
   onProductChange: (index: number) => void;
   totalProducts: number;
   onFieldClick: (fieldKey: string, value: string) => void;
+  // When the Enriched Feed Filters modal is narrowing the product set to 0
+  // rows, the panel should show a "filtered out" empty state instead of the
+  // "import products" onboarding copy. `hasActiveFilter` true with an empty
+  // `products` array is the filtered-out case.
+  hasActiveFilter?: boolean;
 }
 
 export function SourceFeedPanel({
-  products, columns, isLoading, currentProductIndex, onProductChange, totalProducts, onFieldClick,
+  products, columns, isLoading, currentProductIndex, onProductChange, totalProducts, onFieldClick, hasActiveFilter,
 }: SourceFeedPanelProps) {
   const [search, setSearch] = useState("");
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -159,7 +164,9 @@ export function SourceFeedPanel({
   if (products.length === 0) {
     return (
       <div className="p-3 text-center text-xs text-slate-400">
-        No products in feed. Import products from Feed Management first.
+        {hasActiveFilter
+          ? "No products match the active filters. Clear the filters from the top-right SKU chip to see all products."
+          : "No products in feed. Import products from Feed Management first."}
       </div>
     );
   }
