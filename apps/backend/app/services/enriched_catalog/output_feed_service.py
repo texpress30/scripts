@@ -21,6 +21,36 @@ def _generate_token() -> str:
     return secrets.token_hex(32)
 
 
+_UNAVAILABLE_STATES: frozenset[str] = frozenset(
+    {"out_of_stock", "discontinued", "unavailable", "no"}
+)
+
+
+def _is_product_unavailable(data: dict[str, Any]) -> bool:
+    """Return True when a product should be excluded from published feeds.
+
+    Conservative: only excludes when we have strong positive evidence (either
+    ``inventory_quantity`` explicitly zero or ``availability`` naming a
+    terminal state). Products with missing inventory info are kept because
+    not every connector reports stock levels.
+    """
+    if not isinstance(data, dict):
+        return False
+    availability_raw = data.get("availability")
+    if availability_raw is not None:
+        normalized = str(availability_raw).strip().lower().replace(" ", "_")
+        if normalized in _UNAVAILABLE_STATES:
+            return True
+    qty = data.get("inventory_quantity")
+    if qty is not None:
+        try:
+            if int(qty) <= 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Result dataclass
 # ---------------------------------------------------------------------------
@@ -55,7 +85,7 @@ class OutputFeedRepository:
         "last_render_at, created_at, updated_at, "
         "feed_format, public_token, refresh_interval_hours, "
         "last_generated_at, products_count, file_size_bytes, "
-        "field_mapping_id, s3_key"
+        "field_mapping_id, s3_key, include_out_of_stock"
     )
 
     def create_output_feed(
@@ -131,6 +161,7 @@ class OutputFeedRepository:
             "last_render_at", "feed_format", "public_token",
             "refresh_interval_hours", "last_generated_at",
             "products_count", "file_size_bytes", "field_mapping_id", "s3_key",
+            "include_out_of_stock",
         )
         fields: list[str] = []
         values: list[Any] = []
@@ -232,6 +263,7 @@ class OutputFeedRepository:
             "file_size_bytes": int(row[14] or 0),
             "field_mapping_id": str(row[15]) if row[15] else None,
             "s3_key": str(row[16]) if row[16] else None,
+            "include_out_of_stock": bool(row[17]) if len(row) > 17 else False,
         }
 
     def _render_job_row_to_dict(self, row) -> dict[str, Any]:
@@ -336,8 +368,11 @@ class OutputFeedService:
         feed_format = feed.get("feed_format", "xml")
         subaccount_id = feed["subaccount_id"]
 
-        # 1. Fetch products from MongoDB
-        products = self._fetch_products(feed_source_id)
+        # 1. Fetch products from MongoDB, honoring the per-feed
+        # include_out_of_stock flag. Default behavior (unset/false) excludes
+        # unavailable products from published feeds.
+        include_oos = bool(feed.get("include_out_of_stock") or False)
+        products = self._fetch_products(feed_source_id, exclude_unavailable=not include_oos)
         if len(products) > _MAX_PRODUCTS_WARNING:
             logger.warning(
                 "Feed %s has %d products (warning threshold: %d)",
@@ -417,14 +452,25 @@ class OutputFeedService:
 
     # -- Internal helpers --------------------------------------------------
 
-    def _fetch_products(self, feed_source_id: str | None) -> list[dict[str, Any]]:
-        """Load all products for the given feed source from MongoDB."""
+    def _fetch_products(
+        self,
+        feed_source_id: str | None,
+        *,
+        exclude_unavailable: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Load all products for the given feed source from MongoDB.
+
+        When ``exclude_unavailable`` is True (the default, matching the
+        ``include_out_of_stock`` flag on ``output_feeds``), products whose
+        inventory is zero or whose availability is out_of_stock /
+        discontinued / unavailable are dropped so downstream channels never
+        see them. The safety net: products without any inventory info are
+        passed through unchanged (not every connector reports stock).
+        """
         if not feed_source_id:
             return []
         from app.services.feed_management.products_repository import feed_products_repository
 
-        raw = feed_products_repository.list_products(feed_source_id, limit=200)
-        # For large feeds we need to paginate through all products
         all_products: list[dict[str, Any]] = []
         skip = 0
         batch_size = 200
@@ -434,6 +480,8 @@ class OutputFeedService:
                 break
             for doc in batch:
                 data = doc.get("data", doc)
+                if exclude_unavailable and _is_product_unavailable(data):
+                    continue
                 all_products.append(data)
             if len(batch) < batch_size:
                 break

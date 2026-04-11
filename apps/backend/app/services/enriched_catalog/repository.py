@@ -59,6 +59,10 @@ class CreativeTemplateRepository:
             "format_group_id": data.get("format_group_id") or None,
             "format_label": data.get("format_label") or None,
             "style_sync_enabled": bool(data.get("style_sync_enabled", True)),
+            # Monotonically increasing template version. Bumped on any mutation so
+            # that the preview render cache (template_render_results) is invalidated
+            # atomically without a separate signal.
+            "version": 1,
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }
@@ -132,11 +136,14 @@ class CreativeTemplateRepository:
             if changed or sibling.get("background_color") != background_color:
                 self._collection().update_one(
                     {"id": sibling["id"]},
-                    {"$set": {
-                        "elements": sibling_elements,
-                        "background_color": background_color,
-                        "updated_at": now,
-                    }},
+                    {
+                        "$set": {
+                            "elements": sibling_elements,
+                            "background_color": background_color,
+                            "updated_at": now,
+                        },
+                        "$inc": {"version": 1},
+                    },
                 )
                 updated_count += 1
 
@@ -158,9 +165,11 @@ class CreativeTemplateRepository:
 
         from pymongo import ReturnDocument
 
+        # $inc on version atomically invalidates the render cache (keyed on
+        # template_id + version). Legacy docs without `version` get bumped from 0 → 1.
         result = self._collection().find_one_and_update(
             {"id": str(template_id)},
-            {"$set": set_payload},
+            {"$set": set_payload, "$inc": {"version": 1}},
             return_document=ReturnDocument.AFTER,
         )
         return self._normalize(result)
@@ -179,6 +188,8 @@ class CreativeTemplateRepository:
             "id": _new_id(),
             "name": str(new_name),
             "format_group_id": new_format_group_id if new_format_group_id is not None else original.get("format_group_id"),
+            # Fresh copy starts its own version lineage at 1.
+            "version": 1,
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }

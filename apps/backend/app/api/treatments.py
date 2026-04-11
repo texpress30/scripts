@@ -5,9 +5,27 @@ from pydantic import BaseModel, Field
 
 from app.api.dependencies import enforce_subaccount_action, get_current_user
 from app.services.auth import AuthUser
+from app.services.enriched_catalog import render_cache
 from app.services.enriched_catalog.models import TreatmentCreate, TreatmentUpdate
 from app.services.enriched_catalog.repository import treatment_repository
 from app.services.enriched_catalog.output_feed_service import OutputFeedNotFoundError, output_feed_service
+
+
+def _invalidate_feed_previews(output_feed_id: str) -> None:
+    """Drop every cached render for a feed so the next preview grid render
+    re-resolves its treatments. Called after any treatment mutation — the
+    product→template mapping may have changed.
+    """
+    try:
+        render_cache.invalidate_by_output_feed(output_feed_id)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "render_cache_invalidation_failed output_feed_id=%s",
+            output_feed_id,
+            exc_info=True,
+        )
 
 router = APIRouter(prefix="/creative", tags=["creative-treatments"])
 
@@ -36,7 +54,9 @@ def create_treatment(output_feed_id: str, payload: TreatmentCreate, user: AuthUs
     data = payload.model_dump()
     data["output_feed_id"] = output_feed_id
     data["filters"] = [f.model_dump() if hasattr(f, "model_dump") else f for f in (payload.filters or [])]
-    return treatment_repository.create(data)
+    created = treatment_repository.create(data)
+    _invalidate_feed_previews(output_feed_id)
+    return created
 
 
 @router.put("/treatments/{treatment_id}")
@@ -55,6 +75,7 @@ def update_treatment(treatment_id: str, payload: TreatmentUpdate, user: AuthUser
     updated = treatment_repository.update(treatment_id, update_data)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Treatment not found")
+    _invalidate_feed_previews(str(existing["output_feed_id"]))
     return updated
 
 
@@ -69,6 +90,7 @@ def delete_treatment(treatment_id: str, user: AuthUser = Depends(get_current_use
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(feed["subaccount_id"]))
     treatment_repository.delete(treatment_id)
+    _invalidate_feed_previews(str(existing["output_feed_id"]))
     return {"status": "ok", "id": treatment_id}
 
 
@@ -80,4 +102,5 @@ def reorder_treatments(output_feed_id: str, payload: ReorderTreatmentsRequest, u
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(feed["subaccount_id"]))
     treatment_repository.reorder_priority(output_feed_id, payload.treatment_ids)
+    _invalidate_feed_previews(output_feed_id)
     return {"status": "ok", "items": treatment_repository.get_by_output_feed(output_feed_id)}

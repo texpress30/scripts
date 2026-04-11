@@ -11,7 +11,12 @@ from app.services.s3_provider import get_s3_client
 from app.services.storage_upload_init import sanitize_filename
 
 _ALLOWED_KINDS: tuple[str, ...] = ("image", "video", "document", "audio", "other")
-_ALLOWED_SOURCES: tuple[str, ...] = ("backend_ingest", "platform_sync", "enriched_catalog")
+_ALLOWED_SOURCES: tuple[str, ...] = (
+    "backend_ingest",
+    "platform_sync",
+    "enriched_catalog",
+    "background_removed",
+)
 
 
 class StorageMediaIngestError(RuntimeError):
@@ -63,7 +68,10 @@ class StorageMediaIngestService:
         if normalized_kind not in _ALLOWED_KINDS:
             raise StorageMediaIngestError("kind must be one of: image, video, document", status_code=400)
         if normalized_source not in _ALLOWED_SOURCES:
-            raise StorageMediaIngestError("source must be one of: backend_ingest, platform_sync", status_code=400)
+            raise StorageMediaIngestError(
+                "source must be one of: " + ", ".join(_ALLOWED_SOURCES),
+                status_code=400,
+            )
         if normalized_filename == "":
             raise StorageMediaIngestError("original_filename is required", status_code=400)
         if normalized_mime == "":
@@ -189,7 +197,7 @@ class StorageMediaIngestService:
             raise StorageMediaIngestError("kind must be one of: image, video, document", status_code=400)
         if str(source or "").strip().lower() not in _ALLOWED_SOURCES:
             raise StorageMediaIngestError(
-                "source must be one of: backend_ingest, platform_sync, enriched_catalog",
+                "source must be one of: " + ", ".join(_ALLOWED_SOURCES),
                 status_code=400,
             )
 

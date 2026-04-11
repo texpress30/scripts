@@ -187,3 +187,59 @@ def adapt_layout(template_id: str, payload: AdaptLayoutRequest, user: AuthUser =
         "scale_factor": result["scale_factor"],
         "elements_count": len(result["elements"]),
     }
+
+
+@router.get("/{template_id}/shuffle-pool")
+def get_shuffle_pool(
+    template_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Return a randomized set of products ready to be used as shuffle samples.
+
+    Products in the pool are guaranteed to (a) match this template's treatment
+    filters and (b) already have a ready cutout in ``image_cutouts``. The pool
+    is capped so that a 100k-product catalog doesn't blow up the response —
+    the front-end picks one element per shuffle click and refetches when the
+    list runs out.
+    """
+    try:
+        template = template_service.get_template(template_id)
+    except TemplateNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    enforce_subaccount_action(
+        user=user,
+        action="creative:list",
+        subaccount_id=int(template.get("subaccount_id", 0)),
+    )
+    from app.services.enriched_catalog.shuffle_service import get_shuffle_pool as _get_pool
+
+    return _get_pool(template_id=template_id, limit=int(limit))
+
+
+@router.post("/{template_id}/prime-cutouts")
+def prime_cutouts(
+    template_id: str,
+    limit: int = Query(200, ge=1, le=2000),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Kick off background-removal priming for the top-N products of this
+    template's feed source.
+
+    Called when the editor opens so the shuffle pool grows in the background
+    while the user is designing. Idempotent (``image_cutouts`` dedup on
+    ``(client_id, source_hash)``) — repeat calls won't re-process the same
+    image twice.
+    """
+    try:
+        template = template_service.get_template(template_id)
+    except TemplateNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    enforce_subaccount_action(
+        user=user,
+        action="creative:write",
+        subaccount_id=int(template.get("subaccount_id", 0)),
+    )
+    from app.services.enriched_catalog.shuffle_service import prime_cutouts_for_template
+
+    return prime_cutouts_for_template(template_id=template_id, limit=int(limit))

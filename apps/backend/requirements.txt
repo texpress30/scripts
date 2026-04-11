@@ -13,3 +13,14 @@ pymongo==4.8.0
 Pillow>=11.0.0
 httpx>=0.27.0
 anthropic>=0.40.0
+
+# Async job queue for background removal + preview rendering.
+# Redis is already in the stack as broker/result backend.
+celery[redis]==5.4.0
+redis>=5.0.0
+
+# Background removal pipeline (U^2-Net ONNX via rembg).
+# onnxruntime is pinned to the CPU-only wheel; swap to onnxruntime-gpu when a GPU worker is provisioned.
+rembg==2.0.59
+onnxruntime==1.19.2
+numpy>=1.26.0
