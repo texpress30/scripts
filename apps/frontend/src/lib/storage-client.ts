@@ -1,7 +1,13 @@
 import { apiRequest } from "@/lib/api";
 
-export type StorageKind = "image" | "video" | "document";
-export type StorageMediaSort = "newest" | "oldest" | "name_asc" | "name_desc";
+export type StorageKind = "image" | "video" | "document" | "audio" | "other";
+export type StorageMediaSort =
+  | "newest"
+  | "oldest"
+  | "name_asc"
+  | "name_desc"
+  | "size_asc"
+  | "size_desc";
 export type StorageMediaSource = "user_upload" | "backend_ingest" | "platform_sync" | "enriched_catalog";
 
 export type StorageMediaListItem = {
@@ -250,4 +256,17 @@ export async function deleteFolder(params: {
   await apiRequest<unknown>(`/storage/folders/${encodeURIComponent(params.folderId)}?${query.toString()}`, {
     method: "DELETE",
   });
+}
+
+// ── Summary ───────────────────────────────────────────────────────────────
+
+export type StorageMediaSummary = {
+  client_id: number;
+  total_files: number;
+  total_bytes: number;
+};
+
+export async function getMediaSummary(params: { clientId: number }): Promise<StorageMediaSummary> {
+  const query = new URLSearchParams({ client_id: String(params.clientId) });
+  return apiRequest<StorageMediaSummary>(`/storage/media-summary?${query.toString()}`);
 }

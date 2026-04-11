@@ -12,9 +12,9 @@ export default function SubMediaStoragePage() {
 
   return (
     <ProtectedPage>
-      <AppShell title="Stocare Media">
+      <AppShell title={null}>
         {Number.isFinite(clientId) && clientId > 0 ? (
-          <MediaLibraryView clientId={clientId} />
+          <MediaLibraryView clientId={clientId} showHeader />
         ) : (
           <div className="wm-card p-5">
             <p className="text-sm text-slate-500 dark:text-slate-400">

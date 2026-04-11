@@ -55,6 +55,7 @@ export function MediaPicker({
           <MediaLibraryView
             clientId={clientId}
             embed
+            showHeader={false}
             kindFilter={kind}
             onFileSelect={(file) => {
               setSelected(file);

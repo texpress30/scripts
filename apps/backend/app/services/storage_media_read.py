@@ -9,9 +9,9 @@ from app.services.media_metadata_models import (
 )
 from app.services.media_metadata_repository import media_metadata_repository
 
-_SUPPORTED_KINDS: tuple[str, ...] = ("image", "video", "document")
+_SUPPORTED_KINDS: tuple[str, ...] = ("image", "video", "document", "audio", "other")
 _SUPPORTED_STATUSES: tuple[str, ...] = ("draft", "ready", "delete_requested", "purged")
-_SUPPORTED_SORTS: tuple[str, ...] = ("newest", "oldest", "name_asc", "name_desc")
+_SUPPORTED_SORTS: tuple[str, ...] = ("newest", "oldest", "name_asc", "name_desc", "size_asc", "size_desc")
 _DEFAULT_LIMIT = 25
 _MAX_LIMIT = 100
 
@@ -66,7 +66,7 @@ class StorageMediaReadService:
             raise StorageMediaReadError("status is invalid", status_code=400)
         if normalized_sort != "" and normalized_sort not in _SUPPORTED_SORTS:
             raise StorageMediaReadError(
-                "sort must be one of: newest, oldest, name_asc, name_desc",
+                "sort must be one of: newest, oldest, name_asc, name_desc, size_asc, size_desc",
                 status_code=400,
             )
 

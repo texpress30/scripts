@@ -9,7 +9,7 @@ from app.services.media_metadata_models import MediaFileKind, new_media_id
 from app.services.media_metadata_repository import media_metadata_repository
 from app.services.s3_provider import get_s3_client, get_s3_presigned_ttl_seconds
 
-_SUPPORTED_KINDS: tuple[str, ...] = ("image", "video", "document")
+_SUPPORTED_KINDS: tuple[str, ...] = ("image", "video", "document", "audio", "other")
 _FILENAME_SAFE_PATTERN = re.compile(r"[^a-zA-Z0-9._-]+")
 
 

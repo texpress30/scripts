@@ -219,6 +219,8 @@ class MediaMetadataRepository:
         "oldest": ("created_at", 1),
         "name_asc": ("display_name", 1),
         "name_desc": ("display_name", -1),
+        "size_asc": ("size_bytes", 1),
+        "size_desc": ("size_bytes", -1),
     }
 
     def list_for_client(
@@ -316,6 +318,37 @@ class MediaMetadataRepository:
             )
             or 0
         )
+
+    def summarize_for_client(self, *, client_id: int) -> dict[str, int]:
+        """Return {"total_files": N, "total_bytes": N} for a sub-account's
+        active (non-deleted, non-draft) media. Used by the UI to show a
+        "Stocare X MB utilizați" widget."""
+        pipeline = [
+            {
+                "$match": {
+                    "client_id": int(client_id),
+                    "status": {"$nin": ["purged", "delete_requested", "draft"]},
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_files": {"$sum": 1},
+                    "total_bytes": {"$sum": {"$ifNull": ["$size_bytes", 0]}},
+                }
+            },
+        ]
+        try:
+            results = list(self._collection().aggregate(pipeline))
+        except Exception:  # noqa: BLE001
+            return {"total_files": 0, "total_bytes": 0}
+        if not results:
+            return {"total_files": 0, "total_bytes": 0}
+        record = results[0] or {}
+        return {
+            "total_files": int(record.get("total_files") or 0),
+            "total_bytes": int(record.get("total_bytes") or 0),
+        }
 
     def mark_ready(
         self,
