@@ -1,10 +1,11 @@
 "use client";
 
 import React, { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
-import { Info, Upload, X } from "lucide-react";
+import { FolderOpen, Info, Upload, X } from "lucide-react";
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
+import { MediaPicker } from "@/components/media/MediaPicker";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 import { completeDirectUpload, getMediaAccessUrl, initDirectUpload, uploadFileToPresignedUrl } from "@/lib/storage-client";
@@ -116,6 +117,7 @@ export default function SubAccountSettingsPage() {
   const [logoMediaId, setLogoMediaId] = useState("");
   const [profileClientId, setProfileClientId] = useState<number | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -261,6 +263,30 @@ export default function SubAccountSettingsPage() {
     if (logoInputRef.current) logoInputRef.current.value = "";
   }
 
+  async function handleMediaPickerSelect(mediaId: string, displayName: string) {
+    if (!profileClientId) {
+      setLogoError("Nu am putut identifica clientul pentru selecție.");
+      return;
+    }
+    setLogoError("");
+    setLogoUploading(true);
+    try {
+      const accessResponse = await getMediaAccessUrl({
+        clientId: profileClientId,
+        mediaId,
+        disposition: "inline",
+      });
+      setLogoMediaId(mediaId);
+      setLogoPreviewUrl(accessResponse.url);
+      setLogoName(displayName || accessResponse.filename || "Logo selectat");
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Nu am putut încărca logo-ul selectat.");
+    } finally {
+      setLogoUploading(false);
+      setMediaPickerOpen(false);
+    }
+  }
+
   async function submitGeneral(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
@@ -395,6 +421,15 @@ export default function SubAccountSettingsPage() {
                     <input ref={logoInputRef} type="file" className="hidden" onChange={onLogoChange} data-testid="logo-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" />
                     <button type="button" className="wm-btn-secondary inline-flex items-center gap-2" onClick={() => logoInputRef.current?.click()} disabled={logoUploading}>
                       <Upload className="h-4 w-4" /> Upload
+                    </button>
+                    <button
+                      type="button"
+                      className="wm-btn-secondary inline-flex items-center gap-2"
+                      onClick={() => setMediaPickerOpen(true)}
+                      disabled={logoUploading || !profileClientId}
+                      data-testid="logo-media-picker-trigger"
+                    >
+                      <FolderOpen className="h-4 w-4" /> Alege din Media Storage
                     </button>
                     <button type="button" className="wm-btn-secondary inline-flex items-center gap-2" onClick={removeLogo} disabled={logoUploading}>
                       <X className="h-4 w-4" /> Remove
@@ -683,6 +718,21 @@ export default function SubAccountSettingsPage() {
             </div>
           </div>
         </main>
+        {profileClientId ? (
+          <MediaPicker
+            open={mediaPickerOpen}
+            clientId={profileClientId}
+            kind="image"
+            title="Alege un logo din Media Storage"
+            onClose={() => setMediaPickerOpen(false)}
+            onSelect={(file) => {
+              void handleMediaPickerSelect(
+                file.media_id,
+                file.display_name || file.original_filename,
+              );
+            }}
+          />
+        ) : null}
       </AppShell>
     </ProtectedPage>
   );
