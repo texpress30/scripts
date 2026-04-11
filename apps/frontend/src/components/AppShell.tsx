@@ -685,14 +685,56 @@ export function AppShell({
   }, [brandingLogoUrl]);
 
   const sessionInfo = { email: sessionAccessContext.email, role: sessionAccessContext.role };
+  const [sessionProfileName, setSessionProfileName] = useState<string>("");
+  const [sessionProfileRefreshKey, setSessionProfileRefreshKey] = useState(0);
+
+  // Load the real first/last name from /user/profile so the avatar pill in
+  // the header shows the user's actual name (instead of a capitalized local
+  // part derived from the email). Refetches automatically when the session
+  // email changes (login / impersonation / stop-impersonation) and when the
+  // profile page dispatches a `user-profile-updated` event after save.
+  useEffect(() => {
+    const email = sessionInfo.email;
+    if (!email || typeof window === "undefined") {
+      setSessionProfileName("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await apiRequest<{ first_name?: string; last_name?: string }>(
+          "/user/profile",
+        );
+        if (cancelled) return;
+        const first = String(payload.first_name || "").trim();
+        const last = String(payload.last_name || "").trim();
+        const full = [first, last].filter((part) => part !== "").join(" ");
+        setSessionProfileName(full);
+      } catch {
+        if (!cancelled) setSessionProfileName("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionInfo.email, sessionProfileRefreshKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => setSessionProfileRefreshKey((prev) => prev + 1);
+    window.addEventListener("user-profile-updated", handler);
+    return () => window.removeEventListener("user-profile-updated", handler);
+  }, []);
+
   const profileName = useMemo(() => {
+    if (sessionProfileName.trim() !== "") return sessionProfileName;
     const email = sessionInfo.email || "admin@omarosa.ro";
     const local = email.split("@")[0] || "User";
     return local
       .split(/[._-]+/)
       .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : ""))
       .join(" ") || "Utilizator";
-  }, [sessionInfo.email]);
+  }, [sessionProfileName, sessionInfo.email]);
 
   const originalAdmin = useMemo(() => {
     if (!impersonatingAs) return null;

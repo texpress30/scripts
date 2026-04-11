@@ -65,6 +65,7 @@ function resolveRequestCache(path: string, init: RequestInit): RequestCache | un
   if (normalizedPath.startsWith("/dashboard")) return "no-store";
   if (normalizedPath.startsWith("/team/")) return "no-store";
   if (normalizedPath.startsWith("/storage")) return "no-store";
+  if (normalizedPath.startsWith("/user/")) return "no-store";
   return "force-cache";
 }
 
