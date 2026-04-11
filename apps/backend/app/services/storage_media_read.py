@@ -81,7 +81,12 @@ class StorageMediaReadService:
         items = media_metadata_repository.list_for_client(
             client_id=normalized_client_id,
             kind=normalized_kind or None,
-            status=normalized_status or None,
+            # Default to "ready" so orphaned drafts from failed presigned-
+            # upload attempts (which have no corresponding S3 object) never
+            # surface in the UI — clicking them would produce a broken
+            # preview. Tests that want to see drafts can pass an explicit
+            # status filter.
+            status=normalized_status or "ready",
             limit=resolved_limit,
             offset=resolved_offset,
             include_deleted_by_default=False,
@@ -92,7 +97,7 @@ class StorageMediaReadService:
         total = media_metadata_repository.count_for_client(
             client_id=normalized_client_id,
             kind=normalized_kind or None,
-            status=normalized_status or None,
+            status=normalized_status or "ready",
             include_deleted_by_default=False,
             folder_id=resolved_folder,
             search=normalized_search or None,
