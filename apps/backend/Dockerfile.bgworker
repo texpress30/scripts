@@ -1,0 +1,44 @@
+# Dockerfile variant for the background-removal Celery worker.
+#
+# It's identical to the base Dockerfile except it also installs the rembg /
+# onnxruntime / numpy extras from requirements-bgworker.txt. Keeping the
+# extras out of the base image saves every other service (api-backend,
+# worker-render, worker-sync-runs, cron-*) roughly 800MB of disk + build
+# time on Railway.
+#
+# Build locally:
+#   docker build -f apps/backend/Dockerfile.bgworker -t mcc-bgworker apps/backend
+#
+# Used by docker-compose.yml for the `worker-bgremoval` service. If you run
+# this worker on Railway, point the service's Dockerfile Path at
+# apps/backend/Dockerfile.bgworker in the service settings.
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System packages that rembg's transitive deps (opencv-python-headless,
+# scipy, scikit-image) need at runtime. libgomp is required by numba;
+# libglib2.0-0 + libsm6 + libxext6 are pulled in by opencv headless in
+# some older wheels.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libgomp1 \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt requirements-bgworker.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-bgworker.txt
+
+COPY db ./db
+COPY app ./app
+
+# Default entrypoint: Celery worker listening on the bgremoval queues.
+# docker-compose and Railway can override this with `command:` if needed.
+CMD ["celery", "-A", "app.workers.celery_app", "worker", \
+     "-Q", "bgremoval_interactive,bgremoval_prime,bgremoval,bgremoval_bulk,sync_hooks", \
+     "-c", "2", \
+     "-n", "bgremoval@%h"]

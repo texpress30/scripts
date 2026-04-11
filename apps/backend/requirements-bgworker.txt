@@ -1,0 +1,24 @@
+# Heavy ML extras for the background-removal worker.
+#
+# Install on top of requirements.txt via:
+#   pip install -r requirements.txt -r requirements-bgworker.txt
+#
+# This file is intentionally small — it only carries the packages that
+# cutout_service needs to actually execute rembg. Every other service
+# (api-backend, worker-sync-runs, worker-render, cron-*) skips this file
+# because they never load the ONNX graph; they just dispatch Celery tasks
+# that eventually land on the bgremoval worker pool.
+#
+# Rough disk impact of installing these:
+#   onnxruntime       ~90MB
+#   opencv-headless  ~100MB (transitive via rembg)
+#   scipy            ~80MB  (transitive)
+#   scikit-image     ~30MB  (transitive)
+#   numba + llvmlite ~80MB  (transitive via pymatting)
+#   pymatting         ~5MB  (transitive)
+#   numpy            ~25MB
+# Total: ~400-500MB compressed, ~1GB uncompressed.
+
+rembg==2.0.59
+onnxruntime==1.19.2
+numpy>=1.26.0

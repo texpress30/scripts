@@ -30,19 +30,17 @@ services:
       - redis
 
   # Celery workers for background removal + preview rendering.
-  # All three share the same backend image (no separate Dockerfile); they
-  # just run `celery` instead of `uvicorn` as the entry command.
+  #
+  # - worker-bgremoval uses Dockerfile.bgworker because it needs rembg +
+  #   onnxruntime (~500MB of extras that aren't in the base image).
+  # - worker-render and worker-beat use the base Dockerfile; they only need
+  #   Celery + the base app code (Pillow for rendering, no ML).
   worker-bgremoval:
     build:
       context: ./apps/backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.bgworker
     env_file:
       - .env
-    command: >
-      celery -A app.workers.celery_app worker
-      -Q bgremoval_interactive,bgremoval_prime,bgremoval,bgremoval_bulk,sync_hooks
-      -c 2
-      -n bgremoval@%h
     depends_on:
       - postgres
       - redis
