@@ -33,6 +33,7 @@ export default function SettingsProfilePage() {
   const [savingPassword, setSavingPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [toastMessage, setToastMessage] = useState("");
+  const [profileSubmitAttempted, setProfileSubmitAttempted] = useState(false);
 
   function showToast(message: string) {
     setToastMessage(message);
@@ -63,6 +64,10 @@ export default function SettingsProfilePage() {
 
   async function submitProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setProfileSubmitAttempted(true);
+    if (firstName.trim() === "" || lastName.trim() === "") {
+      return;
+    }
     setErrorMessage("");
     setSavingProfile(true);
     try {
@@ -148,13 +153,13 @@ export default function SettingsProfilePage() {
                   <label className="text-sm text-slate-700">
                     First Name <span className="text-red-500">*</span>
                     <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-                    {firstName.trim() === "" ? <p className="mt-1 text-xs text-red-600">First name cannot be left blank</p> : null}
+                    {profileSubmitAttempted && firstName.trim() === "" ? <p className="mt-1 text-xs text-red-600">First name cannot be left blank</p> : null}
                   </label>
 
                   <label className="text-sm text-slate-700">
                     Last Name <span className="text-red-500">*</span>
                     <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} />
-                    {lastName.trim() === "" ? <p className="mt-1 text-xs text-red-600">Last name cannot be left blank</p> : null}
+                    {profileSubmitAttempted && lastName.trim() === "" ? <p className="mt-1 text-xs text-red-600">Last name cannot be left blank</p> : null}
                   </label>
 
                   <label className="text-sm text-slate-700 md:col-span-2">
