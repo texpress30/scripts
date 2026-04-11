@@ -5,12 +5,15 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from app.services.enriched_catalog import render_cache
 from app.services.enriched_catalog.image_renderer import ImageRenderer
 from app.services.enriched_catalog.multi_format_renderer import _bridge_render_to_media_library
 from app.services.enriched_catalog.output_feed_service import output_feed_service
 from app.services.enriched_catalog.repository import creative_template_repository, treatment_repository
 
 logger = logging.getLogger(__name__)
+
+RENDER_BATCH_CHUNK_SIZE = 200
 
 
 def _utcnow() -> datetime:
@@ -99,7 +102,7 @@ class RenderJobService:
                     errors.append({"product_id": product_id, "error": f"Template {template_id} not found"})
                     continue
 
-                renderer = ImageRenderer(template)
+                renderer = ImageRenderer(template, client_id=feed_subaccount_id)
                 png_bytes = renderer.render(product)
                 s3_key = f"enriched-catalog/{output_feed_id}/{product_id}.png"
                 image_url = self._upload(s3_key, png_bytes, "image/png")
@@ -168,6 +171,139 @@ class RenderJobService:
                 self._feed_service.update_output_feed(output_feed_id, {"status": "failed"})
             except Exception:
                 logger.exception("Failed to update feed status after crash")
+
+    # ------------------------------------------------------------------
+    # Async dispatch
+    # ------------------------------------------------------------------
+
+    def dispatch_render_job(
+        self,
+        output_feed_id: str,
+        products: list[dict[str, Any]],
+        *,
+        priority: str = "bulk",
+    ) -> dict[str, Any]:
+        """Enqueue a render job on the Celery workers instead of running it
+        inline.
+
+        The request thread returns immediately with a summary of what was
+        dispatched. For ``priority="hi"`` (editor / grid on-demand) each
+        product becomes a ``render_one`` task on the ``render_hi`` queue. For
+        ``priority="bulk"`` (Publish) products are chunked into
+        ``render_batch`` tasks on ``render_bulk``.
+
+        This path consults the template_render_results cache and only
+        enqueues tasks for products whose preview is stale. A 100k-product
+        feed therefore triggers ~0 tasks on a re-publish if nothing changed.
+        """
+        if not products:
+            return {
+                "output_feed_id": output_feed_id,
+                "dispatched": 0,
+                "cache_hits": 0,
+                "chunks": 0,
+                "priority": priority,
+            }
+
+        # Resolve which template each product maps to via treatments.
+        template_cache: dict[str, dict[str, Any] | None] = {}
+        buckets: dict[str, list[dict[str, Any]]] = {}
+        skipped_no_match = 0
+        for product in products:
+            treatment = self._treatment_repo.get_matching_treatment(output_feed_id, product)
+            if treatment is None:
+                skipped_no_match += 1
+                continue
+            template_id = str(treatment.get("template_id") or "")
+            if not template_id:
+                skipped_no_match += 1
+                continue
+            if template_id not in template_cache:
+                template_cache[template_id] = self._template_repo.get_by_id(template_id)
+            if template_cache[template_id] is None:
+                skipped_no_match += 1
+                continue
+            buckets.setdefault(template_id, []).append(product)
+
+        dispatched = 0
+        cache_hits = 0
+        chunks = 0
+
+        # Celery is imported lazily so unit tests can exercise the planning
+        # logic without pulling in the full worker stack.
+        try:
+            from app.workers.tasks.render import render_batch, render_one
+        except Exception:  # noqa: BLE001
+            logger.exception("render_tasks_unavailable")
+            render_batch = None
+            render_one = None
+
+        for template_id, bucket_products in buckets.items():
+            template = template_cache[template_id] or {}
+            template_version = int(template.get("version") or 1)
+            product_ids = [
+                str(p.get("id") or p.get("product_id") or "")
+                for p in bucket_products
+            ]
+            cached = render_cache.get_many(
+                template_id=template_id,
+                template_version=template_version,
+                output_feed_id=output_feed_id,
+                product_ids=product_ids,
+            )
+            stale = [
+                p
+                for p, pid in zip(bucket_products, product_ids)
+                if pid and pid not in cached
+            ]
+            cache_hits += len(cached)
+
+            if priority == "hi" and render_one is not None:
+                for product in stale:
+                    render_one.apply_async(
+                        kwargs={
+                            "template_id": template_id,
+                            "output_feed_id": str(output_feed_id),
+                            "product": product,
+                        },
+                        queue="render_hi",
+                    )
+                    dispatched += 1
+            elif render_batch is not None:
+                for chunk in _chunked(stale, RENDER_BATCH_CHUNK_SIZE):
+                    render_batch.apply_async(
+                        kwargs={
+                            "template_id": template_id,
+                            "output_feed_id": str(output_feed_id),
+                            "products": list(chunk),
+                        },
+                        queue="render_bulk",
+                    )
+                    chunks += 1
+                    dispatched += len(chunk)
+
+        logger.info(
+            "render_dispatch output_feed_id=%s priority=%s dispatched=%s cache_hits=%s skipped=%s",
+            output_feed_id,
+            priority,
+            dispatched,
+            cache_hits,
+            skipped_no_match,
+        )
+        return {
+            "output_feed_id": output_feed_id,
+            "priority": priority,
+            "dispatched": int(dispatched),
+            "cache_hits": int(cache_hits),
+            "skipped_no_match": int(skipped_no_match),
+            "chunks": int(chunks),
+        }
+
+
+def _chunked(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:
+    if size <= 0:
+        return [items]
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 render_job_service = RenderJobService()

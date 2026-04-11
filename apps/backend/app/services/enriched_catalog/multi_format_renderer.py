@@ -155,7 +155,7 @@ class MultiFormatRenderService:
                 continue
 
             format_label = template.get("format_label") or f"{template.get('canvas_width')}x{template.get('canvas_height')}"
-            renderer = ImageRenderer(template)
+            renderer = ImageRenderer(template, client_id=feed_subaccount_id)
             format_rendered = 0
             format_entries: list[dict[str, Any]] = []
 

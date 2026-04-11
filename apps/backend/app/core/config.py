@@ -90,6 +90,14 @@ class Settings:
     anthropic_api_key: str
     ai_alias_suggestions_enabled: bool
     internal_cron_key: str
+    celery_broker_url: str
+    celery_result_backend: str
+    celery_task_always_eager: bool
+    rembg_model: str
+    cutout_concurrency_per_client: int
+    cutout_orphan_retention_days: int
+    cutout_priming_limit: int
+    storage_cdn_base_url: str
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -238,4 +246,12 @@ def load_settings() -> Settings:
         anthropic_api_key=_get_env("ANTHROPIC_API_KEY", default=""),
         ai_alias_suggestions_enabled=_parse_bool_env("AI_ALIAS_SUGGESTIONS_ENABLED", default=True),
         internal_cron_key=_get_env("INTERNAL_CRON_KEY", default=""),
+        celery_broker_url=_get_env("CELERY_BROKER_URL", default="redis://localhost:6379/1"),
+        celery_result_backend=_get_env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/2"),
+        celery_task_always_eager=_parse_bool_env("CELERY_TASK_ALWAYS_EAGER", default=False),
+        rembg_model=_get_env("REMBG_MODEL", default="u2net"),
+        cutout_concurrency_per_client=_parse_positive_int_env("CUTOUT_CONCURRENCY_PER_CLIENT", default=4),
+        cutout_orphan_retention_days=_parse_positive_int_env("CUTOUT_ORPHAN_RETENTION_DAYS", default=30),
+        cutout_priming_limit=_parse_positive_int_env("CUTOUT_PRIMING_LIMIT", default=200),
+        storage_cdn_base_url=_get_env("STORAGE_CDN_BASE_URL", default=""),
     )

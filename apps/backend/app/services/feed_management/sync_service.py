@@ -256,6 +256,12 @@ class FeedSyncService:
         errors: list[dict[str, Any]] = []
         batch: list[ProductData] = []
         synced_product_ids: set[str] = set()
+        # Delta tracking so post-sync hooks (background removal, preview cache
+        # invalidation, enriched feed refresh) can fan out to only the products
+        # that actually changed — essential when the catalog has 100k+ items.
+        delta_added: list[dict[str, Any]] = []
+        delta_updated_images: list[dict[str, Any]] = []
+        delta_stock_changed: list[str] = []
 
         try:
             async for product in connector.fetch_products():
@@ -265,6 +271,13 @@ class FeedSyncService:
 
                 if len(batch) >= SYNC_BATCH_SIZE:
                     try:
+                        self._capture_batch_delta(
+                            feed_source_id,
+                            batch,
+                            delta_added=delta_added,
+                            delta_updated_images=delta_updated_images,
+                            delta_stock_changed=delta_stock_changed,
+                        )
                         saved = feed_products_repository.upsert_products_batch(feed_source_id, batch)
                         imported_count += saved
                     except Exception as exc:
@@ -283,13 +296,25 @@ class FeedSyncService:
             # Flush remaining products
             if batch:
                 try:
+                    self._capture_batch_delta(
+                        feed_source_id,
+                        batch,
+                        delta_added=delta_added,
+                        delta_updated_images=delta_updated_images,
+                        delta_stock_changed=delta_stock_changed,
+                    )
                     saved = feed_products_repository.upsert_products_batch(feed_source_id, batch)
                     imported_count += saved
                 except Exception as exc:
                     logger.warning("Final batch upsert failed for source %s: %s", feed_source_id, exc)
                     errors.append({"batch_size": len(batch), "error": str(exc)})
 
-            # Reconcile: remove products no longer present in source
+            # Reconcile: remove products no longer present in source. Capture
+            # removed ids BEFORE delete_many so the sync hook can drop their
+            # preview cache entries.
+            delta_removed = self._capture_stale_product_ids(
+                feed_source_id, synced_product_ids,
+            )
             removed_count = self._reconcile_stale_products(
                 feed_source_id, synced_product_ids, errors,
             )
@@ -329,7 +354,154 @@ class FeedSyncService:
                     feed_source_id,
                 )
 
+            # Fire the async delta hook: background removal for new / changed
+            # images, preview cache invalidation for removed / stock-changed
+            # products. Must run after the feed artefact regen so the delta
+            # task can reference the fresh state.
+            try:
+                self._dispatch_sync_delta(
+                    feed_source_id=feed_source_id,
+                    subaccount_id=int(getattr(source, "subaccount_id", 0) or 0),
+                    feed_source_name=str(getattr(source, "name", "") or ""),
+                    delta_added=delta_added,
+                    delta_updated_images=delta_updated_images,
+                    delta_removed=delta_removed,
+                    delta_stock_changed=delta_stock_changed,
+                )
+            except Exception:
+                logger.exception(
+                    "sync.delta_dispatch_failed feed_source_id=%s",
+                    feed_source_id,
+                )
+
         return feed_import
+
+    # ------------------------------------------------------------------
+    # Delta capture helpers
+    # ------------------------------------------------------------------
+
+    def _capture_batch_delta(
+        self,
+        feed_source_id: str,
+        batch: list[ProductData],
+        *,
+        delta_added: list[dict[str, Any]],
+        delta_updated_images: list[dict[str, Any]],
+        delta_stock_changed: list[str],
+    ) -> None:
+        """Look up the previous state of each product in ``batch`` and record
+        what changed. Runs before the batch upsert so existing docs haven't
+        been overwritten yet.
+
+        Keeps the overhead bounded: one ``find`` per batch, projecting only
+        the fields we care about (``data.images``, ``data.inventory_quantity``,
+        ``data.availability``). For a 100-product batch that's a single
+        round-trip to Mongo with a tiny response.
+        """
+        if not batch:
+            return
+        product_ids = [str(p.id) for p in batch]
+        try:
+            collection = feed_products_repository._collection()  # noqa: SLF001
+            cursor = collection.find(
+                {
+                    "feed_source_id": str(feed_source_id),
+                    "product_id": {"$in": product_ids},
+                },
+                {
+                    "product_id": 1,
+                    "data.images": 1,
+                    "data.image_src": 1,
+                    "data.inventory_quantity": 1,
+                    "data.availability": 1,
+                    "_id": 0,
+                },
+            )
+            existing_map: dict[str, dict[str, Any]] = {}
+            for doc in cursor:
+                existing_map[str(doc.get("product_id") or "")] = doc.get("data") or {}
+        except Exception:  # noqa: BLE001
+            logger.debug("sync.delta_capture_lookup_failed", exc_info=True)
+            return
+
+        for product in batch:
+            pid = str(product.id)
+            existing = existing_map.get(pid)
+            new_images = list(getattr(product, "images", None) or [])
+            first_image = new_images[0] if new_images else ""
+            if existing is None:
+                if first_image:
+                    delta_added.append({"product_id": pid, "image_src": first_image})
+                continue
+            old_images = list(existing.get("images") or [])
+            if old_images != new_images and first_image:
+                delta_updated_images.append({"product_id": pid, "image_src": first_image})
+            old_stock = existing.get("inventory_quantity")
+            new_stock = getattr(product, "inventory_quantity", None)
+            if old_stock != new_stock:
+                delta_stock_changed.append(pid)
+
+    def _capture_stale_product_ids(
+        self,
+        feed_source_id: str,
+        synced_product_ids: set[str],
+    ) -> list[str]:
+        """Return the list of product_ids that will be hard-deleted by
+        reconciliation so the sync hook can drop their preview cache rows.
+
+        Mirrors the safety net in ``_reconcile_stale_products`` — empty set
+        when the source returned no products (assume API down).
+        """
+        if not synced_product_ids:
+            return []
+        try:
+            existing_ids = feed_products_repository.get_product_ids(feed_source_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("sync.delta_stale_lookup_failed", exc_info=True)
+            return []
+        return sorted(existing_ids - synced_product_ids)
+
+    def _dispatch_sync_delta(
+        self,
+        *,
+        feed_source_id: str,
+        subaccount_id: int,
+        feed_source_name: str,
+        delta_added: list[dict[str, Any]],
+        delta_updated_images: list[dict[str, Any]],
+        delta_removed: list[str],
+        delta_stock_changed: list[str],
+    ) -> None:
+        """Enqueue the fan-out ``handle_sync_delta`` task.
+
+        Imported lazily so unit tests and legacy callers that don't need the
+        worker stack don't pay the import cost.
+        """
+        if not any([delta_added, delta_updated_images, delta_removed, delta_stock_changed]):
+            return
+        try:
+            from app.workers.tasks.sync_hooks import handle_sync_delta
+
+            handle_sync_delta.apply_async(
+                kwargs={
+                    "delta": {
+                        "feed_source_id": str(feed_source_id),
+                        "subaccount_id": int(subaccount_id),
+                        "client_id": int(subaccount_id),
+                        "feed_source_name": feed_source_name,
+                        "added": delta_added,
+                        "updated_images": delta_updated_images,
+                        "removed": delta_removed,
+                        "stock_changed": delta_stock_changed,
+                    }
+                },
+                queue="sync_hooks",
+            )
+        except Exception:
+            logger.exception(
+                "sync.delta_enqueue_failed feed_source_id=%s",
+                feed_source_id,
+            )
 
     def _reconcile_stale_products(
         self,

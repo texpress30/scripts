@@ -55,6 +55,7 @@ from app.api.tiktok_ads import router as tiktok_ads_router
 from app.api.user_profile import router as user_profile_router
 from app.api.rules import router as rules_router
 from app.api.creative_templates import router as creative_templates_router
+from app.api.cutouts import router as cutouts_router
 from app.api.treatments import router as treatments_router
 from app.api.output_feeds import router as output_feeds_router
 from app.api.brand_presets import router as brand_presets_router
@@ -184,6 +185,7 @@ app.include_router(shopware_integration_router)
 
 # Enriched Catalog
 app.include_router(creative_templates_router)
+app.include_router(cutouts_router)
 app.include_router(treatments_router)
 app.include_router(output_feeds_router)
 app.include_router(brand_presets_router)
