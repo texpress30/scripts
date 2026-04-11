@@ -76,13 +76,20 @@ body {
   .dark .bg-white       { background-color: rgb(15 23 42); }  /* slate-900 */
   .dark .bg-slate-50    { background-color: rgb(15 23 42); }  /* slate-900 */
   .dark .bg-slate-100   { background-color: rgb(30 41 59); }  /* slate-800 */
+  .dark .bg-slate-200   { background-color: rgb(51 65 85); }  /* slate-700 */
 
   /* Borders: hairline light borders → subtle dark borders */
   .dark .border-slate-100 { border-color: rgb(30 41 59); }  /* slate-800 */
   .dark .border-slate-200 { border-color: rgb(51 65 85); }  /* slate-700 */
+  .dark .border-slate-300 { border-color: rgb(71 85 105); } /* slate-600 */
 
-  /* Hover states that rely on light slate backgrounds should also flip */
-  .dark .hover\:bg-slate-50:hover  { background-color: rgb(30 41 59); }  /* slate-800 */
+  /* Hover states that rely on light slate backgrounds should also flip.
+     We skip one shade compared to the static fallback so the hover delta
+     stays visible against the inverted base (e.g. bg-white → slate-900
+     base, hover → slate-700 instead of slate-800 which would be too
+     subtle against the slate-900 background). */
+  .dark .hover\:bg-slate-50:hover  { background-color: rgb(51 65 85); }  /* slate-700 */
   .dark .hover\:bg-slate-100:hover { background-color: rgb(51 65 85); }  /* slate-700 */
+  .dark .hover\:bg-slate-200:hover { background-color: rgb(71 85 105); } /* slate-600 */
 }
 
