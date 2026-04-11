@@ -454,7 +454,7 @@ export function AppShell({
   const navItems = getNavItems(pathname);
   const { theme, setTheme } = useTheme();
 
-  const [collapsed, setCollapsed] = useState(false);
+  const [userCollapsed, setUserCollapsed] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -486,6 +486,7 @@ export function AppShell({
   const isAgencySettingsMode = pathname.startsWith("/settings/") || pathname.startsWith("/agency/email-templates") || pathname.startsWith("/agency/notifications");
   const isSubSettingsMode = pathname.startsWith("/subaccount/") && pathname.includes("/settings/");
   const isSettingsMode = isAgencySettingsMode || isSubSettingsMode;
+  const collapsed = !isSettingsMode && userCollapsed;
 
   const settingsHeaderLabel = isSubSettingsMode ? "SUB-ACCOUNT SETTINGS" : "AGENCY SETTINGS";
   const goBackHref = isSubSettingsMode && subSettingsId ? `/sub/${subSettingsId}/dashboard` : "/agency/dashboard";
@@ -1080,14 +1081,16 @@ export function AppShell({
         ) : null}
       </div>
 
-      <div className="hidden border-t border-slate-200 px-3 py-3 dark:border-slate-700 md:block">
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex w-full items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-        >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </button>
-      </div>
+      {!isSettingsMode ? (
+        <div className="hidden border-t border-slate-200 px-3 py-3 dark:border-slate-700 md:block">
+          <button
+            onClick={() => setUserCollapsed((prev) => !prev)}
+            className="flex w-full items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 
