@@ -188,3 +188,79 @@ def test_mark_ready_failure_after_upload_is_propagated(monkeypatch):
 def test_no_ingest_endpoint_added():
     storage_api_source = Path("/workspace/scripts/apps/backend/app/api/storage.py").read_text()
     assert "/ingest" not in storage_api_source
+
+
+def test_register_existing_s3_asset_creates_ready_record(monkeypatch):
+    calls: dict[str, object] = {}
+
+    class FakeRepo:
+        def get_by_storage(self, *, bucket: str, key: str):
+            calls["lookup"] = {"bucket": bucket, "key": key}
+            return None
+
+        def create_ready(self, **kwargs):
+            calls["create"] = kwargs
+            return {
+                "media_id": "mid-1",
+                "client_id": kwargs["client_id"],
+                "kind": kwargs["kind"],
+                "source": kwargs["source"],
+                "status": "ready",
+                "folder_id": kwargs.get("folder_id"),
+                "storage": {
+                    "bucket": kwargs["storage_bucket"],
+                    "key": kwargs["storage_key"],
+                    "region": kwargs["storage_region"],
+                },
+            }
+
+    monkeypatch.setattr(service_module, "load_settings", lambda: SimpleNamespace(storage_s3_bucket="media-bucket", storage_s3_region="eu-central-1"))
+    monkeypatch.setattr(service_module, "media_metadata_repository", FakeRepo())
+
+    record = service_module.storage_media_ingest_service.register_existing_s3_asset(
+        client_id=42,
+        kind="image",
+        source="enriched_catalog",
+        bucket="assets-bucket",
+        key="enriched-catalog/99/template-1/product-5.png",
+        region="eu-west-1",
+        mime_type="image/png",
+        original_filename="product-5.png",
+        size_bytes=12345,
+        folder_id="system-folder-1",
+        metadata={"enriched_catalog": {"output_feed_id": 99}},
+    )
+    assert record["status"] == "ready"
+    assert record["source"] == "enriched_catalog"
+    assert record["folder_id"] == "system-folder-1"
+    assert calls["lookup"] == {"bucket": "assets-bucket", "key": "enriched-catalog/99/template-1/product-5.png"}
+    assert calls["create"]["storage_key"] == "enriched-catalog/99/template-1/product-5.png"
+    assert calls["create"]["metadata"] == {"enriched_catalog": {"output_feed_id": 99}}
+
+
+def test_register_existing_s3_asset_is_idempotent(monkeypatch):
+    existing_record = {
+        "media_id": "mid-existing",
+        "client_id": 42,
+        "kind": "image",
+        "source": "enriched_catalog",
+        "status": "ready",
+    }
+
+    class FakeRepo:
+        def get_by_storage(self, *, bucket: str, key: str):
+            return existing_record
+
+        def create_ready(self, **kwargs):
+            raise AssertionError("create_ready should not be called when asset is already registered")
+
+    monkeypatch.setattr(service_module, "media_metadata_repository", FakeRepo())
+
+    record = service_module.storage_media_ingest_service.register_existing_s3_asset(
+        client_id=42,
+        kind="image",
+        source="enriched_catalog",
+        bucket="assets-bucket",
+        key="enriched-catalog/99/template-1/product-5.png",
+    )
+    assert record is existing_record

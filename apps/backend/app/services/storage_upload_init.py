@@ -73,6 +73,7 @@ class StorageUploadInitService:
         mime_type: str,
         size_bytes: int | None = None,
         metadata: dict[str, Any] | None = None,
+        folder_id: str | None = None,
     ) -> dict[str, Any]:
         self._validate(kind=kind, original_filename=original_filename, mime_type=mime_type)
         bucket, region = self._require_storage_config()
@@ -82,6 +83,20 @@ class StorageUploadInitService:
             raise
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError("Storage metadata repository is unavailable for upload initialization.") from exc
+
+        # Validate folder_id before creating the S3 draft so a bad folder_id
+        # aborts cleanly without leaving orphaned records.
+        resolved_folder_id = str(folder_id or "").strip() or None
+        if resolved_folder_id is not None:
+            from app.services.media_folder_service import MediaFolderError, media_folder_service
+
+            try:
+                media_folder_service._require_folder(  # noqa: SLF001
+                    client_id=int(client_id),
+                    folder_id=resolved_folder_id,
+                )
+            except MediaFolderError as exc:
+                raise StorageUploadInitError(str(exc), status_code=exc.status_code) from exc
 
         media_id = new_media_id()
         storage_key = self.build_storage_key(
@@ -103,6 +118,8 @@ class StorageUploadInitService:
                 metadata=metadata,
                 storage_key=storage_key,
                 storage_bucket=bucket,
+                folder_id=resolved_folder_id,
+                display_name=original_filename,
             )
         except (StorageUploadInitError, RuntimeError):
             raise

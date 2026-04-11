@@ -11,7 +11,7 @@ from app.services.s3_provider import get_s3_client
 from app.services.storage_upload_init import sanitize_filename
 
 _ALLOWED_KINDS: tuple[str, ...] = ("image", "video", "document")
-_ALLOWED_SOURCES: tuple[str, ...] = ("backend_ingest", "platform_sync")
+_ALLOWED_SOURCES: tuple[str, ...] = ("backend_ingest", "platform_sync", "enriched_catalog")
 
 
 class StorageMediaIngestError(RuntimeError):
@@ -152,6 +152,75 @@ class StorageMediaIngestService:
             uploaded_at=ready_record.get("uploaded_at"),
             etag=etag,
             version_id=version_id,
+        )
+
+    def register_existing_s3_asset(
+        self,
+        *,
+        client_id: int,
+        kind: MediaFileKind,
+        source: MediaFileSource,
+        bucket: str,
+        key: str,
+        region: str | None = None,
+        mime_type: str = "application/octet-stream",
+        original_filename: str | None = None,
+        display_name: str | None = None,
+        size_bytes: int | None = None,
+        etag: str | None = None,
+        version_id: str | None = None,
+        folder_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a ready `media_files` row for an S3 object that has already been
+        uploaded by a different pipeline (e.g. enriched-catalog render).
+
+        This skips the presigned-upload dance entirely — the caller is attesting
+        that (bucket, key) already exists. Idempotent: if a media row already
+        points at that exact (bucket, key), the existing row is returned.
+        """
+        normalized_bucket = str(bucket or "").strip()
+        normalized_key = str(key or "").strip()
+        if int(client_id) <= 0:
+            raise StorageMediaIngestError("client_id must be a positive integer", status_code=400)
+        if normalized_bucket == "" or normalized_key == "":
+            raise StorageMediaIngestError("bucket and key are required", status_code=400)
+        if str(kind or "").strip().lower() not in _ALLOWED_KINDS:
+            raise StorageMediaIngestError("kind must be one of: image, video, document", status_code=400)
+        if str(source or "").strip().lower() not in _ALLOWED_SOURCES:
+            raise StorageMediaIngestError(
+                "source must be one of: backend_ingest, platform_sync, enriched_catalog",
+                status_code=400,
+            )
+
+        existing = media_metadata_repository.get_by_storage(bucket=normalized_bucket, key=normalized_key)
+        if existing is not None:
+            return existing
+
+        resolved_region = str(region or "").strip()
+        if resolved_region == "":
+            settings = load_settings()
+            resolved_region = str(settings.storage_s3_region or "").strip()
+
+        resolved_filename = str(original_filename or "").strip()
+        if resolved_filename == "":
+            resolved_filename = normalized_key.rsplit("/", 1)[-1] or normalized_key
+
+        return media_metadata_repository.create_ready(
+            client_id=int(client_id),
+            kind=kind,
+            source=source,
+            original_filename=resolved_filename,
+            display_name=display_name,
+            mime_type=str(mime_type or "application/octet-stream").strip(),
+            storage_bucket=normalized_bucket,
+            storage_key=normalized_key,
+            storage_region=resolved_region,
+            size_bytes=size_bytes,
+            etag=etag,
+            version_id=version_id,
+            metadata=metadata,
+            folder_id=folder_id,
         )
 
 

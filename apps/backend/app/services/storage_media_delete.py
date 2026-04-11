@@ -9,12 +9,20 @@ from app.services.media_metadata_models import (
     MEDIA_FILE_STATUS_READY,
 )
 from app.services.media_metadata_repository import media_metadata_repository
+from app.services.media_reference_checker import media_reference_checker
 
 
 class StorageMediaDeleteError(RuntimeError):
-    def __init__(self, message: str, *, status_code: int = 400) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int = 400,
+        references: list[dict[str, Any]] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = int(status_code)
+        self.references = list(references or [])
 
 
 class StorageMediaDeleteService:
@@ -42,6 +50,14 @@ class StorageMediaDeleteService:
 
         if status not in {MEDIA_FILE_STATUS_DRAFT, MEDIA_FILE_STATUS_READY}:
             raise StorageMediaDeleteError(f"Media record cannot be soft-deleted from status={status}", status_code=409)
+
+        references = media_reference_checker.find_references(media_id=normalized_media_id)
+        if references:
+            raise StorageMediaDeleteError(
+                "Media is still referenced by other records. Unlink it there first before deleting.",
+                status_code=409,
+                references=media_reference_checker.serialize_references(references),
+            )
 
         deleted = media_metadata_repository.soft_delete(media_id=normalized_media_id)
         if deleted is None:
