@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api";
+import { apiRequest, API_BASE_URL, ApiRequestError, getAuthToken } from "@/lib/api";
 
 export type StorageKind = "image" | "video" | "document" | "audio" | "other";
 export type StorageMediaSort =
@@ -133,6 +133,38 @@ export async function completeDirectUpload(params: {
       media_id: params.mediaId,
     }),
   });
+}
+
+export async function uploadFileViaBackend(params: {
+  clientId: number;
+  kind: StorageKind;
+  file: File;
+  folderId?: string | null;
+}): Promise<StorageUploadCompleteResponse> {
+  // Backend-proxied upload: the file body goes through the FastAPI server,
+  // which then PUTs it to S3 using boto3. Use this as a fallback when the
+  // browser-direct PUT to the S3 presigned URL fails (typically due to CORS
+  // or a mixed-content block on the bucket's domain).
+  const token = getAuthToken();
+  if (!token) throw new ApiRequestError("Authentication required", 401);
+
+  const formData = new FormData();
+  formData.append("client_id", String(params.clientId));
+  formData.append("kind", params.kind);
+  if (params.folderId) formData.append("folder_id", params.folderId);
+  formData.append("file", params.file);
+
+  const response = await fetch(`${API_BASE_URL}/storage/uploads/binary`, {
+    method: "POST",
+    body: formData,
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new ApiRequestError(detail || `Upload failed with status ${response.status}`, response.status);
+  }
+  return (await response.json()) as StorageUploadCompleteResponse;
 }
 
 export async function getMediaAccessUrl(params: {
