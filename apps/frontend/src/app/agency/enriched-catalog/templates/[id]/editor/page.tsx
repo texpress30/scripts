@@ -54,6 +54,30 @@ export default function TemplateEditorPage() {
   const { presets: brandPresets } = useBrandPresets(subaccountId);
   const { templates: allTemplates } = useCreativeTemplates(subaccountId);
 
+  // Agency media storage client id — used by the Elemente Publice (LibraryPanel)
+  // tab to look up the shared Public Elements folder and list its categories.
+  const [agencyStorageClientId, setAgencyStorageClientId] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await apiRequest<{ logo_storage_client_id?: number | null }>(
+          "/company/settings",
+          { requireAuth: true },
+        );
+        if (cancelled) return;
+        const id = Number(payload.logo_storage_client_id);
+        if (Number.isFinite(id) && id > 0) setAgencyStorageClientId(id);
+        else setAgencyStorageClientId(null);
+      } catch {
+        if (!cancelled) setAgencyStorageClientId(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Feed data for Source Feed panel
   const { sources } = useFeedSources(subaccountId);
   const firstSourceId = sources.length > 0 ? sources[0].id : null;
@@ -296,8 +320,8 @@ export default function TemplateEditorPage() {
       case "library":
         return (
           <LibraryPanel
-            templates={allTemplates.map((t) => ({ id: t.id, name: t.name, canvas_width: t.canvas_width, canvas_height: t.canvas_height }))}
-            onSelect={(id) => router.push(`/agency/enriched-catalog/templates/${id}/editor`)}
+            clientId={agencyStorageClientId}
+            onInsertImage={(url, name) => canvasRef.current?.addImageFromURL(url, name)}
           />
         );
       case "layers":
