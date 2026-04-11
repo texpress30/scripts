@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2, Upload, RefreshCw, SlidersHorizontal, Check, Shuffle, Eraser, Folder, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getMediaAccessUrl, listFolders, listMedia, type StorageFolder, type StorageMediaListItem } from "@/lib/storage-client";
+import { fetchMediaBlob, listFolders, listMedia, type StorageFolder, type StorageMediaListItem } from "@/lib/storage-client";
 
 export type SidebarTab = "source_feed" | "image_assets" | "graphic_assets" | "library" | "layers";
 
@@ -575,16 +575,20 @@ function LibraryFileTile({ clientId, file, onInsert }: {
 
   useEffect(() => {
     let cancelled = false;
+    let createdObjectUrl: string | null = null;
     (async () => {
       try {
-        const response = await getMediaAccessUrl({ clientId, mediaId: file.media_id, disposition: "inline" });
-        if (!cancelled) setPreviewUrl(response.url);
+        const blob = await fetchMediaBlob({ clientId, mediaId: file.media_id });
+        if (cancelled) return;
+        createdObjectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(createdObjectUrl);
       } catch {
         if (!cancelled) setFailed(true);
       }
     })();
     return () => {
       cancelled = true;
+      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
     };
   }, [clientId, file.media_id]);
 

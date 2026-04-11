@@ -106,5 +106,62 @@ class StorageMediaAccessService:
             "filename": filename,
         }
 
+    def fetch_bytes(
+        self,
+        *,
+        client_id: int,
+        media_id: str,
+    ) -> dict[str, Any]:
+        """Download the raw object bytes from S3 server-side. Used by the
+        backend-proxied content endpoint so browsers never need direct access
+        to the bucket (CORS-free + works against internal S3 endpoints)."""
+        normalized_client_id = int(client_id)
+        if normalized_client_id <= 0:
+            raise StorageMediaAccessError("client_id must be a positive integer", status_code=400)
+
+        normalized_media_id = str(media_id or "").strip()
+        if normalized_media_id == "":
+            raise StorageMediaAccessError("media_id is required", status_code=400)
+
+        record = media_metadata_repository.get_by_media_id(normalized_media_id)
+        if record is None:
+            raise StorageMediaAccessError("Media record not found", status_code=404)
+        if int(record.get("client_id") or 0) != normalized_client_id:
+            raise StorageMediaAccessError("Media record not found", status_code=404)
+
+        record_status = str(record.get("status") or "").strip().lower()
+        if record_status == MEDIA_FILE_STATUS_PURGED:
+            raise StorageMediaAccessError("Media record not found", status_code=404)
+        if record_status != MEDIA_FILE_STATUS_READY:
+            raise StorageMediaAccessError(f"Media record cannot be accessed from status={record_status}", status_code=409)
+
+        storage = record.get("storage") if isinstance(record.get("storage"), dict) else {}
+        bucket = str(storage.get("bucket") or "").strip()
+        key = str(storage.get("key") or "").strip()
+        if bucket == "" or key == "":
+            raise StorageMediaAccessError("Media record storage is incomplete", status_code=409)
+
+        mime_type = str(record.get("mime_type") or "").strip() or "application/octet-stream"
+        filename = sanitize_disposition_filename(str(record.get("original_filename") or ""))
+
+        try:
+            s3_client = get_s3_client()
+            response = s3_client.get_object(Bucket=bucket, Key=key)
+            body = response.get("Body")
+            if body is None:
+                raise StorageMediaAccessError("S3 response had no body", status_code=503)
+            content = body.read()
+        except StorageMediaAccessError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise StorageMediaAccessError(f"Failed to download media content from S3: {exc}", status_code=503) from exc
+
+        return {
+            "media_id": normalized_media_id,
+            "mime_type": mime_type,
+            "filename": filename,
+            "content": content,
+        }
+
 
 storage_media_access_service = StorageMediaAccessService()

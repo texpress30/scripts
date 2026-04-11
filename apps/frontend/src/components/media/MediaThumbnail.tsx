@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { FileText, Film, Headphones, ImageIcon, LayoutGrid } from "lucide-react";
 
-import { getMediaAccessUrl, type StorageKind } from "@/lib/storage-client";
+import { fetchMediaBlob, type StorageKind } from "@/lib/storage-client";
 import { cn } from "@/lib/utils";
 
 type MediaThumbnailProps = {
@@ -23,8 +23,10 @@ const KIND_ICON: Record<string, typeof ImageIcon> = {
 };
 
 /**
- * Small reusable thumbnail that lazily fetches a presigned GET URL for
- * images, and falls back to a category icon for videos/documents/audio/other.
+ * Small reusable thumbnail that lazily fetches a media image through the
+ * backend-proxy endpoint (`/storage/media/:id/content`), wraps the returned
+ * Blob in an object URL, and displays it inside an `<img>`. Falls back to a
+ * category icon for non-image kinds or when the fetch fails.
  */
 export function MediaThumbnail({
   clientId,
@@ -42,20 +44,20 @@ export function MediaThumbnail({
       return;
     }
     let cancelled = false;
+    let createdObjectUrl: string | null = null;
     (async () => {
       try {
-        const response = await getMediaAccessUrl({
-          clientId,
-          mediaId,
-          disposition: "inline",
-        });
-        if (!cancelled) setUrl(response.url);
+        const blob = await fetchMediaBlob({ clientId, mediaId });
+        if (cancelled) return;
+        createdObjectUrl = URL.createObjectURL(blob);
+        setUrl(createdObjectUrl);
       } catch {
         if (!cancelled) setFailed(true);
       }
     })();
     return () => {
       cancelled = true;
+      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
     };
   }, [clientId, mediaId, kind]);
 

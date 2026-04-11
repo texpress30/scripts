@@ -179,6 +179,43 @@ export async function getMediaAccessUrl(params: {
   return apiRequest<StorageAccessUrlResponse>(`/storage/media/${encodeURIComponent(params.mediaId)}/access-url?${query.toString()}`);
 }
 
+/**
+ * Fetch the raw media bytes through the backend-proxy endpoint. Use this
+ * instead of the `getMediaAccessUrl` presigned-URL flow for `<img>` previews:
+ * the presigned GET URL can fail in deployments where the S3 bucket isn't
+ * directly reachable from the browser (internal MinIO, missing CORS, etc.).
+ * The proxied endpoint goes through the FastAPI server which always has
+ * S3 credentials and internal network access to the bucket.
+ *
+ * Callers should wrap the returned Blob in `URL.createObjectURL(blob)` to
+ * feed it into an `<img src>` attribute, and remember to revoke the object
+ * URL when it's no longer needed to free memory.
+ */
+export async function fetchMediaBlob(params: {
+  clientId: number;
+  mediaId: string;
+}): Promise<Blob> {
+  const token = getAuthToken();
+  if (!token) throw new ApiRequestError("Authentication required", 401);
+  const query = new URLSearchParams({
+    client_id: String(params.clientId),
+    disposition: "inline",
+  });
+  const response = await fetch(
+    `${API_BASE_URL}/storage/media/${encodeURIComponent(params.mediaId)}/content?${query.toString()}`,
+    {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new ApiRequestError(detail || `Media fetch failed with status ${response.status}`, response.status);
+  }
+  return response.blob();
+}
+
 export async function listMedia(params: {
   clientId: number;
   folderId?: string | null; // "root" for top-level files
