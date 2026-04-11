@@ -277,6 +277,16 @@ export async function listFolders(params: {
   return apiRequest<{ items: StorageFolder[] }>(`/storage/folders?${query.toString()}`);
 }
 
+export async function getFolderAncestors(params: {
+  clientId: number;
+  folderId: string;
+}): Promise<{ items: StorageFolder[] }> {
+  const query = new URLSearchParams({ client_id: String(params.clientId) });
+  return apiRequest<{ items: StorageFolder[] }>(
+    `/storage/folders/${encodeURIComponent(params.folderId)}/ancestors?${query.toString()}`,
+  );
+}
+
 export async function createFolder(params: {
   clientId: number;
   name: string;

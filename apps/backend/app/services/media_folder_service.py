@@ -225,6 +225,36 @@ class MediaFolderService:
             raise MediaFolderError("Failed to delete folder", status_code=500)
         return deleted
 
+    def list_ancestors(
+        self,
+        *,
+        client_id: int,
+        folder_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return the path from the root to the given folder as an ordered list
+        (root-most first, target last). Each entry is a folder record, so the
+        UI can rebuild the breadcrumb after a page reload."""
+        record = self._require_folder(client_id=client_id, folder_id=folder_id)
+        chain: list[dict[str, Any]] = [record]
+        current_parent: str | None = record.get("parent_folder_id") or None
+        depth_guard = 0
+        while current_parent:
+            depth_guard += 1
+            if depth_guard > _MAX_FOLDER_DEPTH + 2:
+                break
+            parent_record = media_folder_repository.get_by_id(
+                client_id=client_id,
+                folder_id=current_parent,
+            )
+            if parent_record is None:
+                break
+            if parent_record.get("status") != FOLDER_STATUS_ACTIVE:
+                break
+            chain.append(parent_record)
+            current_parent = parent_record.get("parent_folder_id") or None
+        chain.reverse()
+        return chain
+
     def ensure_system_folder(
         self,
         *,
