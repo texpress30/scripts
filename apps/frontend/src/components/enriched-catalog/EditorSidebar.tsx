@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2, Upload, RefreshCw, SlidersHorizontal, Check, Shuffle, Eraser } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Rss, Image, Shapes, BookOpen, Layers, Search, ChevronLeft, ChevronRight, Loader2, Upload, RefreshCw, SlidersHorizontal, Check, Shuffle, Eraser, Folder, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getMediaAccessUrl, listFolders, listMedia, type StorageFolder, type StorageMediaListItem } from "@/lib/storage-client";
 
 export type SidebarTab = "source_feed" | "image_assets" | "graphic_assets" | "library" | "layers";
 
@@ -10,7 +11,7 @@ const SIDEBAR_TABS: { key: SidebarTab; label: string; icon: typeof Rss }[] = [
   { key: "source_feed", label: "Source Feed", icon: Rss },
   { key: "image_assets", label: "Images", icon: Image },
   { key: "graphic_assets", label: "Graphics", icon: Shapes },
-  { key: "library", label: "Library", icon: BookOpen },
+  { key: "library", label: "Elemente Publice", icon: BookOpen },
   { key: "layers", label: "Layers", icon: Layers },
 ];
 
@@ -549,33 +550,280 @@ export function GraphicAssetsPanel() {
   );
 }
 
-export function LibraryPanel({ templates, onSelect }: { templates: { id: string; name: string; canvas_width: number; canvas_height: number }[]; onSelect: (id: string) => void }) {
-  if (templates.length === 0) {
+// ---------------------------------------------------------------------------
+// Library Panel — Elemente Publice
+// Lists category folders that live under a top-level "Public Elements" folder
+// in the agency media library. Clicking a category opens an extended panel
+// with the files (images / SVGs) in that folder; clicking a file inserts it
+// onto the canvas via `onInsertImage`.
+// ---------------------------------------------------------------------------
+
+const PUBLIC_ELEMENTS_ROOT_NAME = "Public Elements";
+
+type LibraryPanelProps = {
+  clientId: number | null;
+  onInsertImage: (url: string, displayName: string) => void;
+};
+
+function LibraryFileTile({ clientId, file, onInsert }: {
+  clientId: number;
+  file: StorageMediaListItem;
+  onInsert: (url: string, name: string) => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await getMediaAccessUrl({ clientId, mediaId: file.media_id, disposition: "inline" });
+        if (!cancelled) setPreviewUrl(response.url);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, file.media_id]);
+
+  const label = file.display_name || file.original_filename;
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (previewUrl) onInsert(previewUrl, label);
+      }}
+      disabled={!previewUrl}
+      className={cn(
+        "group relative aspect-square overflow-hidden rounded-md border border-slate-200 bg-slate-50 p-1.5 text-left transition hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-indigo-600 dark:hover:bg-indigo-950/30",
+        !previewUrl && "cursor-not-allowed opacity-60",
+      )}
+      title={label}
+    >
+      {previewUrl && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={previewUrl}
+          alt={label}
+          className="h-full w-full object-contain"
+          onError={() => setFailed(true)}
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.setData("application/x-media-image", JSON.stringify({ url: previewUrl, name: label }));
+            event.dataTransfer.effectAllowed = "copy";
+          }}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-slate-300">
+          <Image className="h-6 w-6" />
+        </div>
+      )}
+    </button>
+  );
+}
+
+export function LibraryPanel({ clientId, onInsertImage }: LibraryPanelProps) {
+  const [publicRootId, setPublicRootId] = useState<string | null>(null);
+  const [categories, setCategories] = useState<StorageFolder[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [categoriesError, setCategoriesError] = useState<string>("");
+
+  const [activeCategory, setActiveCategory] = useState<StorageFolder | null>(null);
+  const [categoryFiles, setCategoryFiles] = useState<StorageMediaListItem[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [filesError, setFilesError] = useState<string>("");
+  const [fileSearch, setFileSearch] = useState("");
+
+  // Load root → find "Public Elements" → list its children
+  useEffect(() => {
+    if (!clientId) {
+      setCategories([]);
+      setPublicRootId(null);
+      setCategoriesError("");
+      return;
+    }
+    let cancelled = false;
+    setLoadingCategories(true);
+    setCategoriesError("");
+    (async () => {
+      try {
+        const rootFolders = await listFolders({ clientId, parentFolderId: null });
+        if (cancelled) return;
+        const publicRoot = rootFolders.items.find(
+          (folder) => folder.name.trim().toLowerCase() === PUBLIC_ELEMENTS_ROOT_NAME.toLowerCase(),
+        );
+        if (!publicRoot) {
+          setPublicRootId(null);
+          setCategories([]);
+          setCategoriesError(
+            `Niciun folder "${PUBLIC_ELEMENTS_ROOT_NAME}" nu a fost găsit în Stocare Media a agenției. Creează-l și populează-l cu sub-foldere (Emoticoane, Forme, Ilustrații, ...) pentru a-l vedea aici.`,
+          );
+          return;
+        }
+        setPublicRootId(publicRoot.folder_id);
+        const childFolders = await listFolders({ clientId, parentFolderId: publicRoot.folder_id });
+        if (cancelled) return;
+        setCategories(childFolders.items);
+      } catch (err) {
+        if (cancelled) return;
+        setCategories([]);
+        setCategoriesError(err instanceof Error ? err.message : "Nu am putut încărca categoriile.");
+      } finally {
+        if (!cancelled) setLoadingCategories(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  // Load files whenever the user opens a category
+  useEffect(() => {
+    if (!clientId || !activeCategory) {
+      setCategoryFiles([]);
+      setFilesError("");
+      return;
+    }
+    let cancelled = false;
+    setLoadingFiles(true);
+    setFilesError("");
+    setFileSearch("");
+    (async () => {
+      try {
+        const response = await listMedia({
+          clientId,
+          folderId: activeCategory.folder_id,
+          kind: "image",
+          limit: 100,
+          sort: "name_asc",
+        });
+        if (cancelled) return;
+        setCategoryFiles(response.items);
+      } catch (err) {
+        if (cancelled) return;
+        setCategoryFiles([]);
+        setFilesError(err instanceof Error ? err.message : "Nu am putut încărca fișierele.");
+      } finally {
+        if (!cancelled) setLoadingFiles(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, activeCategory]);
+
+  const filteredFiles = useMemo(() => {
+    const token = fileSearch.trim().toLowerCase();
+    if (token === "") return categoryFiles;
+    return categoryFiles.filter((file) => {
+      const label = (file.display_name || file.original_filename || "").toLowerCase();
+      return label.includes(token);
+    });
+  }, [categoryFiles, fileSearch]);
+
+  if (!clientId) {
     return (
       <div className="p-3 text-center text-xs text-slate-400">
-        No saved templates yet.
+        Nu am putut identifica contul de stocare al agenției. Încarcă un logo în Setări → Company pentru a inițializa spațiul de stocare.
       </div>
     );
   }
 
+  // --- Extended panel: files inside a category ---
+  if (activeCategory) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-start justify-between gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
+          <div className="min-w-0 flex-1">
+            <h4 className="truncate text-sm font-bold uppercase tracking-wide text-slate-900 dark:text-slate-100">
+              {activeCategory.name}
+            </h4>
+            <p className="mt-0.5 text-[10px] text-slate-400">
+              {categoryFiles.length} fișier{categoryFiles.length === 1 ? "" : "e"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveCategory(null)}
+            className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
+            title="Înapoi la Elemente Publice"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="border-b border-slate-200 px-3 py-2 dark:border-slate-700">
+          <div className="relative">
+            <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="search"
+              value={fileSearch}
+              onChange={(event) => setFileSearch(event.target.value)}
+              placeholder="Caută în categorie..."
+              className="mcc-input w-full rounded border py-1.5 pl-7 pr-2 text-xs"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3">
+          {loadingFiles ? (
+            <div className="flex h-20 items-center justify-center text-xs text-slate-400">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Se încarcă...
+            </div>
+          ) : filesError ? (
+            <p className="text-center text-xs text-red-500">{filesError}</p>
+          ) : filteredFiles.length === 0 ? (
+            <p className="text-center text-xs text-slate-400">Niciun fișier în această categorie.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {filteredFiles.map((file) => (
+                <LibraryFileTile
+                  key={file.media_id}
+                  clientId={clientId}
+                  file={file}
+                  onInsert={onInsertImage}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // --- Top-level: list categories ---
   return (
     <div className="p-2">
-      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">Saved templates</p>
-      <div className="space-y-1.5">
-        {templates.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => onSelect(t.id)}
-            className="flex w-full items-center gap-2 rounded border border-slate-200 px-2.5 py-2 text-left text-xs hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-600 dark:hover:border-indigo-600"
-          >
-            <div className="h-8 w-8 rounded bg-slate-100 dark:bg-slate-700" />
-            <div className="flex-1 truncate">
-              <p className="font-medium text-slate-700 dark:text-slate-300">{t.name}</p>
-              <p className="text-[10px] text-slate-400">{t.canvas_width}x{t.canvas_height}</p>
-            </div>
-          </button>
-        ))}
-      </div>
+      {loadingCategories ? (
+        <div className="flex h-20 items-center justify-center text-xs text-slate-400">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Se încarcă...
+        </div>
+      ) : categoriesError ? (
+        <p className="p-2 text-center text-xs text-slate-400">{categoriesError}</p>
+      ) : categories.length === 0 ? (
+        <p className="p-2 text-center text-xs text-slate-400">
+          Folderul "Public Elements" este gol. Adaugă sub-foldere din Stocare Media pentru a le vedea aici.
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {categories.map((folder) => (
+            <button
+              key={folder.folder_id}
+              type="button"
+              onClick={() => setActiveCategory(folder)}
+              className="flex w-full items-center gap-2 rounded border border-slate-200 px-2.5 py-2 text-left text-xs hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-600 dark:hover:border-indigo-600 dark:hover:bg-indigo-950/30"
+              title={folder.name}
+            >
+              <Folder className="h-4 w-4 shrink-0 text-slate-400" />
+              <span className="flex-1 truncate font-medium text-slate-700 dark:text-slate-200">{folder.name}</span>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
