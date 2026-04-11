@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
+from app.core.config import load_settings
 from app.services.rbac import normalize_role
 from app.schemas.company import CompanySettingsResponse, UpdateCompanySettingsRequest
 from app.services.auth import AuthUser
@@ -8,6 +9,16 @@ from app.services.client_registry import client_registry_service
 from app.services.company_settings import company_settings_service
 
 router = APIRouter(prefix="/company", tags=["company"])
+
+
+def _canonical_agency_email() -> str:
+    """The agency's company settings are a singleton shared by every agency
+    user. Use the env-level login email (APP_LOGIN_EMAIL) as the canonical
+    key so that additional agency_owner accounts created via "Add user" read
+    and write the same row — otherwise each new agency_owner would end up
+    with their own empty company settings (no logo, no city, etc.)."""
+    settings = load_settings()
+    return str(settings.app_login_email or "").strip().lower() or "admin@example.com"
 
 
 def _resolve_logo_storage_client_id(*, owner_email: str) -> int | None:
@@ -41,9 +52,10 @@ def get_company_settings(user: AuthUser = Depends(get_current_user)) -> CompanyS
     else:
         enforce_action_scope(user=user, action="clients:list", scope="agency")
         enforce_agency_navigation_access(user=user, permission_key="settings_company")
-    logo_storage_client_id = _resolve_logo_storage_client_id(owner_email=user.email.strip().lower())
+    canonical_email = _canonical_agency_email()
+    logo_storage_client_id = _resolve_logo_storage_client_id(owner_email=canonical_email)
     payload = company_settings_service.get_settings(
-        owner_email=user.email.strip().lower(),
+        owner_email=canonical_email,
         logo_storage_client_id=logo_storage_client_id,
     )
     return CompanySettingsResponse(**payload)
@@ -71,9 +83,10 @@ def update_company_settings(payload: UpdateCompanySettingsRequest, user: AuthUse
     if payload.timezone.strip() == "":
         raise HTTPException(status_code=400, detail="Fusul orar este obligatoriu")
 
-    logo_storage_client_id = _resolve_logo_storage_client_id(owner_email=user.email.strip().lower())
+    canonical_email = _canonical_agency_email()
+    logo_storage_client_id = _resolve_logo_storage_client_id(owner_email=canonical_email)
     updated = company_settings_service.update_settings(
-        owner_email=user.email.strip().lower(),
+        owner_email=canonical_email,
         payload={
             "company_name": payload.company_name.strip(),
             "company_email": payload.company_email.strip(),
