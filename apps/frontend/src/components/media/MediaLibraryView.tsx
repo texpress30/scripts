@@ -143,7 +143,17 @@ export function MediaLibraryView({
   const urlSyncEnabled = !embed;
   const urlFolderId = urlSyncEnabled ? searchParams?.get("folder") || null : null;
 
-  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([{ folder_id: null, name: "Home" }]);
+  // `activeFolderId` drives the file grid and is seeded synchronously from
+  // the URL on the very first render, so a deep-link refresh doesn't flash
+  // the Home view before the ancestor chain loads. The `breadcrumbs` state
+  // is purely for the header trail and catches up asynchronously once we've
+  // fetched the folder's ancestors.
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(urlFolderId);
+  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>(() =>
+    urlFolderId
+      ? [{ folder_id: null, name: "Home" }, { folder_id: urlFolderId, name: "…" }]
+      : [{ folder_id: null, name: "Home" }],
+  );
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<StorageMediaSort>("newest");
@@ -166,46 +176,53 @@ export function MediaLibraryView({
   const [pageSize, setPageSize] = useState(10);
   const [pageSizeMenuOpen, setPageSizeMenuOpen] = useState(false);
 
-  const currentFolderId = breadcrumbs[breadcrumbs.length - 1]?.folder_id ?? null;
+  const currentFolderId = activeFolderId;
 
-  // Restore the breadcrumb from the `?folder=...` query param on mount /
-  // whenever it changes (e.g. browser back/forward), by fetching the
-  // folder's ancestor chain from the backend.
+  // Keep `activeFolderId` in sync with the URL (back/forward navigation, or
+  // manual address-bar edits).
+  useEffect(() => {
+    if (!urlSyncEnabled) return;
+    setActiveFolderId((prev) => (prev === urlFolderId ? prev : urlFolderId));
+  }, [urlFolderId, urlSyncEnabled]);
+
+  // Whenever `activeFolderId` changes (either on mount with a deep-link or
+  // after back/forward navigation), fetch the ancestor chain and rebuild the
+  // breadcrumb trail. The file grid is already displaying the right folder
+  // because `currentFolderId = activeFolderId` is synchronous.
   useEffect(() => {
     if (!Number.isFinite(clientId) || clientId <= 0) return;
-    if (!urlFolderId) {
+    if (!activeFolderId) {
       setBreadcrumbs([{ folder_id: null, name: "Home" }]);
       return;
     }
-    // Avoid re-fetching if we already have the right folder in state.
     const lastEntry = breadcrumbs[breadcrumbs.length - 1];
-    if (lastEntry && lastEntry.folder_id === urlFolderId) return;
-
+    if (lastEntry && lastEntry.folder_id === activeFolderId && lastEntry.name !== "…") {
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const response = await getFolderAncestors({ clientId, folderId: urlFolderId });
+        const response = await getFolderAncestors({ clientId, folderId: activeFolderId });
         if (cancelled) return;
-        const nextBreadcrumbs: BreadcrumbEntry[] = [
+        setBreadcrumbs([
           { folder_id: null, name: "Home" },
           ...response.items.map((folder) => ({
             folder_id: folder.folder_id,
             name: folder.name,
           })),
-        ];
-        setBreadcrumbs(nextBreadcrumbs);
+        ]);
       } catch {
-        if (!cancelled) setBreadcrumbs([{ folder_id: null, name: "Home" }]);
+        if (!cancelled) {
+          setBreadcrumbs([{ folder_id: null, name: "Home" }]);
+          setActiveFolderId(null);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-    // Intentionally omitting `breadcrumbs` from deps — we only want this
-    // effect to react to url/clientId changes, not to every breadcrumb
-    // mutation triggered by in-page navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, urlFolderId]);
+  }, [clientId, activeFolderId]);
 
   const pushFolderToUrl = useCallback(
     (folderId: string | null) => {
@@ -299,6 +316,7 @@ export function MediaLibraryView({
 
   const enterFolder = useCallback(
     (folder: StorageFolder) => {
+      setActiveFolderId(folder.folder_id);
       setBreadcrumbs((prev) => [...prev, { folder_id: folder.folder_id, name: folder.name }]);
       pushFolderToUrl(folder.folder_id);
     },
@@ -310,6 +328,7 @@ export function MediaLibraryView({
       setBreadcrumbs((prev) => {
         const next = prev.slice(0, index + 1);
         const target = next[next.length - 1];
+        setActiveFolderId(target?.folder_id ?? null);
         pushFolderToUrl(target?.folder_id ?? null);
         return next;
       });
