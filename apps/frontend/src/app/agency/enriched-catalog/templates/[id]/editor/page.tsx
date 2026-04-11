@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Save, Loader2, Eye, RefreshCw, Wand2, ZoomIn, ZoomOut, Maximize2, Shuffle } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Eye, RefreshCw, Wand2, ZoomIn, ZoomOut, Maximize2, Filter } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCreativeTemplate, useFormatSiblings, useCreativeTemplates } from "@/lib/hooks/useCreativeTemplates";
 import { useCanvasEditor } from "@/lib/hooks/useCanvasEditor";
@@ -15,6 +15,12 @@ import { apiRequest } from "@/lib/api";
 import type { CanvasEditorHandle } from "@/components/enriched-catalog/CanvasEditor";
 import type { UpdateTemplatePayload } from "@/lib/hooks/useCreativeTemplates";
 import type { FabricObject } from "fabric";
+import {
+  EnrichedFeedFiltersModal,
+  applyFeedFilters,
+  countCompleteFilters,
+  type FeedFilter,
+} from "@/components/enriched-catalog/EnrichedFeedFiltersModal";
 
 const CanvasEditor = dynamic(
   () => import("@/components/enriched-catalog/CanvasEditor").then((m) => ({ default: m.CanvasEditor })),
@@ -101,6 +107,61 @@ export default function TemplateEditorPage() {
   const [currentProductIndex, setCurrentProductIndex] = useState(0);
   const [zoom, setZoom] = useState<number>(34);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
+
+  // Enriched Feed Filters — modal opens from the SKU chip in the top bar and
+  // narrows the set of rows the shuffle / source-feed panel iterates over.
+  // Filters are persisted per-template in localStorage so they survive a
+  // page refresh; the user explicitly clears them via the modal's Clear All
+  // / trash controls.
+  const filtersStorageKey = templateId ? `enriched-feed-filters:${templateId}` : "";
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [feedFilters, setFeedFilters] = useState<FeedFilter[]>(() => {
+    if (typeof window === "undefined" || !filtersStorageKey) return [];
+    try {
+      const raw = window.localStorage.getItem(filtersStorageKey);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      // Defensive validation: only accept items that look like a FeedFilter
+      // so an unrelated localStorage entry can't crash the editor.
+      return parsed.filter(
+        (f): f is FeedFilter =>
+          f != null &&
+          typeof f === "object" &&
+          typeof (f as FeedFilter).id === "string" &&
+          typeof (f as FeedFilter).column === "string" &&
+          typeof (f as FeedFilter).operator === "string" &&
+          typeof (f as FeedFilter).value === "string",
+      );
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !filtersStorageKey) return;
+    try {
+      if (feedFilters.length === 0) {
+        window.localStorage.removeItem(filtersStorageKey);
+      } else {
+        window.localStorage.setItem(filtersStorageKey, JSON.stringify(feedFilters));
+      }
+    } catch {
+      // Ignore quota / private-mode errors — the filter still works in-memory.
+    }
+  }, [feedFilters, filtersStorageKey]);
+  const filteredProducts = useMemo(
+    () => applyFeedFilters(products, feedFilters),
+    [products, feedFilters],
+  );
+  const filteredProductCount = filteredProducts.length;
+  const activeFilterCount = countCompleteFilters(feedFilters);
+  // Reset the pointer whenever the filtered result shrinks below the current
+  // index so we don't render a stale / out-of-bounds row.
+  useEffect(() => {
+    if (currentProductIndex >= filteredProductCount && filteredProductCount > 0) {
+      setCurrentProductIndex(0);
+    }
+  }, [currentProductIndex, filteredProductCount]);
 
   const {
     canvasWidth, canvasHeight, backgroundColor,
@@ -304,13 +365,14 @@ export default function TemplateEditorPage() {
       case "source_feed":
         return (
           <SourceFeedPanel
-            products={products}
+            products={filteredProducts}
             columns={columns}
             isLoading={productsLoading}
             currentProductIndex={currentProductIndex}
             onProductChange={setCurrentProductIndex}
-            totalProducts={totalProducts}
+            totalProducts={filteredProductCount}
             onFieldClick={handleSourceFieldClick}
+            hasActiveFilter={activeFilterCount > 0}
           />
         );
       case "image_assets":
@@ -353,20 +415,24 @@ export default function TemplateEditorPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Shuffle + SKU count */}
+          {/* SKU chip — opens the Enriched Feed Filters modal. Shuffle still
+              lives inside the Source Feed panel on the left sidebar. */}
           <button
-            onClick={() => {
-              if (totalProducts <= 1) return;
-              let next = currentProductIndex;
-              while (next === currentProductIndex) next = Math.floor(Math.random() * totalProducts);
-              setCurrentProductIndex(next);
-            }}
-            disabled={totalProducts <= 1}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-400 dark:hover:bg-slate-700"
-            title="Shuffle through different product rows in the source feed"
+            onClick={() => setFiltersOpen(true)}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition ${
+              activeFilterCount > 0
+                ? "border border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-300"
+                : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+            }`}
+            title="Open Enriched Feed Filters"
           >
-            <Shuffle className="h-3.5 w-3.5" />
-            {totalProducts} SKUs
+            <Filter className="h-3.5 w-3.5" />
+            {filteredProductCount} SKUs
+            {activeFilterCount > 0 && (
+              <span className="ml-1 rounded-full bg-indigo-200 px-1.5 text-[10px] font-medium text-indigo-800 dark:bg-indigo-800 dark:text-indigo-100">
+                {activeFilterCount}
+              </span>
+            )}
           </button>
 
           <div className="h-5 w-px bg-slate-200 dark:bg-slate-600" />
@@ -587,6 +653,18 @@ export default function TemplateEditorPage() {
           </div>
         </div>
       )}
+
+      <EnrichedFeedFiltersModal
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        columns={columns}
+        productRowsCount={filteredProductCount}
+        initialFilters={feedFilters}
+        onApply={(next) => {
+          setFeedFilters(next);
+          setCurrentProductIndex(0);
+        }}
+      />
     </div>
   );
 }
