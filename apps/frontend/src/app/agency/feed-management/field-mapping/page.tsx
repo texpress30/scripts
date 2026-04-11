@@ -33,7 +33,7 @@ function SourceCard({ source }: { source: FeedSource }) {
           <h3 className="text-sm font-semibold">
             <Link
               href={`/agency/feed-management/field-mapping/${source.id}`}
-              className="text-slate-900 hover:text-indigo-600 hover:underline dark:text-slate-100 dark:hover:text-indigo-400"
+              className="rounded text-slate-900 hover:text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-slate-100 dark:hover:text-indigo-400"
             >
               {source.name}
             </Link>
@@ -48,7 +48,12 @@ function SourceCard({ source }: { source: FeedSource }) {
           <span className="text-slate-300 dark:text-slate-600">&middot;</span>
           <span>{source.product_count} products</span>
           <span className="text-slate-300 dark:text-slate-600">&middot;</span>
-          <span>{mapped} / {total} fields mapped</span>
+          <Link
+            href={`/agency/feed-management/field-mapping/${source.id}`}
+            className="rounded hover:text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-indigo-400"
+          >
+            {mapped} / {total} fields mapped
+          </Link>
         </div>
       </div>
       <Link
