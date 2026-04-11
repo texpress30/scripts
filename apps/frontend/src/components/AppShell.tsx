@@ -38,7 +38,7 @@ type SubaccountBusinessProfileResponse = { address?: { city?: string; country?: 
 type TeamMemberItem = { id: number; first_name: string; last_name: string; email: string; user_role: string; user_type?: string };
 type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
-const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations"] as const;
+const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations", "media"] as const;
 type SubaccountModuleKey = (typeof SUBACCOUNT_MODULE_ORDER)[number];
 const AGENCY_MAIN_MODULE_ORDER = ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "feed_management", "enriched_catalog", "agency_audit", "creative"] as const;
 type AgencyMainModuleKey = (typeof AGENCY_MAIN_MODULE_ORDER)[number];
@@ -99,6 +99,7 @@ export function getNavItems(pathname: string): NavItem[] {
       { href: `/sub/${id}/rules`, label: "Reguli", icon: Sparkles, moduleKey: "rules" },
       { href: `/sub/${id}/creative`, label: "Creativ", icon: Palette, moduleKey: "creative" },
       { href: `/sub/${id}/recommendations`, label: "Recomandări", icon: Users, moduleKey: "recommendations" },
+      { href: `/sub/${id}/media`, label: "Stocare Media", icon: ImageIcon, moduleKey: "media" },
     ];
   }
 
