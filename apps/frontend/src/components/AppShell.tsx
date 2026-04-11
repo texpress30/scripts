@@ -910,8 +910,20 @@ export function AppShell({
   const sidebarContent = (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">
-        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-700 dark:bg-slate-800/50">
-          <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-900">
+        <div
+          className={cn(
+            "mb-3 text-center",
+            collapsed
+              ? ""
+              : "rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50"
+          )}
+        >
+          <div
+            className={cn(
+              "mx-auto flex items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-900",
+              collapsed ? "h-9 w-9" : "mb-2 h-16 w-16"
+            )}
+          >
             {shouldRenderBrandingLogo(brandingLogoUrl, brandingImageLoadFailed) ? (
               <Image
                 src={brandingLogoUrl}
@@ -923,14 +935,25 @@ export function AppShell({
                 unoptimized
               />
             ) : (
-              <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{brandingInitials}</span>
+              <span
+                className={cn(
+                  "font-semibold text-indigo-600 dark:text-indigo-300",
+                  collapsed ? "text-xs" : "text-sm"
+                )}
+              >
+                {brandingInitials}
+              </span>
             )}
           </div>
-          <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{brandingTitle}</p>
-          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{brandingSubtitle}</p>
+          {!collapsed && (
+            <>
+              <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{brandingTitle}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{brandingSubtitle}</p>
+            </>
+          )}
         </div>
 
-        {isSettingsMode ? (
+        {!collapsed && (isSettingsMode ? (
           <div className="space-y-2">
             <p className="text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400">{settingsHeaderLabel}</p>
             <Link
@@ -991,7 +1014,7 @@ export function AppShell({
               </div>
             ) : null}
           </>
-        )}
+        ))}
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
