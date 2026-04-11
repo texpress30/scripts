@@ -11,8 +11,11 @@ from app.services.media_metadata_repository import media_metadata_repository
 
 _SUPPORTED_KINDS: tuple[str, ...] = ("image", "video", "document")
 _SUPPORTED_STATUSES: tuple[str, ...] = ("draft", "ready", "delete_requested", "purged")
+_SUPPORTED_SORTS: tuple[str, ...] = ("newest", "oldest", "name_asc", "name_desc")
 _DEFAULT_LIMIT = 25
 _MAX_LIMIT = 100
+
+_FOLDER_ROOT_SENTINEL = "root"
 
 
 class StorageMediaReadError(RuntimeError):
@@ -22,6 +25,22 @@ class StorageMediaReadError(RuntimeError):
 
 
 class StorageMediaReadService:
+    def _resolve_folder_filter(self, folder_id: str | None) -> Any:
+        """Translate the API-facing folder_id query param into the repository filter.
+
+        - None / "" → no filtering (list across all folders, used by search / pickers).
+        - "root" → files with folder_id = null (top-level browser).
+        - any other string → files whose folder_id matches that value.
+        """
+        if folder_id is None:
+            return None
+        candidate = str(folder_id or "").strip()
+        if candidate == "":
+            return None
+        if candidate.lower() == _FOLDER_ROOT_SENTINEL:
+            return media_metadata_repository.FOLDER_ROOT
+        return candidate
+
     def list_media(
         self,
         *,
@@ -30,6 +49,9 @@ class StorageMediaReadService:
         status: MediaFileStatus | None = None,
         limit: int | None = None,
         offset: int | None = None,
+        folder_id: str | None = None,
+        search: str | None = None,
+        sort: str | None = None,
     ) -> dict[str, Any]:
         normalized_client_id = int(client_id)
         if normalized_client_id <= 0:
@@ -37,16 +59,24 @@ class StorageMediaReadService:
 
         normalized_kind = str(kind or "").strip()
         normalized_status = str(status or "").strip()
+        normalized_sort = str(sort or "").strip().lower()
         if normalized_kind != "" and normalized_kind not in _SUPPORTED_KINDS:
             raise StorageMediaReadError("kind must be one of: image, video, document", status_code=400)
         if normalized_status != "" and normalized_status not in _SUPPORTED_STATUSES:
             raise StorageMediaReadError("status is invalid", status_code=400)
+        if normalized_sort != "" and normalized_sort not in _SUPPORTED_SORTS:
+            raise StorageMediaReadError(
+                "sort must be one of: newest, oldest, name_asc, name_desc",
+                status_code=400,
+            )
 
         resolved_limit = _DEFAULT_LIMIT if limit is None else int(limit)
         if resolved_limit <= 0:
             resolved_limit = _DEFAULT_LIMIT
         resolved_limit = min(resolved_limit, _MAX_LIMIT)
         resolved_offset = 0 if offset is None else max(0, int(offset))
+        resolved_folder = self._resolve_folder_filter(folder_id)
+        normalized_search = str(search or "").strip()
 
         items = media_metadata_repository.list_for_client(
             client_id=normalized_client_id,
@@ -55,12 +85,17 @@ class StorageMediaReadService:
             limit=resolved_limit,
             offset=resolved_offset,
             include_deleted_by_default=False,
+            folder_id=resolved_folder,
+            search=normalized_search or None,
+            sort=normalized_sort or None,
         )
         total = media_metadata_repository.count_for_client(
             client_id=normalized_client_id,
             kind=normalized_kind or None,
             status=normalized_status or None,
             include_deleted_by_default=False,
+            folder_id=resolved_folder,
+            search=normalized_search or None,
         )
         return {
             "items": [self._list_item(item) for item in items],
@@ -90,13 +125,16 @@ class StorageMediaReadService:
         return self._detail_item(record)
 
     def _list_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        original_filename = str(item.get("original_filename") or "")
         return {
             "media_id": str(item.get("media_id") or ""),
             "client_id": int(item.get("client_id") or 0),
             "kind": str(item.get("kind") or ""),
             "source": str(item.get("source") or ""),
             "status": str(item.get("status") or ""),
-            "original_filename": str(item.get("original_filename") or ""),
+            "original_filename": original_filename,
+            "display_name": str(item.get("display_name") or original_filename),
+            "folder_id": str(item.get("folder_id") or "").strip() or None,
             "mime_type": str(item.get("mime_type") or ""),
             "size_bytes": int(item.get("size_bytes")) if item.get("size_bytes") is not None else None,
             "created_at": item.get("created_at"),

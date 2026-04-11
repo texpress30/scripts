@@ -4,14 +4,22 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
+from app.api.dependencies import (
+    enforce_action_scope,
+    enforce_agency_navigation_access,
+    enforce_subaccount_action,
+    enforce_subaccount_navigation_access,
+    get_current_user,
+)
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
+from app.services.media_folder_service import MediaFolderError, media_folder_service
 from app.services.storage_upload_complete import StorageUploadCompleteError, storage_upload_complete_service
 from app.services.storage_upload_init import StorageUploadInitError, storage_upload_init_service
 from app.services.storage_media_read import StorageMediaReadError, storage_media_read_service
 from app.services.storage_media_access import StorageMediaAccessError, storage_media_access_service
 from app.services.storage_media_delete import StorageMediaDeleteError, storage_media_delete_service
+from app.services.storage_media_update import StorageMediaUpdateError, storage_media_update_service
 
 router = APIRouter(prefix="/storage", tags=["storage"])
 logger = logging.getLogger(__name__)
@@ -38,6 +46,7 @@ class StorageUploadInitRequest(BaseModel):
     mime_type: str
     size_bytes: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    folder_id: str | None = None
 
 
 class StorageUploadInitDescriptor(BaseModel):
@@ -81,6 +90,8 @@ class StorageMediaListItem(BaseModel):
     source: str
     status: str
     original_filename: str
+    display_name: str = ""
+    folder_id: str | None = None
     mime_type: str
     size_bytes: int | None = None
     created_at: Any | None = None
@@ -132,6 +143,57 @@ class StorageMediaDeleteResponse(BaseModel):
     updated_at: Any | None = None
 
 
+class StorageMediaUpdateRequest(BaseModel):
+    client_id: int
+    display_name: str | None = None
+    folder_id: str | None = None
+    clear_folder: bool = False
+
+
+class StorageFolderCreateRequest(BaseModel):
+    client_id: int
+    name: str
+    parent_folder_id: str | None = None
+
+
+class StorageFolderRenameRequest(BaseModel):
+    client_id: int
+    name: str
+
+
+class StorageFolderMoveRequest(BaseModel):
+    client_id: int
+    parent_folder_id: str | None = None
+
+
+class StorageFolderResponse(BaseModel):
+    folder_id: str
+    client_id: int
+    parent_folder_id: str | None = None
+    name: str
+    system: bool = False
+    status: str
+    created_at: Any | None = None
+    updated_at: Any | None = None
+
+
+class StorageFolderListResponse(BaseModel):
+    items: list[StorageFolderResponse]
+
+
+def _enforce_media_scope_access(*, user: AuthUser, client_id: int) -> None:
+    """Permit both agency users (with the legacy media-storage-usage permission)
+    and sub-account users (with the new `media` module) to work with the
+    media library for a specific sub-account."""
+    role = str(user.role or "").strip().lower()
+    if role.startswith("subaccount_"):
+        enforce_subaccount_navigation_access(user=user, subaccount_id=int(client_id), permission_key="media")
+        return
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    enforce_subaccount_action(user=user, action="dashboard:view", subaccount_id=int(client_id))
+
+
 @router.get("/media-usage", response_model=StorageUsageResponse)
 def list_media_usage(
     search: str = Query(default=""),
@@ -150,8 +212,7 @@ def init_direct_upload(
     payload: StorageUploadInitRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> StorageUploadInitResponse:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    _enforce_media_scope_access(user=user, client_id=int(payload.client_id))
     try:
         response_payload = storage_upload_init_service.init_upload(
             client_id=payload.client_id,
@@ -160,6 +221,7 @@ def init_direct_upload(
             mime_type=payload.mime_type,
             size_bytes=payload.size_bytes,
             metadata=payload.metadata,
+            folder_id=payload.folder_id,
         )
     except StorageUploadInitError as exc:
         logger.warning(
@@ -194,8 +256,7 @@ def complete_direct_upload(
     payload: StorageUploadCompleteRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> StorageUploadCompleteResponse:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    _enforce_media_scope_access(user=user, client_id=int(payload.client_id))
     try:
         response_payload = storage_upload_complete_service.complete_upload(
             client_id=payload.client_id,
@@ -215,12 +276,14 @@ def list_media(
     client_id: int = Query(..., ge=1),
     kind: Literal["image", "video", "document"] | None = Query(default=None),
     status_filter: Literal["draft", "ready", "delete_requested", "purged"] | None = Query(default=None, alias="status"),
+    folder_id: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    sort: Literal["newest", "oldest", "name_asc", "name_desc"] | None = Query(default=None),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
 ) -> StorageMediaListResponse:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
     try:
         payload = storage_media_read_service.list_media(
             client_id=client_id,
@@ -228,6 +291,9 @@ def list_media(
             status=status_filter,
             limit=limit,
             offset=offset,
+            folder_id=folder_id,
+            search=search,
+            sort=sort,
         )
     except StorageMediaReadError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -244,8 +310,7 @@ def get_media_detail(
     client_id: int = Query(..., ge=1),
     user: AuthUser = Depends(get_current_user),
 ) -> StorageMediaDetailResponse:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
     try:
         payload = storage_media_read_service.get_media_detail(client_id=client_id, media_id=media_id)
     except StorageMediaReadError as exc:
@@ -264,8 +329,7 @@ def get_media_access_url(
     disposition: Literal["inline", "attachment"] = Query(default="inline"),
     user: AuthUser = Depends(get_current_user),
 ) -> StorageMediaAccessResponse:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
     try:
         payload = storage_media_access_service.build_access_url(
             client_id=client_id,
@@ -287,14 +351,159 @@ def soft_delete_media(
     client_id: int = Query(..., ge=1),
     user: AuthUser = Depends(get_current_user),
 ) -> StorageMediaDeleteResponse:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
     try:
         payload = storage_media_delete_service.soft_delete_media(client_id=client_id, media_id=media_id)
     except StorageMediaDeleteError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        detail: Any = str(exc)
+        if exc.references:
+            detail = {"message": str(exc), "references": exc.references}
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to soft-delete media") from exc
     return StorageMediaDeleteResponse(**payload)
+
+
+@router.patch("/media/{media_id}", response_model=StorageMediaDetailResponse)
+def update_media(
+    media_id: str,
+    payload: StorageMediaUpdateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> StorageMediaDetailResponse:
+    _enforce_media_scope_access(user=user, client_id=int(payload.client_id))
+    try:
+        updated = storage_media_update_service.update_media(
+            client_id=payload.client_id,
+            media_id=media_id,
+            display_name=payload.display_name,
+            folder_id=payload.folder_id,
+            clear_folder=payload.clear_folder,
+        )
+    except StorageMediaUpdateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update media") from exc
+    detail_payload = storage_media_read_service.get_media_detail(
+        client_id=int(payload.client_id),
+        media_id=str(updated.get("media_id") or media_id),
+    )
+    return StorageMediaDetailResponse(**detail_payload)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Folders
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _folder_payload(folder: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "folder_id": str(folder.get("folder_id") or ""),
+        "client_id": int(folder.get("client_id") or 0),
+        "parent_folder_id": str(folder.get("parent_folder_id") or "").strip() or None,
+        "name": str(folder.get("name") or ""),
+        "system": bool(folder.get("system") or False),
+        "status": str(folder.get("status") or ""),
+        "created_at": folder.get("created_at"),
+        "updated_at": folder.get("updated_at"),
+    }
+
+
+@router.get("/folders", response_model=StorageFolderListResponse)
+def list_folders(
+    client_id: int = Query(..., ge=1),
+    parent_folder_id: str | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+) -> StorageFolderListResponse:
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
+    try:
+        items = media_folder_service.list_children(
+            client_id=int(client_id),
+            parent_folder_id=parent_folder_id,
+        )
+    except MediaFolderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return StorageFolderListResponse(items=[StorageFolderResponse(**_folder_payload(item)) for item in items])
+
+
+@router.post("/folders", response_model=StorageFolderResponse)
+def create_folder(
+    payload: StorageFolderCreateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> StorageFolderResponse:
+    _enforce_media_scope_access(user=user, client_id=int(payload.client_id))
+    try:
+        created = media_folder_service.create_folder(
+            client_id=int(payload.client_id),
+            parent_folder_id=payload.parent_folder_id,
+            name=payload.name,
+        )
+    except MediaFolderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return StorageFolderResponse(**_folder_payload(created))
+
+
+@router.patch("/folders/{folder_id}/rename", response_model=StorageFolderResponse)
+def rename_folder(
+    folder_id: str,
+    payload: StorageFolderRenameRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> StorageFolderResponse:
+    _enforce_media_scope_access(user=user, client_id=int(payload.client_id))
+    try:
+        updated = media_folder_service.rename_folder(
+            client_id=int(payload.client_id),
+            folder_id=folder_id,
+            name=payload.name,
+        )
+    except MediaFolderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return StorageFolderResponse(**_folder_payload(updated))
+
+
+@router.patch("/folders/{folder_id}/move", response_model=StorageFolderResponse)
+def move_folder(
+    folder_id: str,
+    payload: StorageFolderMoveRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> StorageFolderResponse:
+    _enforce_media_scope_access(user=user, client_id=int(payload.client_id))
+    try:
+        updated = media_folder_service.move_folder(
+            client_id=int(payload.client_id),
+            folder_id=folder_id,
+            new_parent_folder_id=payload.parent_folder_id,
+        )
+    except MediaFolderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return StorageFolderResponse(**_folder_payload(updated))
+
+
+@router.delete("/folders/{folder_id}", response_model=StorageFolderResponse)
+def delete_folder(
+    folder_id: str,
+    client_id: int = Query(..., ge=1),
+    user: AuthUser = Depends(get_current_user),
+) -> StorageFolderResponse:
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
+    try:
+        deleted = media_folder_service.delete_folder(
+            client_id=int(client_id),
+            folder_id=folder_id,
+        )
+    except MediaFolderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return StorageFolderResponse(**_folder_payload(deleted))

@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import uuid4
 
 MediaFileKind = Literal["image", "video", "document"]
-MediaFileSource = Literal["user_upload", "backend_ingest", "platform_sync"]
+MediaFileSource = Literal["user_upload", "backend_ingest", "platform_sync", "enriched_catalog"]
 MediaFileStatus = Literal["draft", "ready", "delete_requested", "purged"]
 
 MEDIA_FILE_STATUS_DRAFT: MediaFileStatus = "draft"

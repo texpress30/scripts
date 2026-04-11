@@ -96,6 +96,7 @@ SUBACCOUNT_NAVIGATION_CATALOG: tuple[ModuleCatalogItem, ...] = (
     ModuleCatalogItem(key="rules", label="Rules", order=3, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
     ModuleCatalogItem(key="creative", label="Creative", order=4, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
     ModuleCatalogItem(key="recommendations", label="Recommendations", order=5, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="media", label="Media Storage", order=6, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
     ModuleCatalogItem(key="settings", label="Settings", order=100, scope="subaccount", group_key="settings", group_label="Settings", is_container=True),
     ModuleCatalogItem(key="settings_profile", label="Profil Business", order=110, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),
     ModuleCatalogItem(key="settings_team", label="Echipa Mea", order=120, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),

@@ -207,11 +207,129 @@ def test_initialize_indexes(monkeypatch):
 
     repository_module.media_metadata_repository.initialize_indexes()
 
-    assert len(fake_collection.index_calls) == 3
-    assert fake_collection.index_calls[0]["name"] == "ux_media_files_storage_bucket_key"
-    assert fake_collection.index_calls[0]["unique"] is True
-    assert fake_collection.index_calls[1]["name"] == "ix_media_files_client_status_created_at"
-    assert fake_collection.index_calls[2]["name"] == "ix_media_files_status_deleted_at"
+    index_names = [call["name"] for call in fake_collection.index_calls]
+    assert "ux_media_files_storage_bucket_key" in index_names
+    assert "ix_media_files_client_status_created_at" in index_names
+    assert "ix_media_files_client_folder_status_created_at" in index_names
+    assert "ix_media_files_status_deleted_at" in index_names
+    unique_index = fake_collection.index_calls[0]
+    assert unique_index["name"] == "ux_media_files_storage_bucket_key"
+    assert unique_index["unique"] is True
+
+
+def test_create_draft_persists_folder_and_display_name(monkeypatch):
+    fake_collection = FakeCollection()
+    monkeypatch.setattr(repository_module, "load_settings", _settings)
+    monkeypatch.setattr(repository_module, "get_s3_bucket_name", lambda: "assets-bucket")
+    monkeypatch.setattr(repository_module, "get_mongo_collection", lambda _name: fake_collection)
+
+    created = repository_module.media_metadata_repository.create_draft(
+        client_id=11,
+        kind="image",
+        source="user_upload",
+        original_filename="hero.png",
+        mime_type="image/png",
+        folder_id="folder-1",
+        display_name="Hero Banner",
+    )
+
+    assert created["folder_id"] == "folder-1"
+    assert created["display_name"] == "Hero Banner"
+
+
+def test_create_ready_for_existing_asset(monkeypatch):
+    fake_collection = FakeCollection()
+    monkeypatch.setattr(repository_module, "load_settings", _settings)
+    monkeypatch.setattr(repository_module, "get_s3_bucket_name", lambda: "assets-bucket")
+    monkeypatch.setattr(repository_module, "get_mongo_collection", lambda _name: fake_collection)
+
+    created = repository_module.media_metadata_repository.create_ready(
+        client_id=12,
+        kind="image",
+        source="enriched_catalog",
+        original_filename="render.png",
+        mime_type="image/png",
+        storage_bucket="assets-bucket",
+        storage_key="enriched-catalog/42/render.png",
+        storage_region="eu-west-1",
+        size_bytes=4096,
+        folder_id="system-folder",
+        metadata={"enriched_catalog": {"output_feed_id": 42}},
+    )
+
+    assert created["status"] == MEDIA_FILE_STATUS_READY
+    assert created["source"] == "enriched_catalog"
+    assert created["folder_id"] == "system-folder"
+    assert created["storage"]["key"] == "enriched-catalog/42/render.png"
+    assert created["metadata"] == {"enriched_catalog": {"output_feed_id": 42}}
+
+
+def test_update_attributes_renames_and_moves(monkeypatch):
+    fake_collection = FakeCollection()
+    monkeypatch.setattr(repository_module, "load_settings", _settings)
+    monkeypatch.setattr(repository_module, "get_s3_bucket_name", lambda: "assets-bucket")
+    monkeypatch.setattr(repository_module, "get_mongo_collection", lambda _name: fake_collection)
+
+    created = repository_module.media_metadata_repository.create_draft(
+        client_id=13,
+        kind="image",
+        source="user_upload",
+        original_filename="original.png",
+        mime_type="image/png",
+    )
+
+    renamed = repository_module.media_metadata_repository.update_attributes(
+        media_id=created["media_id"],
+        display_name="Renamed",
+        folder_id="new-folder",
+    )
+    assert renamed is not None
+    assert renamed["display_name"] == "Renamed"
+    assert renamed["folder_id"] == "new-folder"
+
+    cleared = repository_module.media_metadata_repository.update_attributes(
+        media_id=created["media_id"],
+        clear_folder=True,
+    )
+    assert cleared is not None
+    assert cleared["folder_id"] is None
+
+
+def test_list_for_client_filters_by_folder(monkeypatch):
+    fake_collection = FakeCollection()
+    monkeypatch.setattr(repository_module, "load_settings", _settings)
+    monkeypatch.setattr(repository_module, "get_s3_bucket_name", lambda: "assets-bucket")
+    monkeypatch.setattr(repository_module, "get_mongo_collection", lambda _name: fake_collection)
+
+    repository_module.media_metadata_repository.create_draft(
+        client_id=14,
+        kind="image",
+        source="user_upload",
+        original_filename="root.png",
+        mime_type="image/png",
+    )
+    repository_module.media_metadata_repository.create_draft(
+        client_id=14,
+        kind="image",
+        source="user_upload",
+        original_filename="nested.png",
+        mime_type="image/png",
+        folder_id="folder-42",
+    )
+
+    in_root = repository_module.media_metadata_repository.list_for_client(
+        client_id=14,
+        folder_id=repository_module.media_metadata_repository.FOLDER_ROOT,
+    )
+    in_folder = repository_module.media_metadata_repository.list_for_client(
+        client_id=14,
+        folder_id="folder-42",
+    )
+
+    assert len(in_root) == 1
+    assert in_root[0]["original_filename"] == "root.png"
+    assert len(in_folder) == 1
+    assert in_folder[0]["original_filename"] == "nested.png"
 
 
 def test_repository_raises_when_mongo_not_configured(monkeypatch):

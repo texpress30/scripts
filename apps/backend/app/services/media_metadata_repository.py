@@ -21,7 +21,12 @@ from app.core.config import load_settings
 _COLLECTION_NAME = "media_files"
 
 
+_FOLDER_FILTER_ROOT = object()  # sentinel for "root folder only (folder_id = null)"
+
+
 class MediaMetadataRepository:
+    FOLDER_ROOT: Any = _FOLDER_FILTER_ROOT
+
     def _filters_for_client(
         self,
         *,
@@ -29,6 +34,8 @@ class MediaMetadataRepository:
         kind: str | None = None,
         status: str | None = None,
         include_deleted_by_default: bool = False,
+        folder_id: Any = None,
+        search: str | None = None,
     ) -> dict[str, Any]:
         filters: dict[str, Any] = {"client_id": int(client_id)}
         normalized_kind = str(kind or "").strip()
@@ -41,6 +48,21 @@ class MediaMetadataRepository:
             filters["status"] = {"$ne": "purged"}
         else:
             filters["status"] = {"$nin": ["purged", "delete_requested"]}
+        if folder_id is _FOLDER_FILTER_ROOT:
+            filters["folder_id"] = None
+        elif folder_id is not None:
+            normalized_folder_id = str(folder_id or "").strip()
+            if normalized_folder_id != "":
+                filters["folder_id"] = normalized_folder_id
+        normalized_search = str(search or "").strip()
+        if normalized_search != "":
+            import re
+
+            safe_search = re.escape(normalized_search)
+            filters["$or"] = [
+                {"display_name": {"$regex": safe_search, "$options": "i"}},
+                {"original_filename": {"$regex": safe_search, "$options": "i"}},
+            ]
         return filters
 
     def _collection(self):
@@ -65,6 +87,10 @@ class MediaMetadataRepository:
             name="ix_media_files_client_status_created_at",
         )
         collection.create_index(
+            [("client_id", 1), ("folder_id", 1), ("status", 1), ("created_at", -1)],
+            name="ix_media_files_client_folder_status_created_at",
+        )
+        collection.create_index(
             [("status", 1), ("deleted_at", 1)],
             name="ix_media_files_status_deleted_at",
         )
@@ -83,6 +109,8 @@ class MediaMetadataRepository:
         storage_key: str = "",
         storage_bucket: str | None = None,
         media_id: str | None = None,
+        folder_id: str | None = None,
+        display_name: str | None = None,
     ) -> dict[str, Any]:
         now = utcnow()
         settings = load_settings()
@@ -93,6 +121,7 @@ class MediaMetadataRepository:
             key=str(storage_key or "").strip(),
             region=str(settings.storage_s3_region or "").strip(),
         ).to_dict()
+        resolved_display_name = str(display_name or "").strip() or str(original_filename or "").strip()
         payload: dict[str, Any] = {
             "media_id": str(media_id or "").strip() or new_media_id(),
             "client_id": int(client_id),
@@ -100,6 +129,8 @@ class MediaMetadataRepository:
             "source": str(source),
             "status": MEDIA_FILE_STATUS_DRAFT,
             "original_filename": str(original_filename or "").strip(),
+            "display_name": resolved_display_name,
+            "folder_id": str(folder_id or "").strip() or None,
             "mime_type": str(mime_type or "").strip(),
             "size_bytes": int(size_bytes) if size_bytes is not None else None,
             "checksum": str(checksum or "").strip() or None,
@@ -108,6 +139,60 @@ class MediaMetadataRepository:
             "created_at": now,
             "updated_at": now,
             "uploaded_at": None,
+            "deleted_at": None,
+            "purged_at": None,
+        }
+        self._collection().insert_one(payload)
+        return self._normalize(payload)
+
+    def create_ready(
+        self,
+        *,
+        client_id: int,
+        kind: MediaFileKind,
+        source: MediaFileSource,
+        original_filename: str,
+        mime_type: str,
+        storage_bucket: str,
+        storage_key: str,
+        storage_region: str,
+        size_bytes: int | None = None,
+        etag: str | None = None,
+        version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        folder_id: str | None = None,
+        display_name: str | None = None,
+        media_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Insert a media_files row that's already 'ready' (used by auto-ingest of assets
+        already present in S3, e.g. enriched-catalog renders)."""
+        now = utcnow()
+        storage = MediaStorageDescriptor(
+            provider="s3",
+            bucket=str(storage_bucket or "").strip(),
+            key=str(storage_key or "").strip(),
+            region=str(storage_region or "").strip(),
+            etag=etag,
+            version_id=version_id,
+        ).to_dict()
+        resolved_display_name = str(display_name or "").strip() or str(original_filename or "").strip()
+        payload: dict[str, Any] = {
+            "media_id": str(media_id or "").strip() or new_media_id(),
+            "client_id": int(client_id),
+            "kind": str(kind),
+            "source": str(source),
+            "status": MEDIA_FILE_STATUS_READY,
+            "original_filename": str(original_filename or "").strip(),
+            "display_name": resolved_display_name,
+            "folder_id": str(folder_id or "").strip() or None,
+            "mime_type": str(mime_type or "").strip(),
+            "size_bytes": int(size_bytes) if size_bytes is not None else None,
+            "checksum": None,
+            "metadata": dict(metadata or {}),
+            "storage": storage,
+            "created_at": now,
+            "updated_at": now,
+            "uploaded_at": now,
             "deleted_at": None,
             "purged_at": None,
         }
@@ -129,6 +214,13 @@ class MediaMetadataRepository:
         found = self._collection().find_one({"storage.bucket": normalized_bucket, "storage.key": normalized_key})
         return self._normalize(found)
 
+    _SORT_FIELDS: dict[str, tuple[str, int]] = {
+        "newest": ("created_at", -1),
+        "oldest": ("created_at", 1),
+        "name_asc": ("display_name", 1),
+        "name_desc": ("display_name", -1),
+    }
+
     def list_for_client(
         self,
         *,
@@ -138,17 +230,26 @@ class MediaMetadataRepository:
         limit: int = 50,
         offset: int = 0,
         include_deleted_by_default: bool = False,
+        folder_id: Any = None,
+        search: str | None = None,
+        sort: str | None = None,
     ) -> list[dict[str, Any]]:
         filters = self._filters_for_client(
             client_id=client_id,
             kind=kind,
             status=status,
             include_deleted_by_default=include_deleted_by_default,
+            folder_id=folder_id,
+            search=search,
+        )
+        sort_field, sort_direction = self._SORT_FIELDS.get(
+            str(sort or "").strip().lower(),
+            ("created_at", -1),
         )
         cursor = (
             self._collection()
             .find(filters)
-            .sort([("created_at", -1), ("media_id", -1)])
+            .sort([(sort_field, sort_direction), ("media_id", -1)])
             .skip(max(0, int(offset)))
             .limit(max(0, int(limit)))
         )
@@ -161,14 +262,60 @@ class MediaMetadataRepository:
         kind: str | None = None,
         status: str | None = None,
         include_deleted_by_default: bool = False,
+        folder_id: Any = None,
+        search: str | None = None,
     ) -> int:
         filters = self._filters_for_client(
             client_id=client_id,
             kind=kind,
             status=status,
             include_deleted_by_default=include_deleted_by_default,
+            folder_id=folder_id,
+            search=search,
         )
         return int(self._collection().count_documents(filters) or 0)
+
+    def update_attributes(
+        self,
+        *,
+        media_id: str,
+        display_name: str | None = None,
+        folder_id: Any = None,
+        clear_folder: bool = False,
+    ) -> dict[str, Any] | None:
+        """Rename (`display_name`) and/or move (`folder_id`) an existing media record."""
+        normalized_media_id = str(media_id or "").strip()
+        if normalized_media_id == "":
+            return None
+        set_payload: dict[str, Any] = {"updated_at": utcnow()}
+        if display_name is not None:
+            normalized_display_name = str(display_name or "").strip()
+            if normalized_display_name != "":
+                set_payload["display_name"] = normalized_display_name
+        if clear_folder:
+            set_payload["folder_id"] = None
+        elif folder_id is not None:
+            normalized_folder_id = str(folder_id or "").strip() or None
+            set_payload["folder_id"] = normalized_folder_id
+        if len(set_payload) == 1:  # only updated_at — nothing meaningful to change
+            return self.get_by_media_id(normalized_media_id)
+        self._collection().update_one({"media_id": normalized_media_id}, {"$set": set_payload})
+        return self.get_by_media_id(normalized_media_id)
+
+    def find_media_ids_referencing_folder(self, *, client_id: int, folder_id: str) -> int:
+        normalized_folder_id = str(folder_id or "").strip()
+        if normalized_folder_id == "":
+            return 0
+        return int(
+            self._collection().count_documents(
+                {
+                    "client_id": int(client_id),
+                    "folder_id": normalized_folder_id,
+                    "status": {"$nin": ["purged", "delete_requested"]},
+                }
+            )
+            or 0
+        )
 
     def mark_ready(
         self,
@@ -261,6 +408,14 @@ class MediaMetadataRepository:
         storage = normalized.get("storage")
         normalized["storage"] = dict(storage) if isinstance(storage, dict) else {}
         normalized["metadata"] = dict(normalized.get("metadata") or {})
+        # Back-fill fields added after the collection was first created so callers can
+        # rely on their presence without worrying about legacy records.
+        if "folder_id" not in normalized:
+            normalized["folder_id"] = None
+        else:
+            normalized["folder_id"] = str(normalized.get("folder_id") or "").strip() or None
+        if "display_name" not in normalized or not normalized.get("display_name"):
+            normalized["display_name"] = str(normalized.get("original_filename") or "")
         return normalized
 
 
