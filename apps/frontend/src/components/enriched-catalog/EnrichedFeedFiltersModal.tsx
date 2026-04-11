@@ -58,16 +58,21 @@ function isFilterComplete(f: FeedFilter): boolean {
 function evaluate(product: Record<string, unknown>, filter: FeedFilter): boolean {
   const raw = product[filter.column];
   const str = raw == null ? "" : String(raw);
+  // String comparisons are case-insensitive and trim-tolerant, matching what
+  // users expect when a feed column carries inconsistent casing (e.g. `SUV`
+  // vs `suv`). Numeric operators coerce to Number separately.
+  const strNorm = str.trim().toLowerCase();
   const val = filter.value;
+  const valNorm = val.trim().toLowerCase();
   switch (filter.operator) {
     case "equals":
-      return str === val;
+      return strNorm === valNorm;
     case "not_equal":
-      return str !== val;
+      return strNorm !== valNorm;
     case "contains":
-      return str.toLowerCase().includes(val.toLowerCase());
+      return strNorm.includes(valNorm);
     case "not_contain":
-      return !str.toLowerCase().includes(val.toLowerCase());
+      return !strNorm.includes(valNorm);
     case "greater_than": {
       const a = Number(str);
       const b = Number(val);

@@ -335,6 +335,7 @@ export default function TemplateEditorPage() {
             onProductChange={setCurrentProductIndex}
             totalProducts={filteredProductCount}
             onFieldClick={handleSourceFieldClick}
+            hasActiveFilter={activeFilterCount > 0}
           />
         );
       case "image_assets":
