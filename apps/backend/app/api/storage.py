@@ -189,15 +189,24 @@ class StorageMediaSummaryResponse(BaseModel):
 
 
 def _enforce_media_scope_access(*, user: AuthUser, client_id: int) -> None:
-    """Permit both agency users (with the legacy media-storage-usage permission)
-    and sub-account users (with the new `media` module) to work with the
-    media library for a specific sub-account."""
+    """Permit agency users (with either the legacy `settings_media_storage_usage`
+    permission used by the settings aggregate page, or the new top-level
+    `agency_media` permission used by the Stocare Media page) and sub-account
+    users (with the new `media` module) to work with the media library for a
+    specific client."""
     role = str(user.role or "").strip().lower()
     if role.startswith("subaccount_"):
         enforce_subaccount_navigation_access(user=user, subaccount_id=int(client_id), permission_key="media")
         return
     enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    # Accept either permission key — agency_media is the new top-level nav
+    # entry, settings_media_storage_usage is the old settings page. Only the
+    # second one needs to be enforced for legacy callers; if the user has
+    # access to agency_media we skip the media-storage-usage gate.
+    try:
+        enforce_agency_navigation_access(user=user, permission_key="agency_media")
+    except HTTPException:
+        enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
     enforce_subaccount_action(user=user, action="dashboard:view", subaccount_id=int(client_id))
 
 

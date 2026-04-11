@@ -721,6 +721,8 @@ class TeamMembersFoundationTests(unittest.TestCase):
                 "agency_accounts",
                 "integrations",
                 "feed_management",
+                "enriched_catalog",
+                "agency_media",
                 "agency_audit",
                 "creative",
                 "email_templates",

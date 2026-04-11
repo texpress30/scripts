@@ -18,6 +18,7 @@ AGENCY_NAVIGATION_KEYS: set[str] = {
     "integrations",
     "agency_audit",
     "creative",
+    "agency_media",
     "settings",
     "settings_profile",
     "settings_company",

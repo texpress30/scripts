@@ -40,7 +40,7 @@ type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
 const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations", "media"] as const;
 type SubaccountModuleKey = (typeof SUBACCOUNT_MODULE_ORDER)[number];
-const AGENCY_MAIN_MODULE_ORDER = ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "feed_management", "enriched_catalog", "agency_audit", "creative"] as const;
+const AGENCY_MAIN_MODULE_ORDER = ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "feed_management", "enriched_catalog", "agency_media", "agency_audit", "creative"] as const;
 type AgencyMainModuleKey = (typeof AGENCY_MAIN_MODULE_ORDER)[number];
 const AGENCY_SETTINGS_MODULE_ORDER = [
   "settings_profile",
@@ -109,6 +109,7 @@ export function getNavItems(pathname: string): NavItem[] {
     { href: "/agency-accounts", label: "Agency Accounts", icon: Bell, moduleKey: "agency_accounts" },
     { href: "/agency/feed-management/sources", label: "Feed Management", icon: Rss, moduleKey: "feed_management" },
     { href: "/agency/enriched-catalog/templates", label: "Enriched Catalog", icon: ImageIcon, moduleKey: "enriched_catalog" },
+    { href: "/agency/media", label: "Stocare Media", icon: ImageIcon, moduleKey: "agency_media" },
     { href: "/agency/audit", label: "Agency Audit", icon: Sparkles, moduleKey: "agency_audit" },
     { href: "/creative", label: "Creativ", icon: Palette, moduleKey: "creative" },
   ];
