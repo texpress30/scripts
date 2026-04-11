@@ -14,6 +14,7 @@ from app.api.dependencies import (
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
 from app.services.media_folder_service import MediaFolderError, media_folder_service
+from app.services.media_metadata_repository import media_metadata_repository
 from app.services.storage_upload_complete import StorageUploadCompleteError, storage_upload_complete_service
 from app.services.storage_upload_init import StorageUploadInitError, storage_upload_init_service
 from app.services.storage_media_read import StorageMediaReadError, storage_media_read_service
@@ -41,7 +42,7 @@ class StorageUsageResponse(BaseModel):
 
 class StorageUploadInitRequest(BaseModel):
     client_id: int
-    kind: Literal["image", "video", "document"]
+    kind: Literal["image", "video", "document", "audio", "other"]
     original_filename: str
     mime_type: str
     size_bytes: int | None = None
@@ -181,6 +182,12 @@ class StorageFolderListResponse(BaseModel):
     items: list[StorageFolderResponse]
 
 
+class StorageMediaSummaryResponse(BaseModel):
+    client_id: int
+    total_files: int
+    total_bytes: int
+
+
 def _enforce_media_scope_access(*, user: AuthUser, client_id: int) -> None:
     """Permit both agency users (with the legacy media-storage-usage permission)
     and sub-account users (with the new `media` module) to work with the
@@ -274,11 +281,11 @@ def complete_direct_upload(
 @router.get("/media", response_model=StorageMediaListResponse)
 def list_media(
     client_id: int = Query(..., ge=1),
-    kind: Literal["image", "video", "document"] | None = Query(default=None),
+    kind: Literal["image", "video", "document", "audio", "other"] | None = Query(default=None),
     status_filter: Literal["draft", "ready", "delete_requested", "purged"] | None = Query(default=None, alias="status"),
     folder_id: str | None = Query(default=None),
     search: str | None = Query(default=None),
-    sort: Literal["newest", "oldest", "name_asc", "name_desc"] | None = Query(default=None),
+    sort: Literal["newest", "oldest", "name_asc", "name_desc", "size_asc", "size_desc"] | None = Query(default=None),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
@@ -392,6 +399,25 @@ def update_media(
         media_id=str(updated.get("media_id") or media_id),
     )
     return StorageMediaDetailResponse(**detail_payload)
+
+
+@router.get("/media-summary", response_model=StorageMediaSummaryResponse)
+def get_media_summary(
+    client_id: int = Query(..., ge=1),
+    user: AuthUser = Depends(get_current_user),
+) -> StorageMediaSummaryResponse:
+    _enforce_media_scope_access(user=user, client_id=int(client_id))
+    try:
+        summary = media_metadata_repository.summarize_for_client(client_id=int(client_id))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load media summary") from exc
+    return StorageMediaSummaryResponse(
+        client_id=int(client_id),
+        total_files=int(summary.get("total_files") or 0),
+        total_bytes=int(summary.get("total_bytes") or 0),
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────

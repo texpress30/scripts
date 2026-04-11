@@ -10,7 +10,7 @@ from app.services.media_metadata_repository import media_metadata_repository
 from app.services.s3_provider import get_s3_client
 from app.services.storage_upload_init import sanitize_filename
 
-_ALLOWED_KINDS: tuple[str, ...] = ("image", "video", "document")
+_ALLOWED_KINDS: tuple[str, ...] = ("image", "video", "document", "audio", "other")
 _ALLOWED_SOURCES: tuple[str, ...] = ("backend_ingest", "platform_sync", "enriched_catalog")
 
 

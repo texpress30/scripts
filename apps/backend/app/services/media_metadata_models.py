@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 
-MediaFileKind = Literal["image", "video", "document"]
+MediaFileKind = Literal["image", "video", "document", "audio", "other"]
 MediaFileSource = Literal["user_upload", "backend_ingest", "platform_sync", "enriched_catalog"]
 MediaFileStatus = Literal["draft", "ready", "delete_requested", "purged"]
 
