@@ -6,12 +6,14 @@
 # worker-render, worker-sync-runs, cron-*) roughly 800MB of disk + build
 # time on Railway.
 #
-# Build locally:
-#   docker build -f apps/backend/Dockerfile.bgworker -t mcc-bgworker apps/backend
+# IMPORTANT — build context is the REPO ROOT, not apps/backend. This is
+# required so that Railway's Config-as-Code file (railway.bgworker.json at
+# the repo root) can pair with a Dockerfile whose COPY paths resolve
+# unambiguously. docker-compose.yml mirrors this by setting
+# `context: .` + `dockerfile: apps/backend/Dockerfile.bgworker`.
 #
-# Used by docker-compose.yml for the `worker-bgremoval` service. If you run
-# this worker on Railway, point the service's Dockerfile Path at
-# apps/backend/Dockerfile.bgworker in the service settings.
+# Build locally from the repo root:
+#   docker build -f apps/backend/Dockerfile.bgworker -t mcc-bgworker .
 
 FROM python:3.12-slim
 
@@ -30,11 +32,21 @@ RUN apt-get update \
         libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements-bgworker.txt ./
+COPY apps/backend/requirements.txt apps/backend/requirements-bgworker.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-bgworker.txt
 
-COPY db ./db
-COPY app ./app
+# Pre-download the u2net ONNX model into the image so the worker cold
+# start doesn't pay the ~60 s download hit on first boot (and doesn't
+# race across fork workers to pull it from github.com/danielgatis/rembg
+# releases). This mirrors what warm_rembg_session() in
+# apps/backend/app/services/enriched_catalog/cutout_service.py does at
+# runtime — pooch writes to /root/.u2net/u2net.onnx, which is the same
+# path the runtime warmup expects, so the on-container fetch becomes a
+# cache hit. Baked before COPY app/ so layer cache survives code edits.
+RUN python -c "from rembg import new_session; new_session('u2net')"
+
+COPY apps/backend/db ./db
+COPY apps/backend/app ./app
 
 # Default entrypoint: Celery worker listening on the bgremoval queues.
 # docker-compose and Railway can override this with `command:` if needed.

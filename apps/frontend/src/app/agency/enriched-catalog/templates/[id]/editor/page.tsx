@@ -182,6 +182,60 @@ export default function TemplateEditorPage() {
     }
   }, [currentProductIndex, filteredProductCount]);
 
+  // Map { raw image_src -> ready cutout URL } built from the shuffle pool
+  // response. Used to upgrade image layers in the canvas from raw source
+  // images to background-removed PNGs whenever a cutout becomes available.
+  // Recomputes on every 5 s poll tick automatically.
+  const cutoutByImageSrc = useMemo(() => {
+    const map = new Map<string, string>();
+    const pool = shufflePool.data?.pool ?? [];
+    for (const entry of pool) {
+      const src = typeof entry.image_src === "string" ? entry.image_src : null;
+      const cutout = typeof entry.cutout_url === "string" ? entry.cutout_url : null;
+      if (src && cutout) map.set(src, cutout);
+    }
+    return map;
+  }, [shufflePool.data]);
+
+  // Resolve the current sample product shown in the canvas. We keep the
+  // Source Feed panel driving ``currentProductIndex`` against
+  // ``filteredProducts`` (so row highlights / field clicks still work the
+  // same), then layer the shuffle pool's cutout info on top. If the current
+  // row has a ready cutout, pass it to the canvas so image layers bound to
+  // ``{{image_src}}`` render the silhouetted PNG; otherwise the canvas
+  // falls back to the raw image_src.
+  const currentSampleProduct = useMemo(() => {
+    const raw = filteredProducts[currentProductIndex];
+    if (!raw || typeof raw !== "object") return null;
+    const rawImageSrc =
+      typeof (raw as Record<string, unknown>).image_src === "string"
+        ? ((raw as Record<string, unknown>).image_src as string)
+        : null;
+    const cutoutUrl = rawImageSrc ? cutoutByImageSrc.get(rawImageSrc) ?? null : null;
+    return {
+      image_src: rawImageSrc,
+      cutout_url: cutoutUrl,
+    };
+  }, [filteredProducts, currentProductIndex, cutoutByImageSrc]);
+
+  // Indices in ``filteredProducts`` whose raw ``image_src`` has a ready
+  // cutout. Used by the Source Feed panel's Shuffle button to bias random
+  // picks toward products the canvas can actually render as a cutout. When
+  // empty, shuffle falls back to picking over the whole filtered set (old
+  // behavior) so the feature degrades gracefully on templates whose feed
+  // hasn't been primed yet.
+  const cutoutReadyIndices = useMemo(() => {
+    const indices: number[] = [];
+    filteredProducts.forEach((p, idx) => {
+      if (!p || typeof p !== "object") return;
+      const src = (p as Record<string, unknown>).image_src;
+      if (typeof src === "string" && cutoutByImageSrc.has(src)) {
+        indices.push(idx);
+      }
+    });
+    return indices;
+  }, [filteredProducts, cutoutByImageSrc]);
+
   const {
     canvasWidth, canvasHeight, backgroundColor,
     selectedObject, hasUnsavedChanges,
@@ -315,6 +369,15 @@ export default function TemplateEditorPage() {
     const binding = `{{${actualKey}}}`;
 
     if (actualKey.includes("image")) {
+      // Prefer the ready background-removed cutout URL (from the shuffle
+      // pool) over the raw product image URL so newly-added image layers
+      // render with a transparent background. Falls back to the raw value
+      // when no cutout exists yet for this image_src (the next 5 s pool
+      // poll will upgrade the layer automatically via the canvas
+      // resolvedSampleImageUrl effect).
+      const cutoutUrl = cutoutByImageSrc.get(value) ?? null;
+      const resolvedUrl = cutoutUrl || value;
+
       if (isRemoveBg && value && value.startsWith("http")) {
         try {
           const res = await apiRequest("/creative/remove-background", {
@@ -322,13 +385,13 @@ export default function TemplateEditorPage() {
             body: JSON.stringify({ image_url: value }),
           });
           const data = res as { url?: string };
-          canvasRef.current?.addImageFromURL(data.url || value, binding);
+          canvasRef.current?.addImageFromURL(data.url || resolvedUrl, binding);
         } catch (err) {
           console.warn("Remove background failed, using original image:", err);
-          canvasRef.current?.addImageFromURL(value, binding);
+          canvasRef.current?.addImageFromURL(resolvedUrl, binding);
         }
       } else {
-        canvasRef.current?.addImageFromURL(value, binding);
+        canvasRef.current?.addImageFromURL(resolvedUrl, binding);
       }
     } else {
       canvasRef.current?.addDynamicField(binding);
@@ -392,6 +455,7 @@ export default function TemplateEditorPage() {
             totalProducts={filteredProductCount}
             onFieldClick={handleSourceFieldClick}
             hasActiveFilter={activeFilterCount > 0}
+            cutoutReadyIndices={cutoutReadyIndices}
           />
         );
       case "image_assets":
@@ -601,6 +665,7 @@ export default function TemplateEditorPage() {
                   height={canvasHeight}
                   backgroundColor={backgroundColor}
                   elements={template.elements}
+                  sampleProduct={currentSampleProduct}
                   onSelectionChange={handleSelectionChange}
                   onModified={handleModified}
                 />

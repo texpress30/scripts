@@ -33,22 +33,29 @@ services:
   #
   # - worker-bgremoval uses Dockerfile.bgworker because it needs rembg +
   #   onnxruntime (~500MB of extras that aren't in the base image).
+  #   Context is the REPO ROOT (not apps/backend) so that Railway's
+  #   railway.bgworker.json at the repo root can pair with the same
+  #   Dockerfile — see apps/backend/Dockerfile.bgworker header for details.
   # - worker-render and worker-beat use the base Dockerfile; they only need
   #   Celery + the base app code (Pillow for rendering, no ML).
   worker-bgremoval:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile.bgworker
+      context: .
+      dockerfile: apps/backend/Dockerfile.bgworker
     env_file:
       - .env
     depends_on:
       - postgres
       - redis
 
+  # worker-render builds from the repo root using Dockerfile.render so that
+  # Railway's railway.render.json config-as-code (also at repo root) stays
+  # consistent with the local build context — see Dockerfile.render header
+  # for the rationale.
   worker-render:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/backend/Dockerfile.render
     env_file:
       - .env
     command: >
