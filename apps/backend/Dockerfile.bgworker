@@ -35,6 +35,16 @@ RUN apt-get update \
 COPY apps/backend/requirements.txt apps/backend/requirements-bgworker.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-bgworker.txt
 
+# Pre-download the u2net ONNX model into the image so the worker cold
+# start doesn't pay the ~60 s download hit on first boot (and doesn't
+# race across fork workers to pull it from github.com/danielgatis/rembg
+# releases). This mirrors what warm_rembg_session() in
+# apps/backend/app/services/enriched_catalog/cutout_service.py does at
+# runtime — pooch writes to /root/.u2net/u2net.onnx, which is the same
+# path the runtime warmup expects, so the on-container fetch becomes a
+# cache hit. Baked before COPY app/ so layer cache survives code edits.
+RUN python -c "from rembg import new_session; new_session('u2net')"
+
 COPY apps/backend/db ./db
 COPY apps/backend/app ./app
 
