@@ -336,10 +336,12 @@ def prime_cutouts_for_template(
                     "feed_source_name": feed_info.get("name"),
                 },
                 queue="bgremoval_prime",
+                retry=False,
             )
             enqueued += 1
         except Exception:  # noqa: BLE001
-            logger.debug("prime_enqueue_failed", exc_info=True)
+            logger.warning("prime_enqueue_failed broker_url=%s", image_src, exc_info=True)
+            break  # broker is down — no point trying remaining products
 
     return {"enqueued": enqueued, "feed_source_id": str(feed_source_id)}
 
