@@ -146,6 +146,8 @@ def get_shuffle_pool(
     *,
     template_id: str,
     limit: int = DEFAULT_POOL_LIMIT,
+    fallback_feed_source_id: str | None = None,
+    fallback_client_id: int | None = None,
 ) -> dict[str, Any]:
     """Return a randomized slice of products whose cutouts are ready and who
     match the template's treatment filters.
@@ -181,6 +183,13 @@ def get_shuffle_pool(
         }
 
     feed_info = _find_output_feed_for_template(template_id)
+    if feed_info is None and fallback_feed_source_id and (fallback_client_id or 0) > 0:
+        feed_info = {
+            "output_feed_id": None,
+            "subaccount_id": fallback_client_id,
+            "feed_source_id": fallback_feed_source_id,
+            "name": "",
+        }
     if feed_info is None:
         return {
             "template_id": template_id,
@@ -202,12 +211,15 @@ def get_shuffle_pool(
         }
 
     # Resolve the treatment gating this template (so shuffle mirrors render).
-    treatments = treatment_repository.get_by_output_feed(feed_info["output_feed_id"])
+    # For standalone templates (no output feed), skip treatment filtering —
+    # all products in the feed source are eligible.
     matching_treatment = None
-    for tr in treatments:
-        if str(tr.get("template_id") or "") == str(template_id):
-            matching_treatment = tr
-            break
+    if feed_info.get("output_feed_id"):
+        treatments = treatment_repository.get_by_output_feed(feed_info["output_feed_id"])
+        for tr in treatments:
+            if str(tr.get("template_id") or "") == str(template_id):
+                matching_treatment = tr
+                break
 
     ready_media_by_hash = _fetch_ready_cutout_media_by_hash(client_id)
 
@@ -269,6 +281,8 @@ def prime_cutouts_for_template(
     *,
     template_id: str,
     limit: int = DEFAULT_PRIMING_LIMIT,
+    fallback_feed_source_id: str | None = None,
+    fallback_client_id: int | None = None,
 ) -> dict[str, Any]:
     """Enqueue background removal for the top-N products of the feed that
     backs ``template_id``.
@@ -281,6 +295,13 @@ def prime_cutouts_for_template(
     from app.services.feed_management.products_repository import feed_products_repository
 
     feed_info = _find_output_feed_for_template(template_id)
+    if feed_info is None and fallback_feed_source_id and (fallback_client_id or 0) > 0:
+        feed_info = {
+            "output_feed_id": None,
+            "subaccount_id": fallback_client_id,
+            "feed_source_id": fallback_feed_source_id,
+            "name": "",
+        }
     if feed_info is None:
         return {"enqueued": 0, "reason": "no_feed"}
     feed_source_id = feed_info.get("feed_source_id")

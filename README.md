@@ -346,47 +346,18 @@ cd apps/frontend && npm run build
   - non-zero doar la eroare globală (ex: provider/config indisponibil, excepție neprevăzută înainte/în jurul run-ului).
 
 ## Railway: `worker-bgremoval` service (background removal Celery worker)
-Acest worker rulează pipeline-ul `rembg` + ONNX pentru cutout-uri. Este **separat** de restul serviciilor Railway pentru că imaginea lui include dependențe ML (onnxruntime, opencv-python-headless, rembg) care adaugă ~800MB peste baseline. Folosește un Dockerfile dedicat: `apps/backend/Dockerfile.bgworker`.
-
-### Config-as-Code
-Fișierul `railway.bgworker.json` se află la **rădăcina repo-ului** (nu în `apps/backend/`). Conține `build.dockerfilePath`, `deploy.startCommand` și restart policy. Build context-ul este de asemenea rădăcina repo-ului — Dockerfile-ul folosește căi `apps/backend/*` în COPY ca să găsească `requirements.txt`, `db/`, `app/`. Local: `docker compose build worker-bgremoval` (care folosește `context: .`).
-
-### Setări Railway dashboard pentru serviciul `worker-bgremoval`
-1. **Source** → **Root Directory** = **empty** (gol). NU seta `apps/backend` — Config File și build context-ul ambele pornesc de la rădăcina repo-ului.
-2. **Config-as-code** → **Railway Config File** = `railway.bgworker.json` (fără prefix, la rădăcina repo-ului).
-3. **Deploy branch** → orice branch care conține `railway.bgworker.json` pe main (default după merge-ul acestui PR).
-4. **Variables** (propagate automat ca shared variables din `api-backend`): `DATABASE_URL`, `MONGO_URI`, `MONGO_DATABASE`, `REDIS_URL`, `STORAGE_S3_BUCKET`, `STORAGE_S3_REGION`, `STORAGE_S3_ENDPOINT_URL`, `STORAGE_S3_PRESIGNED_TTL_SECONDS`, `APP_AUTH_SECRET`. Opțional: `REMBG_MODEL` (default `u2net`), `CUTOUT_CONCURRENCY_PER_CLIENT` (empty string OK, fallback la 4), `CUTOUT_ORPHAN_RETENTION_DAYS` (default 30).
-5. **Celery Redis vars** — atenție la format:
-   - `CELERY_BROKER_URL = ${{REDIS_URL}}` — referinta Railway la URL-ul complet (Redis plugin-ul expune doar `REDIS_URL`, nu `REDIS_HOST`/`REDIS_PORT` separate).
-   - `CELERY_RESULT_BACKEND = ${{REDIS_URL}}` — NU pune doar `/2`, nu e URL Redis valid și Celery crapă la parsing.
-   - Broker și result backend folosesc același DB Redis; Celery folosește prefixe diferite de chei, nu există coliziune.
-6. **NU seta `INTEGRATION_SECRET_ENCRYPTION_KEY`** — lipsește pe `api-backend` (status quo pre-existent cu `default=""` în `config.py:186`). Bgworker-ul nu decriptează secrete de integrare.
-
-### Verificare post-deploy
-- Build-ul trebuie să dureze ~4-6 minute (imagine mare cu onnxruntime + opencv).
-- Log-urile runtime trebuie să conțină `rembg_session_warmed model=u2net` + `mcc_workers@bgremoval ready.`.
-- Dacă vezi `ModuleNotFoundError: onnxruntime`, serviciul a fost build-uit cu Dockerfile-ul greșit (baseline).
-- Dacă vezi `Cannot connect to redis://...` sau `InvalidBackend`, `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` e gresit (vezi pasul 5).
-- Fără healthcheck HTTP: workerul nu expune port, `healthcheckPath` rămâne nesetat în JSON.
-
-## Railway: `worker-render` service (preview rendering Celery worker)
-Acest worker consumă cozile `render_hi` (editor single renders + preview grid lazy load) și `render_bulk` (Publish / materialize output feed). Folosește Dockerfile-ul de bază al backend-ului — nu are nevoie de dependențele ML ale bgworker-ului — dar folosește un variant `apps/backend/Dockerfile.render` care copiază din căi `apps/backend/*` ca să funcționeze cu build context-ul la rădăcina repo-ului (simetrie cu `worker-bgremoval`).
-
-### Config-as-Code
-Fișierul `railway.render.json` se află la **rădăcina repo-ului**. Conține `build.dockerfilePath: "apps/backend/Dockerfile.render"`, `deploy.startCommand` pentru Celery worker pe cozile de render, și restart policy ON_FAILURE. Local: `docker compose build worker-render` (care folosește `context: .` din docker-compose.yml).
-
-### Setări Railway dashboard pentru serviciul `worker-render`
-1. **Source** → conectează la `texpress30/scripts`, deploy branch = `main`.
-2. **Source** → **Root Directory** = **empty** (gol). Config File și build context pornesc de la rădăcina repo-ului.
-3. **Config-as-code** → **Railway Config File** = `railway.render.json` (fără prefix, la rădăcina repo-ului).
-4. **Variables** (propagate automat ca shared variables din `api-backend`): `DATABASE_URL`, `MONGO_URI`, `MONGO_DATABASE`, `REDIS_URL`, `STORAGE_S3_BUCKET`, `STORAGE_S3_REGION`, `STORAGE_S3_ENDPOINT_URL`, `STORAGE_S3_PRESIGNED_TTL_SECONDS`, `APP_AUTH_SECRET`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`. Nu e nevoie de REMBG_MODEL / CUTOUT_* (nu folosește rembg).
-5. **NU seta** `INTEGRATION_SECRET_ENCRYPTION_KEY` (pre-existing empty state, ca peste tot).
-
-### Verificare post-deploy
-- Build-ul durează ~1-2 minute (imagine slim, doar dependențe Python de bază — fără ML).
-- Log-urile runtime trebuie să conțină `mcc_workers@render ready.` și cele 2 cozi înregistrate:
-  - `render_hi exchange=render_hi(direct) key=render_hi`
-  - `render_bulk exchange=render_bulk(direct) key=render_bulk`
-- **Test funcțional**: navighează la `/agency/enriched-catalog/output-feeds/{id}/preview` → frontend-ul apelează `POST /creative/output-feeds/{id}/render/page` → task-urile `render_one` aterizează pe coada `render_hi` → worker-render le procesează → preview grid-ul se umple cu creative randate în ~3-5 secunde (polling interval frontend).
-- Dacă preview grid-ul rămâne în skeleton forever: worker-render nu e live sau nu consumă coada corectă. Verifică în log `render_one` task execution.
-- Fără healthcheck HTTP: workerul nu expune port.
+- Acest worker rulează pipeline-ul `rembg` + ONNX pentru cutout-uri. Este **separat** de restul serviciilor Railway pentru că imaginea lui include dependențe ML (onnxruntime, opencv-python-headless, rembg) care adaugă ~800MB peste baseline.
+- Dockerfile dedicat: `apps/backend/Dockerfile.bgworker`. NU folosi `apps/backend/Dockerfile` pentru acest serviciu.
+- Config-as-Code: `apps/backend/railway.bgworker.json` — conține `build.dockerfilePath` + `deploy.startCommand` + restart policy. Pune acest path în câmpul **Config-as-Code** al serviciului Railway.
+- Setări Railway dashboard pentru serviciul `worker-bgremoval`:
+  1. **Root Directory** = `apps/backend` (pentru ca `dockerfilePath: "Dockerfile.bgworker"` și `railway.bgworker.json` să fie găsite relative la acest subdirector, la fel ca restul serviciilor).
+  2. **Config-as-Code path** = `railway.bgworker.json`.
+  3. **Variables** (propagate automat ca shared variables din `api-backend`): `DATABASE_URL`, `MONGO_URI`, `MONGO_DATABASE`, `REDIS_URL`, `STORAGE_S3_BUCKET`, `STORAGE_S3_REGION`, `STORAGE_S3_ENDPOINT_URL`, `STORAGE_S3_PRESIGNED_TTL_SECONDS`, `APP_AUTH_SECRET`. Opțional: `REMBG_MODEL` (default `u2net`), `CUTOUT_CONCURRENCY_PER_CLIENT` (empty string OK, fallback la 4), `CUTOUT_ORPHAN_RETENTION_DAYS` (default 30).
+  4. **Celery Redis vars** — atenție la format, acestea erau blocante la primul deploy:
+     - `CELERY_BROKER_URL = ${{REDIS_URL}}` — NU folosi `redis://${REDIS_HOST}:${REDIS_PORT}/1` (acele env vars nu există în acest proiect, Railway expune doar `REDIS_URL` full).
+     - `CELERY_RESULT_BACKEND = ${{REDIS_URL}}` — NU pune doar `/2`, nu e URL Redis valid și Celery crapă la parsing (`celery_app.py:40` pasează valoarea direct la `Celery(backend=...)`).
+     - Broker și result backend folosesc același DB Redis; nu există coliziune funcțională (Celery folosește prefixe diferite de chei).
+  5. **NU seta `INTEGRATION_SECRET_ENCRYPTION_KEY`** — lipsește pe `api-backend`, status quo pre-existent cu `default=""` în `config.py:186`. Bgworker-ul nu decriptează secrete de integrare (rulează doar rembg + upload S3), deci nu are nevoie de cheie populată.
+- Start command (redus în `railway.bgworker.json`): `celery -A app.workers.celery_app worker -Q bgremoval_interactive,bgremoval_prime,bgremoval,bgremoval_bulk,sync_hooks -c 2 -n bgremoval@%h --loglevel=info`.
+- Verificare post-deploy: log-urile runtime trebuie să conțină `rembg_session_warmed model=u2net` + `mcc_workers@bgremoval ready.`. Dacă vezi `ModuleNotFoundError: onnxruntime`, serviciul a fost build-uit cu Dockerfile-ul greșit (baseline). Dacă vezi `Cannot connect to redis://...` sau `InvalidBackend`, `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` e gresit (vezi pasul 4).
+- Fără healthcheck HTTP: workerul nu expune port. Lasă `healthcheckPath` gol în UI (JSON-ul nu setează path).
