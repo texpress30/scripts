@@ -84,6 +84,35 @@ def create_output_feed(payload: CreateOutputFeedRequest, subaccount_id: int = Qu
     )
 
 
+class AddTemplateRequest(BaseModel):
+    template_id: str
+
+
+@router.post("/{output_feed_id}/add-template", status_code=status.HTTP_201_CREATED)
+def add_template_to_feed(
+    output_feed_id: str,
+    payload: AddTemplateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Add a template to an output feed by creating a new treatment."""
+    try:
+        feed = output_feed_service.get_output_feed(output_feed_id)
+    except OutputFeedNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    enforce_subaccount_action(user=user, action="creative:write", subaccount_id=int(feed["subaccount_id"]))
+    existing_treatments = treatment_repository.get_by_output_feed(output_feed_id)
+    treatment_data = {
+        "output_feed_id": output_feed_id,
+        "template_id": payload.template_id,
+        "name": f"Treatment {len(existing_treatments) + 1}",
+        "filters": [],
+        "priority": len(existing_treatments),
+        "is_default": len(existing_treatments) == 0,
+    }
+    created = treatment_repository.create(treatment_data)
+    return created
+
+
 @router.put("/{output_feed_id}")
 def update_output_feed(output_feed_id: str, payload: UpdateOutputFeedRequest, user: AuthUser = Depends(get_current_user)) -> dict:
     try:
