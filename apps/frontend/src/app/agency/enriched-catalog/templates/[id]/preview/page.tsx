@@ -514,13 +514,19 @@ export default function PreviewCreativesPage() {
                         channel_id: newFeedChannelId || undefined,
                         treatment_mode: newFeedTreatmentMode,
                       });
-                      await apiRequest(`/creative/output-feeds/${newFeed.id}/add-template`, {
-                        method: "POST",
-                        body: JSON.stringify({ template_id: templateId }),
-                      });
+                      try {
+                        await apiRequest(`/creative/output-feeds/${newFeed.id}/add-template`, {
+                          method: "POST",
+                          body: JSON.stringify({ template_id: templateId }),
+                        });
+                      } catch {
+                        // add-template is best-effort; the feed was created
+                        // successfully so we still redirect.
+                      }
                       setAddedToFeed(true);
                       setShowFeedModal(false);
                       setShowNewFeedForm(false);
+                      router.push(`/agency/enriched-catalog/output-feeds/${newFeed.id}`);
                     } catch (err) {
                       console.error("Failed to create output feed:", err);
                       alert("Failed to create output feed. Please try again.");

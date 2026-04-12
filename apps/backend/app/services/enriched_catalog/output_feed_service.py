@@ -102,25 +102,53 @@ class OutputFeedRepository:
         token = _generate_token()
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    INSERT INTO output_feeds
-                        (subaccount_id, name, feed_source_id, feed_format,
-                         field_mapping_id, public_token, channel_id, treatment_mode)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING {self._SELECT_COLS}
-                    """,
-                    (
-                        int(subaccount_id),
-                        str(name),
-                        feed_source_id,
-                        feed_format,
-                        field_mapping_id,
-                        token,
-                        channel_id,
-                        treatment_mode or "single",
-                    ),
-                )
+                try:
+                    cur.execute(
+                        f"""
+                        INSERT INTO output_feeds
+                            (subaccount_id, name, feed_source_id, feed_format,
+                             field_mapping_id, public_token, channel_id, treatment_mode)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING {self._SELECT_COLS}
+                        """,
+                        (
+                            int(subaccount_id),
+                            str(name),
+                            feed_source_id,
+                            feed_format,
+                            field_mapping_id,
+                            token,
+                            channel_id,
+                            treatment_mode or "single",
+                        ),
+                    )
+                except Exception:
+                    # Graceful fallback: if channel_id / treatment_mode columns
+                    # haven't been added by migration 0060 yet, retry with the
+                    # original column set so the feed can still be created.
+                    conn.rollback()
+                    cur.execute(
+                        """
+                        INSERT INTO output_feeds
+                            (subaccount_id, name, feed_source_id, feed_format,
+                             field_mapping_id, public_token)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        RETURNING id, subaccount_id, name, feed_source_id, status,
+                                  enriched_feed_url, last_render_at, created_at,
+                                  updated_at, feed_format, public_token,
+                                  refresh_interval_hours, last_generated_at,
+                                  products_count, file_size_bytes,
+                                  field_mapping_id, s3_key
+                        """,
+                        (
+                            int(subaccount_id),
+                            str(name),
+                            feed_source_id,
+                            feed_format,
+                            field_mapping_id,
+                            token,
+                        ),
+                    )
                 row = cur.fetchone()
             conn.commit()
         return self._row_to_dict(row)
