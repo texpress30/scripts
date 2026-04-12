@@ -92,10 +92,15 @@ interface SourceFeedPanelProps {
   // "import products" onboarding copy. `hasActiveFilter` true with an empty
   // `products` array is the filtered-out case.
   hasActiveFilter?: boolean;
+  // Indices in ``products`` whose raw image_src has a ready background-removed
+  // cutout. Shuffle biases random picks toward these so the canvas displays
+  // the silhouetted PNG instead of the raw product image. Empty array =
+  // feature degrades to the previous whole-feed random behavior.
+  cutoutReadyIndices?: number[];
 }
 
 export function SourceFeedPanel({
-  products, columns, isLoading, currentProductIndex, onProductChange, totalProducts, onFieldClick, hasActiveFilter,
+  products, columns, isLoading, currentProductIndex, onProductChange, totalProducts, onFieldClick, hasActiveFilter, cutoutReadyIndices,
 }: SourceFeedPanelProps) {
   const [search, setSearch] = useState("");
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -173,6 +178,17 @@ export function SourceFeedPanel({
 
   const handleShuffle = () => {
     if (totalProducts <= 1) return;
+    // Prefer cutout-ready products so the canvas displays a silhouetted PNG
+    // (transparent background) rather than the raw product image. Falls
+    // back to the whole feed when no cutouts are ready yet — the feature
+    // degrades gracefully on freshly-imported feeds whose bgworker hasn't
+    // processed anything yet.
+    const readyPool = (cutoutReadyIndices ?? []).filter((i) => i !== currentProductIndex);
+    if (readyPool.length > 0) {
+      const next = readyPool[Math.floor(Math.random() * readyPool.length)];
+      onProductChange(next);
+      return;
+    }
     let next = currentProductIndex;
     while (next === currentProductIndex) {
       next = Math.floor(Math.random() * totalProducts);
