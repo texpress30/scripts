@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -18,6 +18,8 @@ import {
   Calendar,
   Clock,
   Package,
+  GripVertical,
+  ArrowDown,
 } from "lucide-react";
 import {
   useOutputFeed,
@@ -94,6 +96,7 @@ export default function OutputFeedDetailPage() {
     treatments, isLoading: treatmentsLoading,
     create: createTreatment, isCreating,
     remove: removeTreatment,
+    reorder: reorderTreatments,
   } = useTreatments(feedId);
   const { templates } = useCreativeTemplates(selectedId);
   const { data: stats } = useFeedStats(feedId);
@@ -110,6 +113,41 @@ export default function OutputFeedDetailPage() {
   const [metaCatalogSync, setMetaCatalogSync] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = useCallback((index: number) => {
+    setDragIndex(index);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent, dropIndex: number) => {
+      e.preventDefault();
+      if (dragIndex === null || dragIndex === dropIndex) {
+        setDragIndex(null);
+        setDragOverIndex(null);
+        return;
+      }
+      const reordered = [...treatments];
+      const [moved] = reordered.splice(dragIndex, 1);
+      reordered.splice(dropIndex, 0, moved);
+      reorderTreatments(reordered.map((t) => t.id)).catch(() => {});
+      setDragIndex(null);
+      setDragOverIndex(null);
+    },
+    [dragIndex, treatments, reorderTreatments],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, []);
 
   useEffect(() => {
     if (!feedId) return;
@@ -228,60 +266,112 @@ export default function OutputFeedDetailPage() {
                 <p className="text-sm text-slate-400">No treatments yet. Add one to define how products are matched to templates.</p>
               </div>
             ) : (
-              treatments.map((treatment) => {
+              treatments.map((treatment, index) => {
                 const tpl = templates.find((tp) => tp.id === treatment.template_id);
+                const isDragging = dragIndex === index;
+                const isDragOver = dragOverIndex === index;
+                const isLast = index === treatments.length - 1;
                 return (
-                  <div key={treatment.id} className="rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-                    {/* Treatment header */}
-                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-700">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{treatment.name}</span>
-                        {treatment.is_default && (
-                          <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400">default</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500 dark:text-slate-400">{totalSKUs} SKUs</span>
-                        <div className="relative">
-                          <button onClick={() => setOpenMenu(openMenu === `t-${treatment.id}` ? null : `t-${treatment.id}`)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                          {openMenu === `t-${treatment.id}` && <DesignContextMenu onClose={() => setOpenMenu(null)} onRemove={() => handleDeleteTreatment(treatment.id)} />}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Design row */}
-                    {tpl && (
-                      <div className="flex items-center gap-3 px-4 py-3">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">
-                          <Layers className="h-5 w-5 text-slate-300" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{tpl.name}</p>
-                          <p className="text-[10px] text-slate-400">{tpl.canvas_width}x{tpl.canvas_height}</p>
-                        </div>
-                        {treatment.filters.length > 0 && (
-                          <div className="flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
-                            <Filter className="h-3 w-3" />{treatment.filters.length}
-                          </div>
-                        )}
-                        <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{totalSKUs} SKUs</span>
-                        <div className="relative">
-                          <button onClick={() => setOpenMenu(openMenu === `d-${treatment.id}` ? null : `d-${treatment.id}`)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                          {openMenu === `d-${treatment.id}` && <DesignContextMenu onClose={() => setOpenMenu(null)} onRemove={() => handleDeleteTreatment(treatment.id)} />}
-                        </div>
+                  <div key={treatment.id} className="relative">
+                    {/* Hierarchy connector: vertical line + arrow between cards */}
+                    {index > 0 && (
+                      <div className="absolute -top-4 left-6 flex h-4 flex-col items-center">
+                        <div className="h-full w-px bg-slate-300 dark:bg-slate-600" />
+                        <ArrowDown className="absolute -bottom-1 h-3 w-3 text-slate-300 dark:text-slate-600" />
                       </div>
                     )}
 
-                    {/* + Add Design */}
-                    <div className="border-t border-slate-100 px-4 py-2 dark:border-slate-700">
-                      <button onClick={() => setShowTreatmentEditor(true)} className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs text-slate-400 hover:bg-slate-50 hover:text-indigo-600 dark:hover:bg-slate-700">
-                        <Plus className="h-3.5 w-3.5" /> Add Design
-                      </button>
+                    <div
+                      className={`rounded-lg border bg-white transition dark:bg-slate-800 ${
+                        isDragOver && dragIndex !== index
+                          ? "border-indigo-400 ring-2 ring-indigo-400/30"
+                          : "border-slate-200 dark:border-slate-700"
+                      } ${isDragging ? "opacity-50" : ""}`}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDrop={(e) => handleDrop(e, index)}
+                    >
+                      {/* Treatment header */}
+                      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-700">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{treatment.name}</span>
+                          {treatment.is_default && (
+                            <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400">default</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500 dark:text-slate-400">{totalSKUs} SKUs</span>
+                          <div className="relative">
+                            <button onClick={() => setOpenMenu(openMenu === `t-${treatment.id}` ? null : `t-${treatment.id}`)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                            {openMenu === `t-${treatment.id}` && <DesignContextMenu onClose={() => setOpenMenu(null)} onRemove={() => handleDeleteTreatment(treatment.id)} />}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Design row with drag handle + thumbnail */}
+                      {tpl && (
+                        <div className="flex items-center gap-0 px-2 py-3">
+                          {/* Drag handle (6-dot grip) */}
+                          <div
+                            draggable
+                            onDragStart={() => handleDragStart(index)}
+                            onDragEnd={handleDragEnd}
+                            className="flex shrink-0 cursor-grab items-center px-1.5 text-slate-300 active:cursor-grabbing dark:text-slate-600"
+                            title="Drag to reorder"
+                          >
+                            <GripVertical className="h-4 w-4" />
+                          </div>
+
+                          {/* Template thumbnail: preview colored rectangle */}
+                          <div
+                            className="ml-1 flex h-14 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-slate-200 dark:border-slate-700"
+                            style={{ backgroundColor: tpl.background_color || "#f1f5f9" }}
+                            title={`${tpl.canvas_width}x${tpl.canvas_height}`}
+                          >
+                            <Layers className="h-4 w-4 text-white/60" />
+                          </div>
+
+                          {/* Name + dimensions */}
+                          <div className="ml-3 min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{tpl.name}</p>
+                            <p className="text-[10px] text-slate-400">{tpl.canvas_width}x{tpl.canvas_height}</p>
+                          </div>
+
+                          {/* Filter badge */}
+                          {treatment.filters.length > 0 && (
+                            <div className="flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+                              <Filter className="h-3 w-3" />{treatment.filters.length}
+                            </div>
+                          )}
+
+                          {/* SKU count */}
+                          <span className="ml-2 shrink-0 text-xs text-slate-500 dark:text-slate-400">{totalSKUs} SKUs</span>
+
+                          {/* Context menu */}
+                          <div className="relative ml-1">
+                            <button onClick={() => setOpenMenu(openMenu === `d-${treatment.id}` ? null : `d-${treatment.id}`)} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                            {openMenu === `d-${treatment.id}` && <DesignContextMenu onClose={() => setOpenMenu(null)} onRemove={() => handleDeleteTreatment(treatment.id)} />}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* + Add Design */}
+                      <div className="border-t border-slate-100 px-4 py-2 dark:border-slate-700">
+                        <button onClick={() => setShowTreatmentEditor(true)} className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs text-slate-400 hover:bg-slate-50 hover:text-indigo-600 dark:hover:bg-slate-700">
+                          <Plus className="h-3.5 w-3.5" /> Add Design
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Hierarchy visual: stack icon between cards */}
+                    {!isLast && (
+                      <div className="flex justify-center py-1">
+                        <Layers className="h-3.5 w-3.5 text-slate-300 dark:text-slate-600" />
+                      </div>
+                    )}
                   </div>
                 );
               })
