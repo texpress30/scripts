@@ -68,7 +68,11 @@ def _build_app() -> Celery:
         task_default_queue="default",
         task_queues=_queue_definitions(),
         task_routes=_route_map(),
-        broker_transport_options={"visibility_timeout": 3600},
+        broker_transport_options={
+            "visibility_timeout": 3600,
+            "socket_connect_timeout": 5,
+            "socket_timeout": 5,
+        },
         broker_connection_retry_on_startup=True,  # future-proof for Celery 6.0 deprecation
         result_expires=60 * 60 * 24,  # 24h
         beat_schedule=_beat_schedule(),
