@@ -1,0 +1,39 @@
+# Dockerfile variant for the preview-rendering Celery worker.
+#
+# It is functionally identical to the base apps/backend/Dockerfile — same
+# dependencies, same Python runtime, same code. The only difference is that
+# COPY paths are written relative to the REPO ROOT (e.g.
+# ``apps/backend/requirements.txt``) instead of relative to ``apps/backend``.
+# This lets Railway's Config-as-Code file (``railway.render.json`` at the
+# repo root) pair with a Dockerfile whose context is also the repo root,
+# mirroring the pattern we already use for ``Dockerfile.bgworker``.
+#
+# Why a separate Dockerfile instead of reusing the base one?
+#   - The base Dockerfile uses relative paths (``COPY requirements.txt .``)
+#     because every other Railway service (api-backend, worker-sync-runs,
+#     cron-*) and local docker-compose build it with context=./apps/backend.
+#   - Changing the base would break those builds all at once.
+#   - Duplicating ~10 lines here is cheaper than a cross-cutting refactor.
+#
+# Build locally from the repo root:
+#   docker build -f apps/backend/Dockerfile.render -t mcc-renderworker .
+#
+# docker-compose.yml mirrors this by setting
+# ``context: .`` + ``dockerfile: apps/backend/Dockerfile.render``.
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY apps/backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY apps/backend/db ./db
+COPY apps/backend/app ./app
+
+# Default entrypoint: Celery worker listening on the render queues.
+# docker-compose and Railway can override this via `command:` / startCommand.
+CMD ["celery", "-A", "app.workers.celery_app", "worker", \
+     "-Q", "render_hi,render_bulk", \
+     "-c", "4", \
+     "-n", "render@%h"]

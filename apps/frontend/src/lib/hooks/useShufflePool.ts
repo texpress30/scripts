@@ -22,6 +22,14 @@ export interface ShufflePoolProduct {
   product_id?: string;
   title?: string;
   image_src?: string | null;
+  /**
+   * Background-removed PNG URL for this product's primary image. Populated
+   * by the backend when the corresponding ``image_cutouts`` row is ``ready``
+   * and the media_files lookup resolved a storage URL. When present, the
+   * canvas editor should use this instead of ``image_src`` for any layer
+   * bound to ``{{image_src}}``.
+   */
+  cutout_url?: string | null;
   images?: unknown;
   [key: string]: unknown;
 }

@@ -24,6 +24,19 @@ export interface CanvasEditorHandle {
   getZoom: () => number;
 }
 
+/**
+ * Sample product fed into the canvas so image layers with a dynamic binding
+ * (e.g. ``{{image_src}}``) can render the current preview product. When the
+ * product has a ``cutout_url`` (background-removed PNG) it's preferred over
+ * the raw ``image_src`` so the canvas shows the product silhouetted on the
+ * template's own background instead of the original photo's asphalt /
+ * buildings. Falls back gracefully if ``cutout_url`` is missing.
+ */
+export interface CanvasSampleProduct {
+  image_src?: string | null;
+  cutout_url?: string | null;
+}
+
 interface CanvasEditorProps {
   width: number;
   height: number;
@@ -32,10 +45,18 @@ interface CanvasEditorProps {
   editorRef?: React.MutableRefObject<CanvasEditorHandle | null>;
   onSelectionChange?: (obj: FabricObject | null) => void;
   onModified?: () => void;
+  /**
+   * Current sample product used to resolve dynamic image bindings on the
+   * canvas. When provided, image layers whose ``dynamicBinding`` is
+   * ``{{image_src}}`` will have their src swapped to
+   * ``sampleProduct.cutout_url`` (or fall back to ``sampleProduct.image_src``)
+   * whenever this prop changes — including after a Shuffle click.
+   */
+  sampleProduct?: CanvasSampleProduct | null;
 }
 
 export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
-  function CanvasEditor({ width, height, backgroundColor, elements, editorRef, onSelectionChange, onModified }, ref) {
+  function CanvasEditor({ width, height, backgroundColor, elements, editorRef, onSelectionChange, onModified, sampleProduct }, ref) {
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const fabricRef = useRef<Canvas | null>(null);
     const initializedRef = useRef(false);
@@ -183,6 +204,45 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
       canvas.backgroundColor = backgroundColor;
       canvas.renderAll();
     }, [width, height, backgroundColor]);
+
+    // Swap dynamic image layer sources when the sample product changes.
+    //
+    // Template elements that bind to ``{{image_src}}`` are stored with the
+    // raw product URL baked in (from the original source feed click). When
+    // the editor now has access to a background-removed cutout URL, we want
+    // each such layer to display the cutout instead — even for templates
+    // that were saved before the background-removal worker processed the
+    // product. Runs whenever the resolved URL changes (e.g. Shuffle, row
+    // click, or a cutout arriving mid-session via the 5 s poll).
+    const resolvedSampleImageUrl = sampleProduct?.cutout_url || sampleProduct?.image_src || null;
+    useEffect(() => {
+      const canvas = fabricRef.current;
+      if (!canvas || !resolvedSampleImageUrl) return;
+      type ImageObjWithData = FabricImage & { data?: { elementType?: string; dynamicBinding?: string; imageSrc?: string } };
+      const imageLayers = (canvas.getObjects() as ImageObjWithData[]).filter(
+        (obj) => obj.data?.elementType === "image" && obj.data?.dynamicBinding === "{{image_src}}",
+      );
+      if (imageLayers.length === 0) return;
+      let cancelled = false;
+      Promise.all(
+        imageLayers.map((img) =>
+          img
+            .setSrc(resolvedSampleImageUrl, { crossOrigin: "anonymous" })
+            .then(() => {
+              if (img.data) img.data.imageSrc = resolvedSampleImageUrl;
+            })
+            .catch((err: unknown) => {
+              console.warn("Failed to swap dynamic image src:", err);
+            }),
+        ),
+      ).then(() => {
+        if (cancelled) return;
+        canvas.renderAll();
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [resolvedSampleImageUrl]);
 
     const loadElements = useCallback(async (canvas: Canvas, els: CanvasElement[]) => {
       const fabricObjects = canvasElementsToFabricObjects(els);

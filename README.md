@@ -368,3 +368,25 @@ Fișierul `railway.bgworker.json` se află la **rădăcina repo-ului** (nu în `
 - Dacă vezi `ModuleNotFoundError: onnxruntime`, serviciul a fost build-uit cu Dockerfile-ul greșit (baseline).
 - Dacă vezi `Cannot connect to redis://...` sau `InvalidBackend`, `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` e gresit (vezi pasul 5).
 - Fără healthcheck HTTP: workerul nu expune port, `healthcheckPath` rămâne nesetat în JSON.
+
+## Railway: `worker-render` service (preview rendering Celery worker)
+Acest worker consumă cozile `render_hi` (editor single renders + preview grid lazy load) și `render_bulk` (Publish / materialize output feed). Folosește Dockerfile-ul de bază al backend-ului — nu are nevoie de dependențele ML ale bgworker-ului — dar folosește un variant `apps/backend/Dockerfile.render` care copiază din căi `apps/backend/*` ca să funcționeze cu build context-ul la rădăcina repo-ului (simetrie cu `worker-bgremoval`).
+
+### Config-as-Code
+Fișierul `railway.render.json` se află la **rădăcina repo-ului**. Conține `build.dockerfilePath: "apps/backend/Dockerfile.render"`, `deploy.startCommand` pentru Celery worker pe cozile de render, și restart policy ON_FAILURE. Local: `docker compose build worker-render` (care folosește `context: .` din docker-compose.yml).
+
+### Setări Railway dashboard pentru serviciul `worker-render`
+1. **Source** → conectează la `texpress30/scripts`, deploy branch = `main`.
+2. **Source** → **Root Directory** = **empty** (gol). Config File și build context pornesc de la rădăcina repo-ului.
+3. **Config-as-code** → **Railway Config File** = `railway.render.json` (fără prefix, la rădăcina repo-ului).
+4. **Variables** (propagate automat ca shared variables din `api-backend`): `DATABASE_URL`, `MONGO_URI`, `MONGO_DATABASE`, `REDIS_URL`, `STORAGE_S3_BUCKET`, `STORAGE_S3_REGION`, `STORAGE_S3_ENDPOINT_URL`, `STORAGE_S3_PRESIGNED_TTL_SECONDS`, `APP_AUTH_SECRET`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`. Nu e nevoie de REMBG_MODEL / CUTOUT_* (nu folosește rembg).
+5. **NU seta** `INTEGRATION_SECRET_ENCRYPTION_KEY` (pre-existing empty state, ca peste tot).
+
+### Verificare post-deploy
+- Build-ul durează ~1-2 minute (imagine slim, doar dependențe Python de bază — fără ML).
+- Log-urile runtime trebuie să conțină `mcc_workers@render ready.` și cele 2 cozi înregistrate:
+  - `render_hi exchange=render_hi(direct) key=render_hi`
+  - `render_bulk exchange=render_bulk(direct) key=render_bulk`
+- **Test funcțional**: navighează la `/agency/enriched-catalog/output-feeds/{id}/preview` → frontend-ul apelează `POST /creative/output-feeds/{id}/render/page` → task-urile `render_one` aterizează pe coada `render_hi` → worker-render le procesează → preview grid-ul se umple cu creative randate în ~3-5 secunde (polling interval frontend).
+- Dacă preview grid-ul rămâne în skeleton forever: worker-render nu e live sau nu consumă coada corectă. Verifică în log `render_one` task execution.
+- Fără healthcheck HTTP: workerul nu expune port.

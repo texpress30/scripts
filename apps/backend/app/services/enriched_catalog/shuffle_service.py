@@ -116,11 +116,13 @@ def _find_output_feed_for_template(template_id: str) -> dict[str, Any] | None:
     }
 
 
-def _fetch_ready_url_hashes(client_id: int) -> set[str]:
-    """Return every ``source_url_hash`` whose cutout is ready for a client.
+def _fetch_ready_cutout_media_by_hash(client_id: int) -> dict[str, str]:
+    """Return ``{source_url_hash: media_id}`` for every ready cutout of a client.
 
-    Used to pre-filter the shuffle pool: we already know which URLs have a
-    ready cutout, so we don't have to download the source bytes per candidate.
+    Used to pre-filter the shuffle pool (URL-hash prefilter) AND to resolve the
+    cutout's media_id in a single SQL query. Callers then translate media_id
+    to an S3 URL via ``cutout_service._lookup_media_storage`` so the shuffle
+    pool response can include ``cutout_url`` per product without an N+1 fan-out.
     """
     from app.db.pool import get_connection
 
@@ -128,13 +130,16 @@ def _fetch_ready_url_hashes(client_id: int) -> set[str]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT source_url_hash FROM image_cutouts
-                WHERE client_id = %s AND status = 'ready' AND source_url_hash IS NOT NULL
+                SELECT source_url_hash, media_id FROM image_cutouts
+                WHERE client_id = %s
+                  AND status = 'ready'
+                  AND source_url_hash IS NOT NULL
+                  AND media_id IS NOT NULL
                 """,
                 (int(client_id),),
             )
             rows = cur.fetchall() or []
-    return {str(r[0]) for r in rows}
+    return {str(r[0]): str(r[1]) for r in rows if r[0] and r[1]}
 
 
 def get_shuffle_pool(
@@ -204,7 +209,7 @@ def get_shuffle_pool(
             matching_treatment = tr
             break
 
-    ready_url_hashes = _fetch_ready_url_hashes(client_id)
+    ready_media_by_hash = _fetch_ready_cutout_media_by_hash(client_id)
 
     # Pull a bounded slice of products. We pick more than `limit` so we can
     # filter out those without ready cutouts without starving the pool.
@@ -217,6 +222,8 @@ def get_shuffle_pool(
     total_products = feed_products_repository.count_products(str(feed_source_id))
 
     import hashlib
+
+    from app.services.enriched_catalog import cutout_service
 
     pool: list[dict[str, Any]] = []
     for doc in raw_products:
@@ -232,10 +239,19 @@ def get_shuffle_pool(
         # only contains products with a ready cutout. Products whose URL
         # hasn't been primed yet are skipped until the next refresh.
         url_hash = hashlib.sha256(image_src.encode("utf-8")).hexdigest()
-        if url_hash in ready_url_hashes:
-            pool.append(data)
-            if len(pool) >= limit:
-                break
+        media_id = ready_media_by_hash.get(url_hash)
+        if not media_id:
+            continue
+        # Resolve the cutout's media URL (S3 key → presigned/public URL) so
+        # the canvas editor can render the background-removed PNG instead of
+        # the raw product image. ``_lookup_media_storage`` is a Mongo point
+        # read per media_id; bounded by ``limit`` (typically 50).
+        _s3_key, cutout_url = cutout_service._lookup_media_storage(media_id)
+        if cutout_url:
+            data["cutout_url"] = cutout_url
+        pool.append(data)
+        if len(pool) >= limit:
+            break
 
     # Shuffle in-place so repeated calls don't always return the same order.
     random.shuffle(pool)
