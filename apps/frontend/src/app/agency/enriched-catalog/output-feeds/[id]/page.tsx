@@ -20,6 +20,7 @@ import {
   Package,
   GripVertical,
   ArrowDown,
+  X,
 } from "lucide-react";
 import {
   useOutputFeed,
@@ -115,6 +116,11 @@ export default function OutputFeedDetailPage() {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  // Publish flow: preview → confirm → success
+  const [showPreviewChanges, setShowPreviewChanges] = useState(false);
+  const [showPublishSuccess, setShowPublishSuccess] = useState(false);
+  const [publishedUrl, setPublishedUrl] = useState<string>("");
+  const [copiedPublishedUrl, setCopiedPublishedUrl] = useState(false);
 
   const handleDragStart = useCallback((index: number) => {
     setDragIndex(index);
@@ -453,7 +459,7 @@ export default function OutputFeedDetailPage() {
 
           {/* Publish + Schedule */}
           <div className="space-y-2">
-            <button onClick={handleGenerate} disabled={generating} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-600 disabled:opacity-50">
+            <button onClick={() => setShowPreviewChanges(true)} disabled={generating} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-600 disabled:opacity-50">
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Publish
             </button>
             <button onClick={() => setShowMultiFormat(true)} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">Schedule</button>
@@ -510,6 +516,162 @@ export default function OutputFeedDetailPage() {
                 Render {selectedFormatIds.size} Format{selectedFormatIds.size !== 1 ? "s" : ""}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Changes modal */}
+      {showPreviewChanges && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg rounded-xl border border-slate-700 bg-slate-800 p-6 text-slate-100 shadow-2xl">
+            <button
+              onClick={() => setShowPreviewChanges(false)}
+              className="absolute right-4 top-4 rounded p-1 text-slate-400 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <h2 className="text-lg font-semibold text-white">Preview Changes</h2>
+            <p className="mb-5 text-xs text-slate-400">
+              Click Publish to set these changes live in the output feed
+            </p>
+
+            {/* Newly Added Designs */}
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium text-slate-300">
+                Newly Added Designs{" "}
+                <span className="ml-1 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold text-slate-200">
+                  {treatments.length}
+                </span>
+              </p>
+              {treatments.length > 0 ? (
+                <div className="space-y-2">
+                  {treatments.map((t) => {
+                    const tpl = templates.find((tp) => tp.id === t.template_id);
+                    return (
+                      <div key={t.id} className="flex items-center gap-3 rounded-lg bg-slate-700/50 p-2.5">
+                        <div
+                          className="flex h-11 w-9 shrink-0 items-center justify-center overflow-hidden rounded border border-slate-600"
+                          style={{ backgroundColor: tpl?.background_color || "#475569" }}
+                        >
+                          <Layers className="h-4 w-4 text-white/50" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-100">
+                            {tpl?.name || t.name}
+                          </p>
+                          <p className="flex items-center gap-1 text-[10px] text-slate-400">
+                            <Layers className="h-3 w-3" />
+                            {tpl?.name || t.template_id.slice(0, 8)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">No new designs</p>
+              )}
+            </div>
+
+            {/* Updated / Deleted / Filter Changes summary */}
+            <div className="mb-6 space-y-1.5 text-xs text-slate-400">
+              <p>
+                Updated Designs{" "}
+                <span className="ml-1 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">0</span>
+              </p>
+              <p>
+                Deleted Designs{" "}
+                <span className="ml-1 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">0</span>
+              </p>
+              <p>
+                Filter Changes{" "}
+                <span className="ml-1 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">0</span>
+              </p>
+            </div>
+
+            {/* Publish button */}
+            <button
+              onClick={async () => {
+                setShowPreviewChanges(false);
+                setGenerating(true);
+                setShowRenderStatus(true);
+                try {
+                  await apiRequest(`/creative/output-feeds/${feedId}/generate`, { method: "POST" });
+                  // Fetch the published URL for the success modal
+                  let url = publicUrl;
+                  if (!url) {
+                    try {
+                      url = await fetchPublicUrl(feedId);
+                      setPublicUrl(url);
+                    } catch {
+                      url = "";
+                    }
+                  }
+                  setPublishedUrl(url || "");
+                  setShowPublishSuccess(true);
+                } catch (err) {
+                  console.error("Publish failed:", err);
+                  alert("Publish failed. Please try again.");
+                } finally {
+                  setGenerating(false);
+                }
+              }}
+              disabled={generating}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {generating && <Loader2 className="h-4 w-4 animate-spin" />}
+              Publish
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Publish Success modal */}
+      {showPublishSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+            <button
+              onClick={() => setShowPublishSuccess(false)}
+              className="absolute right-4 top-4 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+              Output Feed Published Successfully
+            </h2>
+
+            {/* Feed URL (read-only) */}
+            <input
+              type="text"
+              readOnly
+              value={publishedUrl}
+              className="mb-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+            />
+
+            <div className="mb-4 flex items-center justify-between px-1 text-[10px] text-slate-400">
+              <span className="font-medium uppercase">Ready</span>
+              <span>Rows Dropped: 0</span>
+            </div>
+
+            {/* Copy Link */}
+            <button
+              onClick={() => {
+                if (publishedUrl) navigator.clipboard.writeText(publishedUrl);
+                setCopiedPublishedUrl(true);
+                setTimeout(() => setCopiedPublishedUrl(false), 2000);
+              }}
+              className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-teal-500 py-2.5 text-sm font-semibold text-white shadow hover:bg-teal-400"
+            >
+              <Copy className="h-4 w-4" />
+              {copiedPublishedUrl ? "Copied!" : "Copy Link"}
+            </button>
+
+            <p className="text-xs text-slate-400">
+              Add the Output Feed to a Catalog in Meta
+            </p>
           </div>
         </div>
       )}
