@@ -51,6 +51,6 @@ COPY apps/backend/app ./app
 # Default entrypoint: Celery worker listening on the bgremoval queues.
 # docker-compose and Railway can override this with `command:` if needed.
 CMD ["celery", "-A", "app.workers.celery_app", "worker", \
-     "-Q", "bgremoval_interactive,bgremoval_prime,bgremoval,bgremoval_bulk,sync_hooks", \
+     "-Q", "bgremoval_interactive,bgremoval_prime,bgremoval,bgremoval_bulk,sync_hooks,cleanup", \
      "-c", "2", \
      "-n", "bgremoval@%h"]

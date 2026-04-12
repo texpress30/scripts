@@ -60,7 +60,7 @@ services:
       - .env
     command: >
       celery -A app.workers.celery_app worker
-      -Q render_hi,render_bulk
+      -Q render_hi,render_bulk,cleanup
       -c 4
       -n render@%h
     depends_on:
