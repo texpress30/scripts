@@ -21,6 +21,8 @@ export interface OutputFeed {
   file_size_bytes: number;
   field_mapping_id: string | null;
   s3_key: string | null;
+  channel_id: string | null;
+  treatment_mode: "single" | "multi";
 }
 
 export interface OutputFeedWithTreatments extends OutputFeed {
@@ -32,6 +34,8 @@ export interface CreateOutputFeedPayload {
   feed_source_id?: string;
   feed_format?: string;
   field_mapping_id?: string;
+  channel_id?: string;
+  treatment_mode?: "single" | "multi";
 }
 
 export interface RenderJob {

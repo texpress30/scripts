@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Copy, Check, X, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, Copy, Check, X, Plus, Info } from "lucide-react";
+import { CHANNEL_PLATFORM_MAP, CHANNEL_DISPLAY_NAMES } from "@/lib/data/channel-platforms";
 import { useCreativeTemplate } from "@/lib/hooks/useCreativeTemplates";
 import type { CanvasElement } from "@/lib/hooks/useCreativeTemplates";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
@@ -170,7 +171,19 @@ export default function PreviewCreativesPage() {
   const [selectedFeedId, setSelectedFeedId] = useState<string | null>(null);
   const [addingToFeed, setAddingToFeed] = useState(false);
   const [addedToFeed, setAddedToFeed] = useState(false);
+  // New Output Feed form state
+  const [showNewFeedForm, setShowNewFeedForm] = useState(false);
   const [newFeedName, setNewFeedName] = useState("");
+  const [newFeedChannelId, setNewFeedChannelId] = useState("");
+  const [newFeedTreatmentMode, setNewFeedTreatmentMode] = useState<"single" | "multi">("single");
+  const selectedChannelPlatform = newFeedChannelId
+    ? (() => {
+        const ch = channels?.find((c) => c.id === newFeedChannelId);
+        if (!ch) return null;
+        return CHANNEL_PLATFORM_MAP[ch.channel_type]?.platform ?? null;
+      })()
+    : null;
+  const isMetaChannel = selectedChannelPlatform === "meta";
   const renderingRef = useRef(false);
 
   useEffect(() => {
@@ -363,100 +376,253 @@ export default function PreviewCreativesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl dark:bg-slate-800">
             <button
-              onClick={() => setShowFeedModal(false)}
+              onClick={() => { setShowFeedModal(false); setShowNewFeedForm(false); }}
               className="absolute right-4 top-4 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
             >
               <X className="h-5 w-5" />
             </button>
 
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Select an output feed</h2>
-            <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
-              You can use multiple designs in a single live feed
-            </p>
+            {showNewFeedForm ? (
+              <>
+                {/* ---- New Output Feed creation form ---- */}
+                <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Create a New Output Feed</h2>
+                <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
+                  Configure the channel and treatment mode for your output feed
+                </p>
 
-            {/* Existing feeds */}
-            <div className="mb-4 max-h-64 space-y-2 overflow-y-auto">
-              {feeds.map((feed) => (
+                <div className="space-y-4">
+                  {/* Feed Name */}
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Output Feed Name</label>
+                    <input
+                      type="text"
+                      value={newFeedName}
+                      onChange={(e) => setNewFeedName(e.target.value)}
+                      placeholder="e.g. Facebook Product Feed"
+                      className="mcc-input w-full rounded-md border px-3 py-2 text-sm"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Channel Selector */}
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Channel</label>
+                    <select
+                      value={newFeedChannelId}
+                      onChange={(e) => {
+                        setNewFeedChannelId(e.target.value);
+                        // Reset to single when switching away from Meta
+                        const ch = channels?.find((c) => c.id === e.target.value);
+                        const platform = ch ? CHANNEL_PLATFORM_MAP[ch.channel_type]?.platform : null;
+                        if (platform !== "meta") setNewFeedTreatmentMode("single");
+                      }}
+                      className="mcc-input w-full rounded-md border px-3 py-2 text-sm"
+                    >
+                      <option value="">— Select a channel —</option>
+                      {(channels ?? []).map((ch) => {
+                        const display = CHANNEL_DISPLAY_NAMES[ch.channel_type] || ch.channel_type;
+                        const platformInfo = CHANNEL_PLATFORM_MAP[ch.channel_type];
+                        const badge = platformInfo ? platformInfo.platformDisplayName : "";
+                        return (
+                          <option key={ch.id} value={ch.id}>
+                            {ch.name} {badge ? `(${badge})` : ""} — {display}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {(channels ?? []).length === 0 && (
+                      <p className="mt-1 text-xs text-slate-400">
+                        No channels found. Create channels in Feed Management first.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Treatment Mode */}
+                  <div>
+                    <label className="mb-2 block text-xs font-medium text-slate-600 dark:text-slate-300">Treatment Mode</label>
+                    <div className="space-y-2">
+                      {/* Single Treatment */}
+                      <label
+                        className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
+                          newFeedTreatmentMode === "single"
+                            ? "border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/20"
+                            : "border-slate-200 hover:border-slate-300 dark:border-slate-600"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="treatmentMode"
+                          value="single"
+                          checked={newFeedTreatmentMode === "single"}
+                          onChange={() => setNewFeedTreatmentMode("single")}
+                          className="mt-0.5 accent-indigo-600"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Single Treatment</p>
+                          <p className="text-xs text-slate-400">
+                            Apply one creative treatment to all products in the catalog.
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Multi Treatment (Meta only) */}
+                      <label
+                        className={`flex items-start gap-3 rounded-lg border p-3 transition ${
+                          !isMetaChannel
+                            ? "cursor-not-allowed border-slate-200 opacity-50 dark:border-slate-600"
+                            : newFeedTreatmentMode === "multi"
+                              ? "cursor-pointer border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/20"
+                              : "cursor-pointer border-slate-200 hover:border-slate-300 dark:border-slate-600"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="treatmentMode"
+                          value="multi"
+                          checked={newFeedTreatmentMode === "multi"}
+                          onChange={() => setNewFeedTreatmentMode("multi")}
+                          disabled={!isMetaChannel}
+                          className="mt-0.5 accent-indigo-600"
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Multi-Treatment Mode</p>
+                          <p className="text-xs text-slate-400">
+                            Apply different creative treatments based on filter rules.
+                          </p>
+                          {!isMetaChannel && newFeedChannelId && (
+                            <p className="mt-1 flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                              <Info className="h-3 w-3" />
+                              Multi-treatment is available only for Meta channels.
+                            </p>
+                          )}
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Create button */}
                 <button
-                  key={feed.id}
-                  onClick={() => setSelectedFeedId(feed.id)}
-                  className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
-                    selectedFeedId === feed.id
-                      ? "border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/20"
-                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
-                  }`}
+                  onClick={async () => {
+                    if (!newFeedName.trim()) return;
+                    setAddingToFeed(true);
+                    try {
+                      const selectedChannel = channels?.find((c) => c.id === newFeedChannelId);
+                      const newFeed = await createFeed({
+                        name: newFeedName.trim(),
+                        feed_source_id: selectedChannel?.feed_source_id || undefined,
+                        channel_id: newFeedChannelId || undefined,
+                        treatment_mode: newFeedTreatmentMode,
+                      });
+                      await apiRequest(`/creative/output-feeds/${newFeed.id}/add-template`, {
+                        method: "POST",
+                        body: JSON.stringify({ template_id: templateId }),
+                      });
+                      setAddedToFeed(true);
+                      setShowFeedModal(false);
+                      setShowNewFeedForm(false);
+                    } catch (err) {
+                      console.error("Failed to create output feed:", err);
+                      alert("Failed to create output feed. Please try again.");
+                    } finally {
+                      setAddingToFeed(false);
+                    }
+                  }}
+                  disabled={addingToFeed || !newFeedName.trim()}
+                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                    <Loader2 className="h-5 w-5" style={{ animation: "none" }} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{feed.name}</p>
-                    <p className="text-[10px] text-slate-400">
-                      {feed.status} {feed.products_count > 0 ? `· ${feed.products_count} products` : ""}
-                    </p>
-                  </div>
-                  {selectedFeedId === feed.id && <Check className="h-4 w-4 text-indigo-600" />}
+                  {addingToFeed && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Create
                 </button>
-              ))}
 
-              {feeds.length === 0 && !newFeedName && (
-                <p className="py-4 text-center text-sm text-slate-400">No output feeds yet. Create one below.</p>
-              )}
-            </div>
-
-            {/* New Output Feed */}
-            {newFeedName !== null && (
-              <div className="mb-4">
                 <button
-                  onClick={() => setNewFeedName(newFeedName || `Output Feed ${feeds.length + 1}`)}
-                  className="flex w-full items-center gap-2 rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-slate-600 dark:hover:border-indigo-500 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
+                  type="button"
+                  onClick={() => setShowNewFeedForm(false)}
+                  className="mt-2 w-full text-center text-xs text-slate-400 hover:text-slate-600"
+                >
+                  Back to feed list
+                </button>
+              </>
+            ) : (
+              <>
+                {/* ---- Existing feed selection ---- */}
+                <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Select an output feed</h2>
+                <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
+                  You can use multiple designs in a single live feed
+                </p>
+
+                {/* Existing feeds */}
+                <div className="mb-4 max-h-64 space-y-2 overflow-y-auto">
+                  {feeds.map((feed) => (
+                    <button
+                      key={feed.id}
+                      onClick={() => setSelectedFeedId(feed.id)}
+                      className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
+                        selectedFeedId === feed.id
+                          ? "border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/20"
+                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
+                      }`}
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                        <Loader2 className="h-5 w-5" style={{ animation: "none" }} />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{feed.name}</p>
+                        <p className="text-[10px] text-slate-400">
+                          {feed.status} {feed.products_count > 0 ? `· ${feed.products_count} products` : ""}
+                        </p>
+                      </div>
+                      {selectedFeedId === feed.id && <Check className="h-4 w-4 text-indigo-600" />}
+                    </button>
+                  ))}
+
+                  {feeds.length === 0 && (
+                    <p className="py-4 text-center text-sm text-slate-400">No output feeds yet. Create one below.</p>
+                  )}
+                </div>
+
+                {/* + New Output Feed */}
+                <button
+                  onClick={() => {
+                    setShowNewFeedForm(true);
+                    setSelectedFeedId(null);
+                    setNewFeedName(`Output Feed ${feeds.length + 1}`);
+                    setNewFeedChannelId("");
+                    setNewFeedTreatmentMode("single");
+                  }}
+                  className="mb-4 flex w-full items-center gap-2 rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-slate-600 dark:hover:border-indigo-500 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
                 >
                   <Plus className="h-4 w-4" />
                   New Output Feed
                 </button>
-                {newFeedName && (
-                  <input
-                    type="text"
-                    value={newFeedName}
-                    onChange={(e) => setNewFeedName(e.target.value)}
-                    placeholder="Feed name..."
-                    className="mcc-input mt-2 w-full rounded border px-3 py-2 text-sm"
-                    autoFocus
-                  />
-                )}
-              </div>
-            )}
 
-            {/* Continue button */}
-            <button
-              onClick={async () => {
-                setAddingToFeed(true);
-                try {
-                  let feedId = selectedFeedId;
-                  if (!feedId && newFeedName) {
-                    const newFeed = await createFeed({ name: newFeedName });
-                    feedId = newFeed.id;
-                  }
-                  if (!feedId) return;
-                  await apiRequest(`/creative/output-feeds/${feedId}/add-template`, {
-                    method: "POST",
-                    body: JSON.stringify({ template_id: templateId }),
-                  });
-                  setAddedToFeed(true);
-                  setShowFeedModal(false);
-                } catch (err) {
-                  console.error("Failed to add to feed:", err);
-                  alert("Failed to add to feed. Please try again.");
-                } finally {
-                  setAddingToFeed(false);
-                }
-              }}
-              disabled={addingToFeed || (!selectedFeedId && !newFeedName)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {addingToFeed && <Loader2 className="h-4 w-4 animate-spin" />}
-              Continue
-            </button>
+                {/* Continue button */}
+                <button
+                  onClick={async () => {
+                    if (!selectedFeedId) return;
+                    setAddingToFeed(true);
+                    try {
+                      await apiRequest(`/creative/output-feeds/${selectedFeedId}/add-template`, {
+                        method: "POST",
+                        body: JSON.stringify({ template_id: templateId }),
+                      });
+                      setAddedToFeed(true);
+                      setShowFeedModal(false);
+                    } catch (err) {
+                      console.error("Failed to add to feed:", err);
+                      alert("Failed to add to feed. Please try again.");
+                    } finally {
+                      setAddingToFeed(false);
+                    }
+                  }}
+                  disabled={addingToFeed || !selectedFeedId}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {addingToFeed && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Continue
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

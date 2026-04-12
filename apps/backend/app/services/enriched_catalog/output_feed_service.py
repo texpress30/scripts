@@ -85,7 +85,7 @@ class OutputFeedRepository:
         "last_render_at, created_at, updated_at, "
         "feed_format, public_token, refresh_interval_hours, "
         "last_generated_at, products_count, file_size_bytes, "
-        "field_mapping_id, s3_key, include_out_of_stock"
+        "field_mapping_id, s3_key, include_out_of_stock, channel_id, treatment_mode"
     )
 
     def create_output_feed(
@@ -96,6 +96,8 @@ class OutputFeedRepository:
         feed_source_id: str | None = None,
         feed_format: str = "xml",
         field_mapping_id: str | None = None,
+        channel_id: str | None = None,
+        treatment_mode: str = "single",
     ) -> dict[str, Any]:
         token = _generate_token()
         with self._connect() as conn:
@@ -104,8 +106,8 @@ class OutputFeedRepository:
                     f"""
                     INSERT INTO output_feeds
                         (subaccount_id, name, feed_source_id, feed_format,
-                         field_mapping_id, public_token)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                         field_mapping_id, public_token, channel_id, treatment_mode)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING {self._SELECT_COLS}
                     """,
                     (
@@ -115,6 +117,8 @@ class OutputFeedRepository:
                         feed_format,
                         field_mapping_id,
                         token,
+                        channel_id,
+                        treatment_mode or "single",
                     ),
                 )
                 row = cur.fetchone()
@@ -264,6 +268,8 @@ class OutputFeedRepository:
             "field_mapping_id": str(row[15]) if row[15] else None,
             "s3_key": str(row[16]) if row[16] else None,
             "include_out_of_stock": bool(row[17]) if len(row) > 17 else False,
+            "channel_id": str(row[18]) if len(row) > 18 and row[18] else None,
+            "treatment_mode": str(row[19]) if len(row) > 19 and row[19] else "single",
         }
 
     def _render_job_row_to_dict(self, row) -> dict[str, Any]:
@@ -311,6 +317,8 @@ class OutputFeedService:
         feed_source_id: str | None = None,
         feed_format: str = "xml",
         field_mapping_id: str | None = None,
+        channel_id: str | None = None,
+        treatment_mode: str = "single",
     ) -> dict[str, Any]:
         return self._repo.create_output_feed(
             subaccount_id=subaccount_id,
@@ -318,6 +326,8 @@ class OutputFeedService:
             feed_source_id=feed_source_id,
             feed_format=feed_format,
             field_mapping_id=field_mapping_id,
+            channel_id=channel_id,
+            treatment_mode=treatment_mode,
         )
 
     def get_output_feed(self, output_feed_id: str) -> dict[str, Any]:

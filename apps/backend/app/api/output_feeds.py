@@ -16,6 +16,8 @@ class CreateOutputFeedRequest(BaseModel):
     feed_source_id: str | None = None
     feed_format: str = "xml"
     field_mapping_id: str | None = None
+    channel_id: str | None = None
+    treatment_mode: str = "single"
 
 
 class UpdateOutputFeedRequest(BaseModel):
@@ -23,6 +25,8 @@ class UpdateOutputFeedRequest(BaseModel):
     feed_source_id: str | None = None
     feed_format: str | None = None
     field_mapping_id: str | None = None
+    channel_id: str | None = None
+    treatment_mode: str | None = None
 
 
 class StartRenderRequest(BaseModel):
@@ -75,6 +79,8 @@ def create_output_feed(payload: CreateOutputFeedRequest, subaccount_id: int = Qu
         feed_source_id=payload.feed_source_id,
         feed_format=payload.feed_format,
         field_mapping_id=payload.field_mapping_id,
+        channel_id=payload.channel_id,
+        treatment_mode=payload.treatment_mode,
     )
 
 
