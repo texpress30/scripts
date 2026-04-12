@@ -96,7 +96,7 @@ export default function TemplateEditorPage() {
   // that match this template's treatment filters. The pool is refreshed every
   // 5s while the background-removal worker is still priming cutouts, so the
   // ready-count chip in the top bar grows live.
-  const shufflePool = useShufflePool(templateId, { limit: 50 });
+  const shufflePool = useShufflePool(templateId, { limit: 50, feedSourceId: firstSourceId });
   const primeMutation = usePrimeCutouts();
 
   // Kick off priming the first time the editor opens a template. The backend
@@ -106,7 +106,7 @@ export default function TemplateEditorPage() {
   useEffect(() => {
     if (!templateId || primedTemplateRef.current === templateId) return;
     primedTemplateRef.current = templateId;
-    primeMutation.mutate({ templateId, limit: 200 });
+    primeMutation.mutate({ templateId, limit: 200, feedSourceId: firstSourceId ?? undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId]);
 

@@ -36,22 +36,28 @@ export interface ShufflePoolResponse {
 
 const SHUFFLE_POOL_KEY = (templateId: string) => ["shuffle-pool", templateId] as const;
 
-async function fetchShufflePool(templateId: string, limit: number): Promise<ShufflePoolResponse> {
+async function fetchShufflePool(
+  templateId: string,
+  limit: number,
+  feedSourceId?: string,
+): Promise<ShufflePoolResponse> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (feedSourceId) qs.set("feed_source_id", feedSourceId);
   return apiRequest<ShufflePoolResponse>(
-    `/creative/templates/${templateId}/shuffle-pool?limit=${limit}`,
+    `/creative/templates/${templateId}/shuffle-pool?${qs}`,
     { cache: "no-store" },
   );
 }
 
 export function useShufflePool(
   templateId: string | null,
-  options: { limit?: number; enabled?: boolean } = {},
+  options: { limit?: number; enabled?: boolean; feedSourceId?: string | null } = {},
 ) {
-  const { limit = 50, enabled = true } = options;
+  const { limit = 50, enabled = true, feedSourceId } = options;
 
   return useQuery<ShufflePoolResponse>({
     queryKey: SHUFFLE_POOL_KEY(templateId ?? ""),
-    queryFn: () => fetchShufflePool(templateId!, limit),
+    queryFn: () => fetchShufflePool(templateId!, limit, feedSourceId ?? undefined),
     enabled: !!templateId && enabled,
     // Poll while the pool is still filling up. Once it hits the target size
     // or matches the total feed, stop polling — no point hammering the API
@@ -81,9 +87,19 @@ export function useShufflePool(
 export function usePrimeCutouts() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ templateId, limit = 200 }: { templateId: string; limit?: number }) => {
+    mutationFn: async ({
+      templateId,
+      limit = 200,
+      feedSourceId,
+    }: {
+      templateId: string;
+      limit?: number;
+      feedSourceId?: string;
+    }) => {
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (feedSourceId) qs.set("feed_source_id", feedSourceId);
       return apiRequest<{ enqueued: number; feed_source_id?: string; reason?: string }>(
-        `/creative/templates/${templateId}/prime-cutouts?limit=${limit}`,
+        `/creative/templates/${templateId}/prime-cutouts?${qs}`,
         { method: "POST" },
       );
     },

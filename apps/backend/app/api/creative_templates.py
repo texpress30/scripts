@@ -193,6 +193,7 @@ def adapt_layout(template_id: str, payload: AdaptLayoutRequest, user: AuthUser =
 def get_shuffle_pool(
     template_id: str,
     limit: int = Query(50, ge=1, le=200),
+    feed_source_id: str | None = Query(None),
     user: AuthUser = Depends(get_current_user),
 ) -> dict:
     """Return a randomized set of products ready to be used as shuffle samples.
@@ -202,6 +203,10 @@ def get_shuffle_pool(
     is capped so that a 100k-product catalog doesn't blow up the response —
     the front-end picks one element per shuffle click and refetches when the
     list runs out.
+
+    When the template is standalone (not linked to an output feed via a
+    treatment), pass ``feed_source_id`` so the pool can still be populated
+    from the correct feed source.
     """
     try:
         template = template_service.get_template(template_id)
@@ -214,13 +219,19 @@ def get_shuffle_pool(
     )
     from app.services.enriched_catalog.shuffle_service import get_shuffle_pool as _get_pool
 
-    return _get_pool(template_id=template_id, limit=int(limit))
+    return _get_pool(
+        template_id=template_id,
+        limit=int(limit),
+        fallback_feed_source_id=feed_source_id,
+        fallback_client_id=int(template.get("subaccount_id", 0)),
+    )
 
 
 @router.post("/{template_id}/prime-cutouts")
 def prime_cutouts(
     template_id: str,
     limit: int = Query(200, ge=1, le=2000),
+    feed_source_id: str | None = Query(None),
     user: AuthUser = Depends(get_current_user),
 ) -> dict:
     """Kick off background-removal priming for the top-N products of this
@@ -230,6 +241,9 @@ def prime_cutouts(
     while the user is designing. Idempotent (``image_cutouts`` dedup on
     ``(client_id, source_hash)``) — repeat calls won't re-process the same
     image twice.
+
+    When the template is standalone (not linked via a treatment), pass
+    ``feed_source_id`` so priming can proceed against the correct source.
     """
     try:
         template = template_service.get_template(template_id)
@@ -242,4 +256,9 @@ def prime_cutouts(
     )
     from app.services.enriched_catalog.shuffle_service import prime_cutouts_for_template
 
-    return prime_cutouts_for_template(template_id=template_id, limit=int(limit))
+    return prime_cutouts_for_template(
+        template_id=template_id,
+        limit=int(limit),
+        fallback_feed_source_id=feed_source_id,
+        fallback_client_id=int(template.get("subaccount_id", 0)),
+    )
