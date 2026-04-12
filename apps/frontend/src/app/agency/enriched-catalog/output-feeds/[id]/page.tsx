@@ -168,7 +168,7 @@ export default function OutputFeedDetailPage() {
     return <div className="flex h-64 items-center justify-center text-sm text-slate-500">Output feed not found.</div>;
   }
 
-  const treatmentMode = (feed as Record<string, unknown>).treatment_mode as string || "single";
+  const treatmentMode = (feed as unknown as Record<string, unknown>).treatment_mode as string || "single";
   const totalSKUs = stats?.products_count ?? 0;
   const lastUpdated = stats?.last_generated_at ? new Date(stats.last_generated_at).toLocaleDateString() : "N/A";
 
