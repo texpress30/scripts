@@ -104,11 +104,11 @@ export default function TemplateEditorPage() {
   // double-opens don't re-run the ML step.
   const primedTemplateRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!templateId || primedTemplateRef.current === templateId) return;
+    if (!templateId || !firstSourceId || primedTemplateRef.current === templateId) return;
     primedTemplateRef.current = templateId;
-    primeMutation.mutate({ templateId, limit: 200, feedSourceId: firstSourceId ?? undefined });
+    primeMutation.mutate({ templateId, limit: 200, feedSourceId: firstSourceId });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId]);
+  }, [templateId, firstSourceId]);
 
   const hasFormatGroup = (siblings?.length ?? 0) > 1;
   const [saving, setSaving] = useState(false);
